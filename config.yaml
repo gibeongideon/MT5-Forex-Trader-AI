@@ -1,0 +1,33 @@
+# MT5 Bot Configuration
+# Copy .env.example to .env and fill in your credentials (never commit .env)
+
+mt5:
+  # Path to terminal64.exe inside Wine prefix
+  terminal_path: "/home/rock/.mt5/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+  # WINEPREFIX for running MT5
+  wine_prefix: "/home/rock/.mt5"
+  # Credentials loaded from .env (MT5_LOGIN, MT5_PASSWORD, MT5_SERVER)
+  login: null      # override: set MT5_LOGIN in .env
+  password: null   # override: set MT5_PASSWORD in .env
+  server: null     # override: set MT5_SERVER in .env (e.g. "ICMarkets-Demo")
+  timeout: 60000   # connection timeout ms
+
+trading:
+  # Risk management
+  risk_per_trade: 0.01      # 1% of account balance per trade
+  max_open_trades: 5
+  max_daily_loss: 0.05      # stop trading if daily loss exceeds 5%
+  magic_number: 20260101    # unique ID for this bot's orders
+
+  # Default symbol settings (override per bot)
+  symbol: "EURUSD"
+  timeframe: "M15"          # M1 M5 M15 M30 H1 H4 D1 W1 MN1
+  lot_size: 0.01            # minimum lot, overridden by risk_per_trade if > 0
+
+example_bot:
+  symbol: "EURUSD"
+  timeframe: "M15"
+  fast_ma: 9
+  slow_ma: 21
+  sl_pips: 30
+  tp_pips: 60
