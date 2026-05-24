@@ -2,8 +2,9 @@
 # Copy .env.example to .env and fill in your credentials (never commit .env)
 
 mt5:
-  # Path to terminal64.exe inside Wine prefix
-  terminal_path: "/home/rock/.mt5/drive_c/Program Files/MetaTrader 5/terminal64.exe"
+  # Path to terminal64.exe — use the temp-launcher copy (start_mt5.sh runs MT5 from here
+  # so the liveupdate can write the updated binary to Program Files without a sharing violation)
+  terminal_path: "C:\\users\\rock\\AppData\\Local\\Temp\\mt5_launcher\\terminal64.exe"
   # WINEPREFIX for running MT5
   wine_prefix: "/home/rock/.mt5"
   # Credentials loaded from .env (MT5_LOGIN, MT5_PASSWORD, MT5_SERVER)
@@ -31,3 +32,11 @@ example_bot:
   slow_ma: 21
   sl_pips: 30
   tp_pips: 60
+
+ai_bot:
+  symbol: "EURUSD"
+  timeframe: "M15"
+  sl_pips: 30           # stop loss in pips
+  tp_pips: 60           # take profit in pips (2:1 RR)
+  candles: 50           # how many candles to fetch for analysis
+  min_confidence: "medium"  # "high" = only high-confidence signals; "medium" = medium or high
