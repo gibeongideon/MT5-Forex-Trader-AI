@@ -50,6 +50,21 @@ random_bot:
   tp_pips: 60
   seed: null            # set an integer for reproducible live-mode runs
 
+# ── Phase 5: Pluggable Model Registry ─────────────────────────────────────────
+# Change active_model here to swap models — no code changes required.
+active_model: xgboost
+
+models:
+  xgboost:
+    type: xgboost
+    path: data/models/xgboost.joblib
+  lightgbm:
+    type: lightgbm
+    path: data/models/lightgbm.joblib
+  random_forest:
+    type: random_forest
+    path: data/models/random_forest.joblib
+
 # ── Phase 2: Rule-based signal bot ────────────────────────────────────────────
 rule_bot:
   symbol: "EURUSD"

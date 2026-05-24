@@ -14,14 +14,14 @@ Last updated: 2026-05-24
 | 2 | Composable Indicator Library + Rule Engine | ✅ COMPLETE |
 | 3 | Feature Engineering Pipeline | ✅ COMPLETE |
 | 4 | XGBoost with Calibrated Probabilities | ✅ COMPLETE |
-| 5 | Pluggable Model Registry | ⬜ NOT STARTED |
+| 5 | Pluggable Model Registry | ✅ COMPLETE |
 | 6 | Signal Stacking & Meta-Learning | ⬜ NOT STARTED |
 | 7 | Robust Backtesting & Walk-Forward | ⬜ NOT STARTED |
 | 8 | Intelligent Risk Management | ⬜ NOT STARTED |
 | 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
 | 10 | Production Enterprise System | ⬜ NOT STARTED |
 
-**Next task:** Start Phase 5 — Pluggable Model Registry
+**Next task:** Start Phase 6 — Signal Stacking & Meta-Learning
 
 ---
 
@@ -75,6 +75,69 @@ Last updated: 2026-05-24
 | [src/trade_journal.py](src/trade_journal.py) | SQLite trade logger. `TradeJournal().record(trade_dict)` saves a completed trade. `get_trades()` returns DataFrame. DB at `data/trades.db`. |
 | [src/metrics.py](src/metrics.py) | Pure performance functions: `sharpe_ratio`, `sortino_ratio`, `max_drawdown`, `calmar_ratio`, `win_rate`, `profit_factor`, `expectancy`, `performance_report`. Works with Trade dataclasses OR dicts OR DataFrames. |
 | [src/random_bot.py](src/random_bot.py) | Random entry bot. `--backtest` mode (standalone, no MT5). Live mode extends BotBase. Entry probability configurable. |
+
+### Phase 5 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/model_registry.py](src/model_registry.py) | Singleton registry. `register(name, model)`, `get(name)`, `get_active()`, `set_active(name)`, `list_models()`. `from_config(config.yaml)` auto-loads all models listed under `models:` and sets active from `active_model:`. `_build_model(type_str)` factory creates any model by name. |
+| [src/models/lightgbm_model.py](src/models/lightgbm_model.py) | LightGBM 3-class classifier. Same interface as XGBoostModel. `CalibratedClassifierCV(isotonic)`. LightGBM handles -1/0/1 labels natively (no remapping needed). Output reordered to [P_buy, P_hold, P_sell]. |
+| [src/models/random_forest_model.py](src/models/random_forest_model.py) | Random Forest 3-class classifier. Same interface. `n_jobs=-1` for parallel tree building. Calibrated. |
+
+**`config.yaml` changes:**
+```yaml
+active_model: xgboost   # ← change this one line to swap models, no code changes
+
+models:
+  xgboost:
+    type: xgboost
+    path: data/models/xgboost.joblib
+  lightgbm:
+    type: lightgbm
+    path: data/models/lightgbm.joblib
+  random_forest:
+    type: random_forest
+    path: data/models/random_forest.joblib
+```
+
+**`scripts/walk_forward.py` updated:** Now accepts `--model xgboost|lightgbm|random_forest`. Reads from `config.yaml: active_model` when no flag given. Model type resolved by `_resolve_model_type()`.
+
+**Phase 5 verified results (walk-forward, threshold=0.40):** *(see Verified Backtest Results below)*
+
+**Key commands:**
+```bash
+python scripts/walk_forward.py --model xgboost        # XGBoost (default)
+python scripts/walk_forward.py --model lightgbm       # LightGBM
+python scripts/walk_forward.py --model random_forest  # Random Forest
+# OR: edit config.yaml active_model and run without --model flag
+```
+
+---
+
+### Pre-Phase 5 Housekeeping — Complete
+
+**New top-level docs:**
+
+| File | What it does |
+|------|-------------|
+| [RULES_OF_BUILDING_THIS_APP.MD](RULES_OF_BUILDING_THIS_APP.MD) | Mandatory reading for every developer/AI before writing code. Session start protocol, architecture rules, code quality rules, environment rules, session end protocol. |
+| [RANDOM_IDEAS.MD](RANDOM_IDEAS.MD) | Reference ideas doc. Already reviewed and incorporated — good ideas (folder structure, idempotent scripts, raw data immutability, split configs) are now in the architecture. |
+
+**`src/` restructure** — files moved into logical subfolders, old paths kept as compatibility shims:
+
+| New path | Old path (now a shim) | What it does |
+|----------|-----------------------|-------------|
+| [src/features/indicators.py](src/features/indicators.py) | [src/indicators.py](src/indicators.py) | Indicator library (real code now here) |
+| [src/features/feature_pipeline.py](src/features/feature_pipeline.py) | [src/feature_pipeline.py](src/feature_pipeline.py) | Feature pipeline (real code now here) |
+| [src/signals/rule_engine.py](src/signals/rule_engine.py) | [src/rule_engine.py](src/rule_engine.py) | Rule engine (real code now here) |
+| [src/core/types.py](src/core/types.py) | NEW | Shared `Bar`, `Signal` dataclasses |
+| [src/core/exceptions.py](src/core/exceptions.py) | NEW | `MT5BotError`, `ModelError`, `DataError`, `ConfigError`, `BrokerError` |
+| [src/core/constants.py](src/core/constants.py) | NEW | Pip sizes, label values, default risk params |
+| [src/data/schemas.py](src/data/schemas.py) | NEW | `validate_ohlcv()`, `normalize_columns()` |
+
+**Walk-forward re-verified after restructure:** Sharpe 1.34, +14.2% — identical to pre-restructure.
+
+---
 
 ### Phase 4 — Built
 
@@ -143,6 +206,25 @@ python scripts/walk_forward.py --threshold 0.40       # out-of-sample validation
 random_bot:        # Phase 1 — entry_prob, sl_pips, tp_pips, seed
 rule_bot:          # Phase 2 — threshold, fast_ma, slow_ma, rsi_period, weights
 ```
+
+---
+
+## Model Recommendations (for Phase 6 Ensemble)
+
+Documented 2026-05-24. Priority order for adding to the ensemble:
+
+| Priority | Model | Why | Phase |
+|----------|-------|-----|-------|
+| **1 — CatBoost** | CatBoost | Same boosting family as XGBoost/LightGBM but handles categorical features (day-of-week, session, market regime) natively. Often 5–10% better Sharpe than XGBoost on Forex. Easy to add — same `ModelInterface`. | Phase 6 |
+| **2 — LSTM** | 2-layer LSTM | Adds *sequence memory* — each bar knows about the bars before it. XGBoost/LightGBM treat each bar independently. Different error profile = valuable ensemble member. | Phase 6 |
+| **3 — TFT** | Temporal Fusion Transformer | Purpose-built for financial time series. Learns long-range dependencies + variable importance. Only worth it with 200k+ rows or multi-symbol data. | Phase 9+ |
+
+**Why Random Forest underperformed (Sharpe 0.24):**
+Bagging models (RF) train trees independently on random subsets — they don't learn from each other's mistakes. Boosting models (XGBoost, LightGBM, CatBoost) do. For structured financial data, boosting consistently wins. RF is still useful in the ensemble because its *errors are different* from XGBoost — the meta-learner exploits that.
+
+**Transformer note:** Can fit, but our 50k-bar dataset is too small. Standard Transformers need hundreds of thousands of rows. The Temporal Fusion Transformer (TFT, `pytorch-forecasting`) is the right architecture when we scale to multi-symbol or longer history.
+
+**Decision logged:** CatBoost will be added in Phase 6 alongside LightGBM and LSTM in the ensemble layer.
 
 ---
 

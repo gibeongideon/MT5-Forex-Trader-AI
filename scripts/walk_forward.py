@@ -1,5 +1,5 @@
 """
-Walk-Forward Validation — Phase 4.
+Walk-Forward Validation — Phase 4/5.
 
 Simulates realistic model training and evaluation over time:
   1. Train on an initial window of data
@@ -14,9 +14,11 @@ during training. The final Sharpe ratio is from purely out-of-sample trades.
 Usage:
     conda activate envmt5
     python scripts/walk_forward.py
-    python scripts/walk_forward.py --train-days 180 --test-days 30 --threshold 0.58
+    python scripts/walk_forward.py --model lightgbm --threshold 0.40
+    python scripts/walk_forward.py --model random_forest --train-days 180
 
 Arguments:
+    --model       Model to use: xgboost | lightgbm | random_forest (default: from config.yaml)
     --features    Parquet feature matrix (from build_features.py)
     --labels      Parquet label file
     --train-days  Initial training window in calendar days (default 180)
@@ -39,9 +41,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 import pandas as pd
+import yaml
 
 from src.metrics import performance_report, sharpe_ratio, max_drawdown
-from src.models.xgboost_model import XGBoostModel
+from src.model_registry import _build_model
+
+
+def _resolve_model_type(model_arg: Optional[str], config_path: str = "config.yaml") -> str:
+    """Return the model type string: CLI arg takes priority over config.yaml."""
+    if model_arg:
+        return model_arg
+    try:
+        with open(config_path) as f:
+            cfg = yaml.safe_load(f)
+        return cfg.get("active_model", "xgboost")
+    except FileNotFoundError:
+        return "xgboost"
 
 
 @dataclass
@@ -69,6 +84,7 @@ def run_walk_forward(
     pip_size:       float = 0.0001,
     initial_balance: float = 10_000.0,
     risk_pct:       float = 0.01,
+    model_type:     str   = "xgboost",
 ) -> tuple[list[dict], pd.Series, list[FoldResult]]:
 
     sl_pts = sl_pips * pip_size
@@ -99,11 +115,8 @@ def run_walk_forward(
             train_end = test_end
             continue
 
-        # Train a fresh model on expanding window
-        model = XGBoostModel(
-            n_estimators=300, max_depth=4,
-            learning_rate=0.05, calibration_cv=3,
-        )
+        # Train a fresh model on expanding window (type from --model / config.yaml)
+        model = _build_model(model_type)
         model.train(X_train, y_train)
 
         # Predict on test window
@@ -247,6 +260,8 @@ def _close_trade(t, price, ts, pips, reason):
 
 def main():
     p = argparse.ArgumentParser(description="Walk-Forward Validation")
+    p.add_argument("--model",       default=None,
+                   help="Model type: xgboost | lightgbm | random_forest (default: from config.yaml)")
     p.add_argument("--features",    default="data/features/EURUSD_M15_features.parquet")
     p.add_argument("--labels",      default="data/features/EURUSD_M15_labels.parquet")
     p.add_argument("--prices",      default="data/EURUSD_M15.csv",
@@ -261,7 +276,10 @@ def main():
     p.add_argument("--pip-size",    type=float, default=0.0001)
     args = p.parse_args()
 
+    model_type = _resolve_model_type(args.model)
+
     # Load features
+    print(f"Model: {model_type}  (change via --model or config.yaml active_model)")
     print("Loading features and prices...")
     X      = pd.read_parquet(args.features)
     y      = pd.read_parquet(args.labels)["label"]
@@ -283,6 +301,7 @@ def main():
         pip_size=args.pip_size,
         initial_balance=args.balance,
         risk_pct=args.risk,
+        model_type=model_type,
     )
 
     # Per-fold summary
@@ -299,9 +318,10 @@ def main():
     if trades and len(equity) > 0:
         performance_report(
             trades, equity, args.balance,
-            title="WALK-FORWARD OUT-OF-SAMPLE RESULTS (XGBoost)",
+            title=f"WALK-FORWARD OUT-OF-SAMPLE RESULTS ({model_type.upper()})",
             extra_params={
-                "Folds":      len(folds),
+                "Model":        model_type,
+                "Folds":        len(folds),
                 "Train window": f"{args.train_days} days (expanding)",
                 "Test window":  f"{args.test_days} days per fold",
                 "Threshold":    f"{args.threshold:.0%}",
