@@ -115,7 +115,8 @@ def run_walk_forward(
             train_end = test_end
             continue
 
-        # Train a fresh model on expanding window (type from --model / config.yaml)
+        # Train a fresh model on expanding window (type from --model / config.yaml).
+        # Ensemble is trained once via train_ensemble.py; here we retrain per fold.
         model = _build_model(model_type)
         model.train(X_train, y_train)
 

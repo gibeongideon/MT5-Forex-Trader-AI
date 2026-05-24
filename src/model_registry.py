@@ -201,5 +201,19 @@ def _build_model(model_type: str) -> ModelInterface:
     if t in ("random_forest", "rf", "randomforest"):
         from src.models.random_forest_model import RandomForestModel
         return RandomForestModel()
-    raise ValueError(f"Unknown model type: '{model_type}'. "
-                     f"Choose from: xgboost, lightgbm, random_forest")
+    if t in ("catboost", "cat"):
+        from src.models.catboost_model import CatBoostModel
+        return CatBoostModel()
+    if t in ("lstm",):
+        from src.models.lstm_model import LSTMModel
+        return LSTMModel()
+    if t in ("ensemble",):
+        from src.ensemble import Ensemble
+        from src.models.xgboost_model import XGBoostModel
+        from src.models.lightgbm_model import LightGBMModel
+        from src.models.catboost_model import CatBoostModel
+        return Ensemble(base_models=[XGBoostModel(), LightGBMModel(), CatBoostModel()])
+    raise ValueError(
+        f"Unknown model type: '{model_type}'. "
+        f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble"
+    )

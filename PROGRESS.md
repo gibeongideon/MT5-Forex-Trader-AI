@@ -232,13 +232,20 @@ Bagging models (RF) train trees independently on random subsets — they don't l
 
 Run on `data/EURUSD_M15.csv` (50,000 bars, EURUSD M15, 2024-05-13 → 2026-05-18):
 
-| Bot | Command | Sharpe | Win Rate | Return | Trades |
-|-----|---------|--------|----------|--------|--------|
-| Random baseline | `python src/random_bot.py --backtest --seed 42` | **-0.17** | 33.3% | -2.5% | 354 |
-| Rule-based | `python src/rule_bot.py --backtest` | **-0.45** | 33.0% | -9.7% | 430 |
-| MA crossover (original) | `python src/backtest.py --fast 9 --slow 21` | (run to check) | — | — | — |
+| Bot | Command | Sharpe | Win Rate | Return | Max DD | Trades |
+|-----|---------|--------|----------|--------|--------|--------|
+| Random baseline | `python src/random_bot.py --backtest --seed 42` | **-0.17** | 33.3% | -2.5% | 21.6% | 354 |
+| Rule-based | `python src/rule_bot.py --backtest` | **-0.45** | 33.0% | -9.7% | — | 430 |
+| **XGBoost** (walk-forward) | `python scripts/walk_forward.py --model xgboost --threshold 0.40` | **1.34** | 36.4% | **+14.2%** | 10.5% | 176 |
+| **LightGBM** (walk-forward) | `python scripts/walk_forward.py --model lightgbm --threshold 0.40` | **0.72** | 35.4% | +3.8% | 6.8% | 99 |
+| **Random Forest** (walk-forward) | `python scripts/walk_forward.py --model random_forest --threshold 0.40` | **0.24** | 34.4% | -0.1% | 14.8% | 93 |
 
-**Interpretation:** Random baseline is correctly negative (proves no edge). Rule-based is also negative because the rules use unoptimized weights on a fixed SL/TP in a mixed trending/ranging market. This is expected at Phase 2 — Phase 4 (XGBoost) will learn optimal feature weights from data.
+**Phase 5 interpretation:**
+- XGBoost is the strongest standalone model (Sharpe 1.34)
+- LightGBM is profitable but conservative with default params (Sharpe 0.72, fewest trades)
+- Random Forest barely breaks even — bagging loses to boosting on tabular financial data
+- All three have *different error profiles* — the Phase 6 meta-learner will exploit this
+- CatBoost (Phase 6 priority) is expected to outperform all three individually
 
 ---
 

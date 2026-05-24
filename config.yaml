@@ -64,6 +64,26 @@ models:
   random_forest:
     type: random_forest
     path: data/models/random_forest.joblib
+  catboost:
+    type: catboost
+    path: data/models/catboost.joblib
+  lstm:
+    type: lstm
+    path: data/models/lstm.pt
+  ensemble:
+    type: ensemble
+    path: data/models/ensemble.joblib
+
+# ── Phase 6: Ensemble configuration ───────────────────────────────────────────
+ensemble:
+  base_models:
+    - xgboost
+    - lightgbm
+    - catboost
+    - random_forest
+  meta_model: logistic     # logistic | lightgbm
+  n_folds: 5               # CV folds for out-of-fold stacking
+  use_original_features: false
 
 # ── Phase 2: Rule-based signal bot ────────────────────────────────────────────
 rule_bot:

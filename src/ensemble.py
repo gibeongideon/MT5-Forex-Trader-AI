@@ -1,0 +1,279 @@
+"""
+Signal Stacking & Meta-Learning — Phase 6.
+
+Combines outputs of multiple ModelInterface instances into a single
+[P_buy, P_hold, P_sell] probability via a trained meta-learner.
+
+Architecture:
+    Layer 0:  Raw features → [XGBoost, LightGBM, CatBoost, RF, LSTM, RuleEngine]
+                              each outputs [P_buy, P_hold, P_sell]
+    Layer 1:  Stacked Layer-0 probs (+ optional rule score) → MetaLearner
+                              outputs final [P_buy, P_hold, P_sell]
+
+Leakage prevention:
+    The meta-learner is trained ONLY on out-of-fold predictions from the base
+    models. We use k-fold cross-validation on the training set so the meta-
+    learner never sees a prediction made on data the base model was trained on.
+    This is the standard "stacking" protocol.
+
+Usage:
+    from src.ensemble import Ensemble
+    from src.models.xgboost_model import XGBoostModel
+    from src.models.lightgbm_model import LightGBMModel
+    from src.models.catboost_model import CatBoostModel
+
+    ens = Ensemble(
+        base_models=[XGBoostModel(), LightGBMModel(), CatBoostModel()],
+        meta_model="logistic",   # or "lightgbm"
+        n_folds=5,
+    )
+    ens.train(X_train, y_train)
+    proba = ens.predict_proba(X_test)   # → [P_buy, P_hold, P_sell]
+    ens.save("data/models/ensemble.joblib")
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import List, Optional
+
+import joblib
+import numpy as np
+import pandas as pd
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
+
+from src.model_interface import ModelInterface
+
+
+class Ensemble(ModelInterface):
+    """
+    Two-layer stacking ensemble.
+
+    Parameters
+    ----------
+    base_models  : list of trained-or-untrained ModelInterface instances
+    meta_model   : "logistic" | "lightgbm" — the Layer-1 combiner
+    n_folds      : CV folds for generating out-of-fold base predictions
+    use_original : if True, also pass the original features to the meta-learner
+                   alongside the stacked probabilities (can help or hurt)
+    """
+
+    def __init__(
+        self,
+        base_models: List[ModelInterface],
+        meta_model:  str = "logistic",
+        n_folds:     int = 5,
+        use_original: bool = False,
+    ):
+        if not base_models:
+            raise ValueError("Ensemble needs at least one base model.")
+        self.base_models   = base_models
+        self.meta_model_type = meta_model
+        self.n_folds       = n_folds
+        self.use_original  = use_original
+
+        self._meta: Optional[object] = None
+        self._feature_names: list[str] = []
+        self._classes: np.ndarray | None = None
+        self._trained_on: str = ""
+
+    # ── ModelInterface ────────────────────────────────────────────────────────
+
+    def train(self, X: pd.DataFrame, y: pd.Series) -> "Ensemble":
+        """
+        1. Generate out-of-fold Layer-0 predictions via StratifiedKFold.
+        2. Train meta-learner on stacked OOF predictions.
+        3. Retrain all base models on the full training set.
+        """
+        self._feature_names = list(X.columns)
+        self._trained_on    = f"{X.index[0].date()} → {X.index[-1].date()}"
+        self._classes       = np.sort(np.unique(y.values))
+
+        n_models  = len(self.base_models)
+        n_rows    = len(X)
+        # Each base model contributes 3 probability columns
+        oof_stack = np.zeros((n_rows, n_models * 3), dtype=np.float32)
+
+        skf = StratifiedKFold(n_splits=self.n_folds, shuffle=False)
+        X_np = X.values
+        y_np = y.values
+
+        print(f"Ensemble: generating out-of-fold predictions "
+              f"({self.n_folds} folds × {n_models} models)...")
+
+        for fold_i, (train_idx, val_idx) in enumerate(skf.split(X_np, y_np)):
+            X_tr = X.iloc[train_idx]
+            y_tr = y.iloc[train_idx]
+            X_val = X.iloc[val_idx]
+
+            for m_i, model in enumerate(self.base_models):
+                # Clone-like: build a fresh instance of the same type+params
+                fresh = model.__class__(**_get_init_params(model))
+                fresh.train(X_tr, y_tr)
+                proba = fresh.predict_proba(X_val)        # (n_val, 3)
+                if proba.ndim == 1:
+                    proba = proba.reshape(1, -1)
+                oof_stack[val_idx, m_i*3 : m_i*3+3] = proba
+
+            print(f"  fold {fold_i+1}/{self.n_folds} done")
+
+        # Build meta-feature matrix
+        meta_X = self._build_meta_features(oof_stack, X if self.use_original else None)
+
+        # Train meta-learner
+        print("Training meta-learner...")
+        self._meta = _build_meta_model(self.meta_model_type)
+        self._meta.fit(meta_X, y_np)
+
+        # Retrain all base models on the full dataset
+        print("Retraining base models on full training set...")
+        for model in self.base_models:
+            model.train(X, y)
+
+        print(f"Ensemble training complete. "
+              f"Meta features: {meta_X.shape[1]}  "
+              f"Meta model: {self.meta_model_type}")
+        return self
+
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        """
+        Returns shape (n_rows, 3) — columns: [P_buy, P_hold, P_sell].
+        For single-row input, returns shape (3,).
+        """
+        if self._meta is None:
+            raise RuntimeError("Ensemble not trained. Call train() first.")
+
+        n_models  = len(self.base_models)
+        n_rows    = len(X)
+        stack     = np.zeros((n_rows, n_models * 3), dtype=np.float32)
+
+        for m_i, model in enumerate(self.base_models):
+            proba = model.predict_proba(X)
+            if proba.ndim == 1:
+                proba = proba.reshape(1, -1)
+            stack[:, m_i*3 : m_i*3+3] = proba
+
+        meta_X = self._build_meta_features(stack, X if self.use_original else None)
+        raw    = self._meta.predict_proba(meta_X)   # sklearn order: sorted classes
+
+        # Reorder to [P_buy, P_hold, P_sell]
+        class_list = list(self._classes)
+        idx_buy  = class_list.index(1)  if 1  in class_list else None
+        idx_hold = class_list.index(0)  if 0  in class_list else None
+        idx_sell = class_list.index(-1) if -1 in class_list else None
+
+        ordered = np.zeros((len(raw), 3))
+        if idx_buy  is not None: ordered[:, 0] = raw[:, idx_buy]
+        if idx_hold is not None: ordered[:, 1] = raw[:, idx_hold]
+        if idx_sell is not None: ordered[:, 2] = raw[:, idx_sell]
+
+        return ordered[0] if n_rows == 1 else ordered
+
+    def save(self, path: str | Path = "data/models/ensemble.joblib") -> None:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "base_models":     self.base_models,
+            "meta":            self._meta,
+            "meta_model_type": self.meta_model_type,
+            "feature_names":   self._feature_names,
+            "classes":         self._classes,
+            "trained_on":      self._trained_on,
+            "n_folds":         self.n_folds,
+            "use_original":    self.use_original,
+        }
+        joblib.dump(payload, path)
+        print(f"Ensemble saved → {path}")
+
+    def load(self, path: str | Path = "data/models/ensemble.joblib") -> "Ensemble":
+        payload = joblib.load(path)
+        self.base_models      = payload["base_models"]
+        self._meta            = payload["meta"]
+        self.meta_model_type  = payload["meta_model_type"]
+        self._feature_names   = payload["feature_names"]
+        self._classes         = payload["classes"]
+        self._trained_on      = payload.get("trained_on", "")
+        self.n_folds          = payload.get("n_folds", 5)
+        self.use_original     = payload.get("use_original", False)
+        print(f"Ensemble loaded ← {path}")
+        return self
+
+    def metadata(self) -> dict:
+        base_names = [type(m).__name__ for m in self.base_models]
+        return {
+            "name":       "Ensemble",
+            "version":    "1.0",
+            "trained_on": self._trained_on,
+            "features":   self._feature_names,
+            "n_classes":  3,
+            "params": {
+                "base_models":     base_names,
+                "meta_model":      self.meta_model_type,
+                "n_folds":         self.n_folds,
+                "use_original":    self.use_original,
+            },
+        }
+
+    # ── Inspection ────────────────────────────────────────────────────────────
+
+    def model_weights(self) -> pd.DataFrame:
+        """
+        For logistic-regression meta-learner: show the weight each base model
+        gets for each output class. Helps understand which model the ensemble
+        trusts most.
+        """
+        if self._meta is None:
+            raise RuntimeError("Ensemble not trained.")
+        if not hasattr(self._meta, "coef_"):
+            raise RuntimeError("model_weights() only supported for logistic meta-learner.")
+
+        n_models = len(self.base_models)
+        names    = [type(m).__name__ for m in self.base_models]
+        cols     = []
+        for name in names:
+            cols += [f"{name}_P_buy", f"{name}_P_hold", f"{name}_P_sell"]
+
+        classes = [f"class_{c}" for c in self._classes]
+        df = pd.DataFrame(self._meta.coef_, index=classes, columns=cols[:self._meta.coef_.shape[1]])
+        return df
+
+    # ── Private helpers ───────────────────────────────────────────────────────
+
+    def _build_meta_features(
+        self,
+        stack: np.ndarray,
+        X_orig: Optional[pd.DataFrame] = None,
+    ) -> np.ndarray:
+        if X_orig is not None:
+            return np.hstack([stack, X_orig.values])
+        return stack
+
+
+# ── Module-level helpers ──────────────────────────────────────────────────────
+
+def _build_meta_model(model_type: str):
+    t = model_type.lower()
+    if t == "logistic":
+        return LogisticRegression(
+            max_iter=1000, C=1.0, multi_class="multinomial", solver="lbfgs"
+        )
+    if t in ("lightgbm", "lgbm"):
+        from lightgbm import LGBMClassifier
+        return LGBMClassifier(n_estimators=100, learning_rate=0.05, verbose=-1)
+    raise ValueError(f"Unknown meta model type: '{model_type}'. Choose: logistic | lightgbm")
+
+
+def _get_init_params(model: ModelInterface) -> dict:
+    """Extract constructor kwargs from a model instance for cloning."""
+    import inspect
+    sig    = inspect.signature(model.__class__.__init__)
+    params = {}
+    for name, param in sig.parameters.items():
+        if name == "self":
+            continue
+        if hasattr(model, name):
+            params[name] = getattr(model, name)
+        elif param.default is not inspect.Parameter.empty:
+            params[name] = param.default
+    return params
