@@ -40,3 +40,32 @@ ai_bot:
   tp_pips: 60           # take profit in pips (2:1 RR)
   candles: 50           # how many candles to fetch for analysis
   min_confidence: "medium"  # "high" = only high-confidence signals; "medium" = medium or high
+
+# ── Phase 1: Random baseline ───────────────────────────────────────────────────
+random_bot:
+  symbol: "EURUSD"
+  timeframe: "M15"
+  entry_prob: 0.02      # probability of entering a trade on each tick (2%)
+  sl_pips: 30
+  tp_pips: 60
+  seed: null            # set an integer for reproducible live-mode runs
+
+# ── Phase 2: Rule-based signal bot ────────────────────────────────────────────
+rule_bot:
+  symbol: "EURUSD"
+  timeframe: "M15"
+  sl_pips: 30
+  tp_pips: 60
+  candles: 100          # bars fetched for indicator computation
+  threshold: 0.55       # minimum P_buy or P_sell to open a trade
+  # Indicator periods
+  fast_ma: 9
+  slow_ma: 21
+  rsi_period: 14
+  bb_period: 20
+  atr_period: 14
+  # Rule weights (relative importance)
+  weight_ma_cross: 2.0
+  weight_rsi: 1.5
+  weight_bb: 1.0
+  weight_macd: 1.0
