@@ -12,8 +12,8 @@ Last updated: 2026-05-24
 |-------|------|--------|
 | 1 | Random Baseline + Logging Infrastructure | ✅ COMPLETE |
 | 2 | Composable Indicator Library + Rule Engine | ✅ COMPLETE |
-| 3 | Feature Engineering Pipeline | ⬜ NOT STARTED |
-| 4 | XGBoost with Calibrated Probabilities | ⬜ NOT STARTED |
+| 3 | Feature Engineering Pipeline | ✅ COMPLETE |
+| 4 | XGBoost with Calibrated Probabilities | ✅ COMPLETE |
 | 5 | Pluggable Model Registry | ⬜ NOT STARTED |
 | 6 | Signal Stacking & Meta-Learning | ⬜ NOT STARTED |
 | 7 | Robust Backtesting & Walk-Forward | ⬜ NOT STARTED |
@@ -21,7 +21,7 @@ Last updated: 2026-05-24
 | 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
 | 10 | Production Enterprise System | ⬜ NOT STARTED |
 
-**Next task:** Start Phase 3 — `src/feature_pipeline.py` and `scripts/build_features.py`
+**Next task:** Start Phase 5 — Pluggable Model Registry
 
 ---
 
@@ -75,6 +75,59 @@ Last updated: 2026-05-24
 | [src/trade_journal.py](src/trade_journal.py) | SQLite trade logger. `TradeJournal().record(trade_dict)` saves a completed trade. `get_trades()` returns DataFrame. DB at `data/trades.db`. |
 | [src/metrics.py](src/metrics.py) | Pure performance functions: `sharpe_ratio`, `sortino_ratio`, `max_drawdown`, `calmar_ratio`, `win_rate`, `profit_factor`, `expectancy`, `performance_report`. Works with Trade dataclasses OR dicts OR DataFrames. |
 | [src/random_bot.py](src/random_bot.py) | Random entry bot. `--backtest` mode (standalone, no MT5). Live mode extends BotBase. Entry probability configurable. |
+
+### Phase 4 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/model_interface.py](src/model_interface.py) | Abstract base class every model must implement. Contract: `predict_proba(X)→[P_buy,P_hold,P_sell]`, `train()`, `save()`, `load()`, `metadata()`. Also provides `.signal()` and `.confidence()` helpers. |
+| [src/models/__init__.py](src/models/__init__.py) | Package init for models directory. |
+| [src/models/xgboost_model.py](src/models/xgboost_model.py) | XGBoost 3-class classifier wrapped in `CalibratedClassifierCV(isotonic)`. Internally remaps labels -1/0/1 → 0/1/2 for XGBoost, then reorders output back to `[P_buy, P_hold, P_sell]`. Save/load via joblib. |
+| [scripts/train_model.py](scripts/train_model.py) | CLI: loads Parquet features, trains XGBoost, prints classification report + log-loss + confidence distribution, saves model to `data/models/xgboost.joblib`. |
+| [scripts/walk_forward.py](scripts/walk_forward.py) | Expanding-window walk-forward validator. Retrains XGBoost at each fold boundary, evaluates out-of-sample, aggregates equity curve across all folds. |
+
+**Phase 4 verified results (EURUSD M15, walk-forward, threshold=0.40):**
+
+| Metric | Value | vs Random Baseline |
+|--------|-------|--------------------|
+| Sharpe ratio | **1.34** | Random was -0.17 |
+| Sortino ratio | 1.83 | — |
+| Total return | **+14.2%** | Random was -2.5% |
+| Max drawdown | 10.5% | Random was 21.6% |
+| Profit factor | 1.12 | Random was 0.99 |
+| Trades | 176 across 19 folds | — |
+| Win rate | 36.4% | — |
+
+- Log-loss: 1.078 (random baseline = 1.099) — small but genuine edge
+- Confidence is clustered below 0.45 (normal for calibrated Forex model); threshold 0.40 is appropriate
+
+**Key commands:**
+```bash
+python scripts/train_model.py --no-importance         # train and save model
+python scripts/walk_forward.py --threshold 0.40       # out-of-sample validation
+```
+
+---
+
+### Phase 3 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/feature_pipeline.py](src/feature_pipeline.py) | `FeaturePipeline` class. Computes 31 features (SMA, EMA, RSI, MACD, BB, ATR, Stochastic, ADX, lag returns, rolling std, MA spreads). Shifts all indicators by 1 bar to prevent lookahead. Fits `StandardScaler` on train only. Generates labels: y=1 (buy) if next-4-bar return > 0.03%, y=-1 (sell), y=0 (hold). Saves/loads scaler via joblib. |
+| [scripts/build_features.py](scripts/build_features.py) | CLI to build and save the full feature matrix. Outputs `data/features/EURUSD_M15_features.parquet`, `_labels.parquet`, `_split.parquet`, `data/models/scaler.joblib`. Includes `--validate` flag for lookahead check. |
+
+**Phase 3 verified results (EURUSD M15, 50k bars):**
+- Feature matrix: 49,892 rows × 31 features
+- Label split: SELL 29.7% / HOLD 40.0% / BUY 30.3%
+- Lookahead validation: **PASSED** (31 features, 0 violations)
+- Train/test split: 80/20 (2024-05-13→2025-12-19 train, 2025-12-19→2026-05-18 test)
+
+**Environment note (important for new sessions):**
+- After installing scikit-learn/joblib/pyarrow, pypi numpy 2.2.6 and pandas 2.3.3 conflicted with conda numpy 1.26.4
+- Fixed by: `pip install "numpy==1.26.4" "pandas==2.2.3" --force-reinstall` using the env's pip directly
+- Correct pinned versions: numpy=1.26.4, pandas=2.2.3, scipy=1.11.4, scikit-learn=1.1.1
+
+---
 
 ### Phase 2 — Built
 
