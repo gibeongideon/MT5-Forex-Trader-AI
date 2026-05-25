@@ -212,7 +212,18 @@ def _build_model(model_type: str) -> ModelInterface:
         from src.models.xgboost_model import XGBoostModel
         from src.models.lightgbm_model import LightGBMModel
         from src.models.catboost_model import CatBoostModel
-        return Ensemble(base_models=[XGBoostModel(), LightGBMModel(), CatBoostModel()])
+        from src.models.random_forest_model import RandomForestModel
+        try:
+            with open("config.yaml") as _f:
+                import yaml as _yaml
+                _cfg = _yaml.safe_load(_f).get("ensemble", {})
+        except Exception:
+            _cfg = {}
+        return Ensemble(
+            base_models=[XGBoostModel(), LightGBMModel(), CatBoostModel(), RandomForestModel()],
+            meta_model=_cfg.get("meta_model", "lightgbm"),
+            n_folds=_cfg.get("n_folds", 5),
+        )
     raise ValueError(
         f"Unknown model type: '{model_type}'. "
         f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble"

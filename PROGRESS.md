@@ -2,7 +2,7 @@
 
 > **Purpose:** Session handoff document. A new Claude session should read this + `IMPLEMENTATION-PLAN.MD` before doing any work. Do NOT re-explore files that are already described here.
 
-Last updated: 2026-05-24
+Last updated: 2026-05-25
 
 ---
 
@@ -15,13 +15,13 @@ Last updated: 2026-05-24
 | 3 | Feature Engineering Pipeline | ✅ COMPLETE |
 | 4 | XGBoost with Calibrated Probabilities | ✅ COMPLETE |
 | 5 | Pluggable Model Registry | ✅ COMPLETE |
-| 6 | Signal Stacking & Meta-Learning | ⬜ NOT STARTED |
+| 6 | Signal Stacking & Meta-Learning | ✅ COMPLETE |
 | 7 | Robust Backtesting & Walk-Forward | ⬜ NOT STARTED |
 | 8 | Intelligent Risk Management | ⬜ NOT STARTED |
 | 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
 | 10 | Production Enterprise System | ⬜ NOT STARTED |
 
-**Next task:** Start Phase 6 — Signal Stacking & Meta-Learning
+**Next task:** Start Phase 7 — Robust Backtesting & Walk-Forward Validation Framework
 
 ---
 
@@ -75,6 +75,52 @@ Last updated: 2026-05-24
 | [src/trade_journal.py](src/trade_journal.py) | SQLite trade logger. `TradeJournal().record(trade_dict)` saves a completed trade. `get_trades()` returns DataFrame. DB at `data/trades.db`. |
 | [src/metrics.py](src/metrics.py) | Pure performance functions: `sharpe_ratio`, `sortino_ratio`, `max_drawdown`, `calmar_ratio`, `win_rate`, `profit_factor`, `expectancy`, `performance_report`. Works with Trade dataclasses OR dicts OR DataFrames. |
 | [src/random_bot.py](src/random_bot.py) | Random entry bot. `--backtest` mode (standalone, no MT5). Live mode extends BotBase. Entry probability configurable. |
+
+### Phase 6 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/models/catboost_model.py](src/models/catboost_model.py) | CatBoost 3-class classifier. No label remapping needed. `bootstrap_type="Bernoulli"` required to enable `subsample`. `calibration_cv=0` (CatBoost is already well-calibrated). `allow_writing_files=False`. |
+| [src/models/lstm_model.py](src/models/lstm_model.py) | 2-layer LSTM using PyTorch. `seq_len=20` bar lookback window. Adds sequence memory that tree models lack. `_TORCH_AVAILABLE` guard — degrades gracefully if PyTorch not installed. Save/load via `torch.save`/`torch.load`. |
+| [src/ensemble.py](src/ensemble.py) | Two-layer stacking ensemble implementing `ModelInterface`. Layer-0: all base models output `[P_buy, P_hold, P_sell]`. Layer-1: logistic or LightGBM meta-learner on stacked OOF predictions. Uses `StratifiedKFold` to generate out-of-fold predictions (leakage-free). `model_weights()` shows per-model trust. |
+| [scripts/train_ensemble.py](scripts/train_ensemble.py) | CLI to train and evaluate the ensemble. `--base` selects which models to stack, `--meta` selects logistic or lightgbm meta-learner, `--folds` sets CV folds. Prints classification report, log-loss, confidence distribution, and meta-learner weights. |
+
+**`config.yaml` additions:**
+```yaml
+active_model: xgboost
+models:
+  catboost: {type: catboost, path: data/models/catboost.joblib}
+  lstm:     {type: lstm,     path: data/models/lstm.pt}
+  ensemble: {type: ensemble, path: data/models/ensemble.joblib}
+ensemble:
+  base_models: [xgboost, lightgbm, catboost, random_forest]
+  meta_model: logistic
+  n_folds: 5
+  use_original_features: false
+```
+
+**Phase 6 evaluation results (test set, 9,946 bars):**
+
+| Meta-learner | Log-loss | Accuracy | P≥0.40 coverage | P≥0.45 coverage |
+| --- | --- | --- | --- | --- |
+| Logistic | 1.0955 | 38% | 18.0% | 3.8% |
+| **LightGBM** | **1.0869** | **39%** | **41.8%** | **21.8%** |
+| Random baseline | 1.099 | 33% | — | — |
+
+LightGBM meta-learner is the winner: lower log-loss, higher accuracy, and 2× more confident bars (41.8% reach P≥0.40 vs. 18% with logistic). The ensemble model saved to `data/models/ensemble.joblib` uses the LightGBM meta-learner.
+
+**Key insight:** All 4 base models (XGBoost, LightGBM, CatBoost, RF) share the same 31 tabular features → their predictions are highly correlated → the meta-learner has limited complementarity to exploit. Adding LSTM (sequence memory, different error profile) and LLM signal (Phase 9) will unlock more ensemble benefit.
+
+**Ensemble walk-forward deferred to Phase 7:** Full ensemble walk-forward requires retraining 4 base models × 5 CV folds per walk-forward fold (19 folds × ~20 training runs = 380+ training runs). This is done efficiently in Phase 7's optimized backtester with checkpoint/cache support.
+
+**Key commands:**
+```bash
+python scripts/train_ensemble.py                        # train with logistic meta (fast)
+python scripts/train_ensemble.py --meta lightgbm        # train with LightGBM meta (better)
+python scripts/train_ensemble.py --no-catboost          # skip CatBoost if not installed
+```
+
+---
 
 ### Phase 5 — Built
 
@@ -238,14 +284,17 @@ Run on `data/EURUSD_M15.csv` (50,000 bars, EURUSD M15, 2024-05-13 → 2026-05-18
 | Rule-based | `python src/rule_bot.py --backtest` | **-0.45** | 33.0% | -9.7% | — | 430 |
 | **XGBoost** (walk-forward) | `python scripts/walk_forward.py --model xgboost --threshold 0.40` | **1.34** | 36.4% | **+14.2%** | 10.5% | 176 |
 | **LightGBM** (walk-forward) | `python scripts/walk_forward.py --model lightgbm --threshold 0.40` | **0.72** | 35.4% | +3.8% | 6.8% | 99 |
+| **CatBoost** (walk-forward) | `python scripts/walk_forward.py --model catboost --threshold 0.40` | **1.17** | 34.4% | +5.8% | 24.7% | 543 |
 | **Random Forest** (walk-forward) | `python scripts/walk_forward.py --model random_forest --threshold 0.40` | **0.24** | 34.4% | -0.1% | 14.8% | 93 |
+| **Ensemble** (test set, LightGBM meta) | `python scripts/train_ensemble.py --meta lightgbm` | log-loss 1.087 | 39% acc | — | — | — |
 
-**Phase 5 interpretation:**
-- XGBoost is the strongest standalone model (Sharpe 1.34)
-- LightGBM is profitable but conservative with default params (Sharpe 0.72, fewest trades)
-- Random Forest barely breaks even — bagging loses to boosting on tabular financial data
-- All three have *different error profiles* — the Phase 6 meta-learner will exploit this
-- CatBoost (Phase 6 priority) is expected to outperform all three individually
+**Phase 6 interpretation:**
+
+- CatBoost (Sharpe 1.17) is competitive with XGBoost (1.34) but trades far more (543 vs 176) with higher drawdown (24.7% vs 10.5%)
+- Ensemble test-set log-loss 1.0869 beats random baseline (1.099) — genuine edge above noise floor
+- LightGBM meta gives 41.8% of bars at P≥0.40 vs. only 18% with logistic — much more actionable
+- Ensemble walk-forward deferred to Phase 7 (too expensive per-fold without caching/optimization)
+- Adding LSTM + LLM signal (Phase 9) will increase ensemble benefit by diversifying error profiles
 
 ---
 

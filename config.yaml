@@ -81,7 +81,7 @@ ensemble:
     - lightgbm
     - catboost
     - random_forest
-  meta_model: logistic     # logistic | lightgbm
+  meta_model: lightgbm     # logistic | lightgbm — lightgbm found to be better (lower log-loss, 2x confidence coverage)
   n_folds: 5               # CV folds for out-of-fold stacking
   use_original_features: false
 

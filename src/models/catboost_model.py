@@ -78,15 +78,16 @@ class CatBoostModel(ModelInterface):
         self._classes       = np.sort(np.unique(y.values))
 
         base = CatBoostClassifier(
-            iterations    = self.n_estimators,
-            depth         = self.max_depth,
-            learning_rate = self.learning_rate,
-            l2_leaf_reg   = self.l2_leaf_reg,
-            subsample     = self.subsample,
-            random_seed   = self.random_state,
-            loss_function = "MultiClass",
-            eval_metric   = "Accuracy",
-            verbose       = False,
+            iterations      = self.n_estimators,
+            depth           = self.max_depth,
+            learning_rate   = self.learning_rate,
+            l2_leaf_reg     = self.l2_leaf_reg,
+            subsample       = self.subsample,
+            bootstrap_type  = "Bernoulli",   # required to enable subsample < 1.0
+            random_seed     = self.random_state,
+            loss_function   = "MultiClass",
+            eval_metric     = "Accuracy",
+            verbose         = False,
             allow_writing_files = False,
         )
 

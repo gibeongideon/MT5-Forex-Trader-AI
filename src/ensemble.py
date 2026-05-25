@@ -66,9 +66,7 @@ class Ensemble(ModelInterface):
         n_folds:     int = 5,
         use_original: bool = False,
     ):
-        if not base_models:
-            raise ValueError("Ensemble needs at least one base model.")
-        self.base_models   = base_models
+        self.base_models   = base_models  # may be empty when loading from file
         self.meta_model_type = meta_model
         self.n_folds       = n_folds
         self.use_original  = use_original
@@ -86,6 +84,8 @@ class Ensemble(ModelInterface):
         2. Train meta-learner on stacked OOF predictions.
         3. Retrain all base models on the full training set.
         """
+        if not self.base_models:
+            raise ValueError("Ensemble needs at least one base model.")
         self._feature_names = list(X.columns)
         self._trained_on    = f"{X.index[0].date()} → {X.index[-1].date()}"
         self._classes       = np.sort(np.unique(y.values))
