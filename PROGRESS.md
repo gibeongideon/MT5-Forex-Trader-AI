@@ -107,7 +107,7 @@ monte_carlo:
 **Phase 7 key findings:**
 
 | Model | Threshold | Spread+Comm+Slip | Sharpe | Return | Trades |
-|---|---|---|---|---|---|
+| --- | --- | --- | --- | --- | --- |
 | XGBoost (walk-forward, no costs) | 0.40 | 0p | **1.34** | +14.2% | 176 |
 | **XGBoost (walk-forward, with costs)** | 0.40 | 1.0p+0.5p+0.3p | **0.52** | -3.8% | 127 |
 

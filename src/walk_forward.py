@@ -222,6 +222,7 @@ class WalkForwardValidator:
                 max_slippage_pips=config.backtest.max_slippage_pips,
                 initial_balance=balance,
                 risk_pct=config.backtest.risk_pct,
+                risk_manager=config.backtest.risk_manager,
                 use_regime_filter=config.backtest.use_regime_filter,
                 adx_threshold=config.backtest.adx_threshold,
                 adx_col=config.backtest.adx_col,

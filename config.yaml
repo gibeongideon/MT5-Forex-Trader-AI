@@ -85,6 +85,31 @@ ensemble:
   n_folds: 5               # CV folds for out-of-fold stacking
   use_original_features: false
 
+# ── Phase 8: Intelligent Risk Management ──────────────────────────────────────
+risk_manager:
+  # Confidence tiers: list of [min_confidence, risk_pct] pairs (descending order)
+  tiers:
+    - [0.75, 0.020]   # P >= 0.75 → 2.0% risk
+    - [0.65, 0.015]   # P >= 0.65 → 1.5% risk
+    - [0.55, 0.0075]  # P >= 0.55 → 0.75% risk
+    - [0.40, 0.005]   # P >= 0.40 → 0.5% risk
+  min_confidence: 0.40  # below this → skip trade
+  # Fractional Kelly (off by default)
+  use_kelly: false
+  kelly_fraction: 0.25
+  kelly_max_risk: 0.03
+  # ATR-based dynamic stop (off by default)
+  use_atr_stop: false
+  atr_multiplier: 1.5
+  atr_col: atr_14
+  min_sl_pips: 15.0
+  max_sl_pips: 60.0
+  # Portfolio cap
+  max_portfolio_risk: 0.03
+  # Drawdown throttle
+  drawdown_threshold: 0.10
+  drawdown_throttle: 0.50
+
 # ── Phase 7: Backtester / Walk-Forward / Monte Carlo ──────────────────────────
 backtester:
   threshold: 0.40             # min P_buy / P_sell to trade

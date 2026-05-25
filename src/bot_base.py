@@ -109,6 +109,54 @@ class BotBase(ABC):
     def calc_lot(self, symbol: str, sl_pips: float) -> float:
         return self.conn.calc_lot_size(symbol, sl_pips, self.risk_per_trade)
 
+    def risk_sized_lot(
+        self,
+        symbol:       str,
+        confidence:   float,
+        sl_pips:      float,
+        tp_pips:      float,
+        atr_value:    float = 0.0,
+        drawdown_pct: float = 0.0,
+        risk_config=None,
+    ) -> tuple[float, float]:
+        """
+        Phase 8 helper: returns (lot_size, effective_sl_pips) using
+        confidence-scaled risk sizing.
+
+        Parameters
+        ----------
+        symbol       : trading symbol (e.g. "EURUSD")
+        confidence   : model's P_buy or P_sell for this signal
+        sl_pips      : baseline stop-loss pips (overridden if ATR stop enabled)
+        tp_pips      : baseline take-profit pips
+        atr_value    : raw ATR in price units (0 = use fixed SL)
+        drawdown_pct : current peak-to-trough drawdown (0–1)
+        risk_config  : RiskConfig instance; uses defaults if None
+
+        Returns
+        -------
+        (lot_size, effective_sl_pips)
+        lot_size is 0.0 when confidence is below the minimum threshold.
+        """
+        from src.risk_manager import RiskManager, RiskConfig
+        rm = RiskManager(risk_config or RiskConfig())
+        pip_size = 0.0001  # EURUSD default
+
+        sizing = rm.size(
+            confidence=confidence,
+            balance=self.conn.account_balance(),
+            sl_pips=sl_pips,
+            tp_pips=tp_pips,
+            drawdown_pct=drawdown_pct,
+            atr_value=atr_value,
+            pip_size=pip_size,
+        )
+        if sizing.skip:
+            return 0.0, sl_pips
+
+        lot = self.conn.calc_lot_size(symbol, sizing.sl_pips, sizing.risk_pct)
+        return lot, sizing.sl_pips
+
     def rates(self, symbol: str, timeframe: str, count: int = 200):
         return self.conn.get_rates(symbol, timeframe, count)
 

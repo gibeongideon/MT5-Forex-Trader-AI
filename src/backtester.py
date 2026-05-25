@@ -30,6 +30,7 @@ import numpy as np
 import pandas as pd
 
 from src.metrics import performance_report, sharpe_ratio, max_drawdown
+from src.risk_manager import RiskManager, RiskConfig
 
 
 # ── Config ─────────────────────────────────────────────────────────────────────
@@ -46,9 +47,11 @@ class BacktestConfig:
     spread_pips: float = 1.0        # added to entry price (buy: pays spread, sell: pays spread)
     commission_pips: float = 0.5    # flat round-trip cost per trade (deducted at close)
     max_slippage_pips: float = 0.3  # uniform random slippage per fill
-    # Risk
+    # Risk (fixed)
     initial_balance: float = 10_000.0
-    risk_pct: float = 0.01          # fraction of balance risked per trade
+    risk_pct: float = 0.01          # fraction of balance risked per trade (used when risk_manager is None)
+    # Phase 8: intelligent risk management (optional — set risk_manager to enable)
+    risk_manager: Optional[RiskManager] = None   # if set, overrides fixed risk_pct
     # Regime filter
     use_regime_filter: bool = False
     adx_threshold: float = 20.0     # below this ADX → skip signal (ranging market)
@@ -67,13 +70,14 @@ class Trade:
     exit_price:        float
     sl:                float  # price level
     tp:                float  # price level
-    sl_pips:           float
-    tp_pips:           float
+    sl_pips:           float  # effective SL (may differ from config if ATR stop)
+    tp_pips:           float  # effective TP
     pnl_pips:          float  # before cost deductions
     pnl_dollars:       float  # after all costs, based on risk sizing
     confidence:        float
     exit_reason:       str    # "sl" | "tp" | "end"
     cost_pips:         float  # spread + commission + slippage
+    risk_pct:          float = 0.01   # actual risk fraction used for this trade
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -176,9 +180,6 @@ class Backtester:
     ) -> tuple[list[Trade], pd.Series]:
 
         cfg        = config
-        sl_pts     = cfg.sl_pips  * cfg.pip_size
-        tp_pts     = cfg.tp_pips  * cfg.pip_size
-
         balance    = cfg.initial_balance
         equity_pts = []
         trades     = []
@@ -198,8 +199,8 @@ class Backtester:
             if open_trade is not None:
                 hit = self._check_exit(open_trade, high, low)
                 if hit:
-                    self._close_trade(open_trade, hit, ts, cfg)
-                    pnl_dollars = self._pnl_dollars(open_trade, balance, cfg)
+                    self._close_trade(open_trade, hit, ts)
+                    pnl_dollars = self._pnl_dollars(open_trade, balance)
                     open_trade.pnl_dollars = pnl_dollars
                     balance += pnl_dollars
                     trades.append(open_trade)
@@ -226,11 +227,44 @@ class Backtester:
                     direction, confidence = "sell", p_sell
 
                 if direction is not None:
+                    # ── Phase 8: dynamic risk sizing ──────────────────────────
+                    if cfg.risk_manager is not None:
+                        rm  = cfg.risk_manager
+                        # Current drawdown for throttle check
+                        peak         = max(equity_pts + [balance]) if equity_pts else balance
+                        drawdown_pct = max(0.0, (peak - balance) / peak)
+                        # ATR value (price units) from features if ATR stop enabled
+                        atr_val = 0.0
+                        if rm.config.use_atr_stop:
+                            atr_col = rm.config.atr_col
+                            if atr_col in X.columns:
+                                atr_val = float(X.iloc[i][atr_col])
+                        sizing = rm.size(
+                            confidence=confidence,
+                            balance=balance,
+                            sl_pips=cfg.sl_pips,
+                            tp_pips=cfg.tp_pips,
+                            drawdown_pct=drawdown_pct,
+                            atr_value=atr_val,
+                            pip_size=cfg.pip_size,
+                        )
+                        if sizing.skip:
+                            equity_pts.append(balance)
+                            continue
+                        eff_sl_pips  = sizing.sl_pips
+                        eff_tp_pips  = sizing.tp_pips
+                        eff_risk_pct = sizing.risk_pct
+                    else:
+                        eff_sl_pips  = cfg.sl_pips
+                        eff_tp_pips  = cfg.tp_pips
+                        eff_risk_pct = cfg.risk_pct
+
                     slippage_pts = self._rng.uniform(0, cfg.max_slippage_pips) * cfg.pip_size
                     spread_pts   = cfg.spread_pips * cfg.pip_size
+                    sl_pts       = eff_sl_pips * cfg.pip_size
+                    tp_pts       = eff_tp_pips * cfg.pip_size
 
                     if direction == "buy":
-                        # Buyer pays the spread (entry worsened by spread + slippage)
                         fill_price = close + spread_pts + slippage_pts
                         sl = fill_price - sl_pts
                         tp = fill_price + tp_pts
@@ -254,13 +288,14 @@ class Backtester:
                         exit_price=0.0,
                         sl=sl,
                         tp=tp,
-                        sl_pips=cfg.sl_pips,
-                        tp_pips=cfg.tp_pips,
+                        sl_pips=eff_sl_pips,
+                        tp_pips=eff_tp_pips,
                         pnl_pips=0.0,
                         pnl_dollars=0.0,
                         confidence=confidence,
                         exit_reason="",
                         cost_pips=total_cost_pips,
+                        risk_pct=eff_risk_pct,
                     )
 
             equity_pts.append(balance)
@@ -280,7 +315,7 @@ class Backtester:
             open_trade.exit_price  = last_price
             open_trade.pnl_pips    = raw_pips - open_trade.cost_pips
             open_trade.exit_reason = "end"
-            pnl_dollars = self._pnl_dollars(open_trade, balance, cfg)
+            pnl_dollars = self._pnl_dollars(open_trade, balance)
             open_trade.pnl_dollars = pnl_dollars
             balance += pnl_dollars
             trades.append(open_trade)
@@ -304,24 +339,22 @@ class Backtester:
                 return "tp"
         return None
 
-    def _close_trade(
-        self, t: Trade, exit_reason: str, ts, cfg: BacktestConfig
-    ) -> None:
+    def _close_trade(self, t: Trade, exit_reason: str, ts) -> None:
+        """Close a trade at SL or TP, using the trade's own effective pips."""
         if exit_reason == "sl":
-            raw_pips = -cfg.sl_pips
+            raw_pips   = -t.sl_pips
             exit_price = t.sl
         else:  # tp
-            raw_pips  = cfg.tp_pips
+            raw_pips   = t.tp_pips
             exit_price = t.tp
         t.exit_time   = ts
         t.exit_price  = exit_price
         t.pnl_pips    = raw_pips - t.cost_pips
         t.exit_reason = exit_reason
 
-    def _pnl_dollars(
-        self, t: Trade, balance: float, cfg: BacktestConfig
-    ) -> float:
-        """Convert pnl_pips to dollars using risk-based sizing."""
-        # risk_pct of balance is the dollar amount risked on sl_pips
-        dollar_per_pip = (balance * cfg.risk_pct) / cfg.sl_pips
+    def _pnl_dollars(self, t: Trade, balance: float) -> float:
+        """Convert pnl_pips → dollars using the trade's own risk_pct and sl_pips."""
+        sl   = t.sl_pips  if t.sl_pips  > 0 else 30.0
+        risk = t.risk_pct if t.risk_pct > 0 else 0.01
+        dollar_per_pip = (balance * risk) / sl
         return t.pnl_pips * dollar_per_pip
