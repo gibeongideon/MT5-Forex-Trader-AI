@@ -26,6 +26,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import time
 from pathlib import Path
 from typing import Optional
@@ -86,6 +87,7 @@ class LLMSignalModel(ModelInterface):
         api_key:         Optional[str] = None,
         max_retries:     int   = 3,
         retry_delay:     float = 2.0,
+        provider:        str   = "claude_cli",
     ):
         self.model_id        = model_id
         self.n_context_bars  = n_context_bars
@@ -93,6 +95,7 @@ class LLMSignalModel(ModelInterface):
         self.cache_path      = cache_path
         self.max_retries     = max_retries
         self.retry_delay     = retry_delay
+        self.provider        = provider   # "claude_cli" | "claude_api"
 
         self._api_key        = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
         self._client         = None
@@ -147,6 +150,7 @@ class LLMSignalModel(ModelInterface):
             "n_context_bars": self.n_context_bars,
             "cache_bars":     self.cache_bars,
             "cache_path":     self.cache_path,
+            "provider":       self.provider,
             "feature_names":  self._feature_names,
             "trained_on":     self._trained_on,
         }, path)
@@ -158,6 +162,7 @@ class LLMSignalModel(ModelInterface):
         self.n_context_bars  = d["n_context_bars"]
         self.cache_bars      = d["cache_bars"]
         self.cache_path      = d["cache_path"]
+        self.provider        = d.get("provider", "claude_cli")
         self._feature_names  = d.get("feature_names", [])
         self._trained_on     = d.get("trained_on", "")
         self._load_cache()
@@ -214,19 +219,42 @@ class LLMSignalModel(ModelInterface):
     # ── API call ───────────────────────────────────────────────────────────────
 
     def _call_api(self, X_slice: pd.DataFrame) -> np.ndarray:
-        """Build prompt from X_slice, call Claude, return normalised [P_buy, P_hold, P_sell]."""
-        if not _ANTHROPIC_AVAILABLE:
-            return np.array([1/3, 1/3, 1/3])  # anthropic not installed → uniform
-        if not self._api_key:
-            return np.array([1/3, 1/3, 1/3])  # no key → uniform
+        """Build prompt from X_slice, call Claude via selected provider."""
+        user_content = self._build_user_message(X_slice)
+        if self.provider == "claude_cli":
+            return self._call_claude_cli(user_content)
+        return self._call_claude_sdk(user_content)
 
+    def _call_claude_cli(self, user_content: str) -> np.ndarray:
+        """Call Claude via the `claude` CLI subprocess (uses terminal auth, no API key needed)."""
+        full_prompt = f"{_SYSTEM_PROMPT}\n\n{user_content}"
+        for attempt in range(self.max_retries):
+            try:
+                result = subprocess.run(
+                    ["claude", "-p", full_prompt, "--output-format", "json"],
+                    capture_output=True, text=True, timeout=60,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(result.stderr.strip() or "claude CLI returned non-zero exit")
+                wrapper = json.loads(result.stdout)
+                text = wrapper.get("result", "")
+                return self._parse_probabilities(text)
+            except Exception as e:
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay * (attempt + 1))
+                else:
+                    print(f"[LLMSignalModel] CLI error after {self.max_retries} retries: {e}")
+                    return np.array([1/3, 1/3, 1/3])
+
+    def _call_claude_sdk(self, user_content: str) -> np.ndarray:
+        """Call Claude via the anthropic SDK (requires ANTHROPIC_API_KEY)."""
+        if not _ANTHROPIC_AVAILABLE:
+            return np.array([1/3, 1/3, 1/3])
         if not self._api_key:
-            return np.array([1/3, 1/3, 1/3])  # no key → uniform, not an error
+            return np.array([1/3, 1/3, 1/3])
 
         if self._client is None:
             self._client = anthropic.Anthropic(api_key=self._api_key)
-
-        user_content = self._build_user_message(X_slice)
 
         for attempt in range(self.max_retries):
             try:
@@ -246,7 +274,7 @@ class LLMSignalModel(ModelInterface):
                 if attempt < self.max_retries - 1:
                     time.sleep(self.retry_delay * (attempt + 1))
                 else:
-                    print(f"[LLMSignalModel] API error after {self.max_retries} retries: {e}")
+                    print(f"[LLMSignalModel] SDK error after {self.max_retries} retries: {e}")
                     return np.array([1/3, 1/3, 1/3])
 
     def _build_user_message(self, X_slice: pd.DataFrame) -> str:

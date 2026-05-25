@@ -93,7 +93,7 @@ ensemble:
 
 # ── Phase 9: LLM Signal + Bar Language Model ──────────────────────────────────
 llm_signal:
-  provider: claude
+  provider: claude_api   # "claude_cli" = use `claude` terminal auth; "claude_api" = use ANTHROPIC_API_KEY
   model_id: claude-haiku-4-5-20251001   # cheapest capable model; swap to claude-sonnet-4-6 for higher quality
   n_context_bars: 32                    # bars of tokenized history per prompt
   cache_bars: 4                         # live mode: reuse result for N bars

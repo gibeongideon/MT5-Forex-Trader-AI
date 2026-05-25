@@ -237,6 +237,7 @@ def _build_model(model_type: str) -> ModelInterface:
             n_context_bars = _cfg.get("n_context_bars", 32),
             cache_bars     = _cfg.get("cache_bars", 4),
             cache_path     = _cfg.get("cache_path", "data/models/llm_cache.parquet"),
+            provider       = _cfg.get("provider", "claude_cli"),
         )
     if t in ("bar_lm", "barlm"):
         from src.models.bar_lm_model import BarLMModel

@@ -88,6 +88,8 @@ def main():
                    help="Start datetime (skip bars before this, useful for resume)")
     p.add_argument("--batch-save", type=int, default=500,
                    help="Save cache to disk every N API calls")
+    p.add_argument("--provider",   default="claude_api",
+                   help="claude_api (ANTHROPIC_API_KEY) or claude_cli (terminal auth)")
     args = p.parse_args()
 
     print("Loading data...")
@@ -140,6 +142,7 @@ def main():
         model_id       = args.model,
         n_context_bars = args.n_bars,
         cache_path     = args.output,
+        provider       = args.provider,
     )
 
     tok = BarTokenizer()
