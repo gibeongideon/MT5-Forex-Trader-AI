@@ -224,7 +224,38 @@ def _build_model(model_type: str) -> ModelInterface:
             meta_model=_cfg.get("meta_model", "lightgbm"),
             n_folds=_cfg.get("n_folds", 5),
         )
+    if t in ("llm_signal", "llm"):
+        from src.models.llm_signal_model import LLMSignalModel
+        try:
+            with open("config.yaml") as _f:
+                import yaml as _yaml
+                _cfg = _yaml.safe_load(_f).get("llm_signal", {})
+        except Exception:
+            _cfg = {}
+        return LLMSignalModel(
+            model_id       = _cfg.get("model_id", "claude-haiku-4-5-20251001"),
+            n_context_bars = _cfg.get("n_context_bars", 32),
+            cache_bars     = _cfg.get("cache_bars", 4),
+            cache_path     = _cfg.get("cache_path", "data/models/llm_cache.parquet"),
+        )
+    if t in ("bar_lm", "barlm"):
+        from src.models.bar_lm_model import BarLMModel
+        try:
+            with open("config.yaml") as _f:
+                import yaml as _yaml
+                _cfg = _yaml.safe_load(_f).get("bar_lm", {})
+        except Exception:
+            _cfg = {}
+        return BarLMModel(
+            seq_len  = _cfg.get("seq_len",  32),
+            d_model  = _cfg.get("d_model",  32),
+            n_heads  = _cfg.get("n_heads",  4),
+            n_layers = _cfg.get("n_layers", 4),
+            ff_dim   = _cfg.get("ff_dim",   64),
+            epochs   = _cfg.get("epochs",   30),
+        )
     raise ValueError(
         f"Unknown model type: '{model_type}'. "
-        f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble"
+        f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble, "
+        f"llm_signal, bar_lm"
     )

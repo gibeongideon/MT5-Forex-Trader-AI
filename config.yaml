@@ -73,6 +73,12 @@ models:
   ensemble:
     type: ensemble
     path: data/models/ensemble.joblib
+  llm_signal:
+    type: llm_signal
+    path: data/models/llm_signal.joblib
+  bar_lm:
+    type: bar_lm
+    path: data/models/bar_lm.pt
 
 # ── Phase 6: Ensemble configuration ───────────────────────────────────────────
 ensemble:
@@ -84,6 +90,31 @@ ensemble:
   meta_model: lightgbm     # logistic | lightgbm — lightgbm found to be better (lower log-loss, 2x confidence coverage)
   n_folds: 5               # CV folds for out-of-fold stacking
   use_original_features: false
+
+# ── Phase 9: LLM Signal + Bar Language Model ──────────────────────────────────
+llm_signal:
+  provider: claude
+  model_id: claude-haiku-4-5-20251001   # cheapest capable model; swap to claude-sonnet-4-6 for higher quality
+  n_context_bars: 32                    # bars of tokenized history per prompt
+  cache_bars: 4                         # live mode: reuse result for N bars
+  cache_path: data/models/llm_cache.parquet  # pre-computed signal cache
+
+bar_lm:
+  vocab_size: 47      # must match BarTokenizer.VOCAB_SIZE
+  seq_len: 32
+  d_model: 32
+  n_heads: 4
+  n_layers: 4
+  ff_dim: 64
+  epochs: 30
+
+bar_tokenizer:
+  atr_col: atr_14       # feature matrix column for ATR
+  rsi_col: rsi_14
+  sma_slow_col: sma_50
+  doji_threshold: 0.10  # |body/ATR| < this → doji token
+  wick_threshold: 0.40  # wick/range > this → dominant wick
+  n_body_bins: 5        # XS/SM/MD/LG/XL quantile bins
 
 # ── Phase 8: Intelligent Risk Management ──────────────────────────────────────
 risk_manager:

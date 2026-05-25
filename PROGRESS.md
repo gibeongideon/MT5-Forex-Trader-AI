@@ -17,11 +17,11 @@ Last updated: 2026-05-25
 | 5 | Pluggable Model Registry | ✅ COMPLETE |
 | 6 | Signal Stacking & Meta-Learning | ✅ COMPLETE |
 | 7 | Robust Backtesting & Walk-Forward | ✅ COMPLETE |
-| 8 | Intelligent Risk Management | ⬜ NOT STARTED |
+| 8 | Intelligent Risk Management | ✅ COMPLETE |
 | 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
 | 10 | Production Enterprise System | ⬜ NOT STARTED |
 
-**Next task:** Start Phase 8 — Intelligent Risk Management
+**Next task:** Start Phase 9 — LLM Integration as Probability Signal
 
 ---
 
@@ -75,6 +75,50 @@ Last updated: 2026-05-25
 | [src/trade_journal.py](src/trade_journal.py) | SQLite trade logger. `TradeJournal().record(trade_dict)` saves a completed trade. `get_trades()` returns DataFrame. DB at `data/trades.db`. |
 | [src/metrics.py](src/metrics.py) | Pure performance functions: `sharpe_ratio`, `sortino_ratio`, `max_drawdown`, `calmar_ratio`, `win_rate`, `profit_factor`, `expectancy`, `performance_report`. Works with Trade dataclasses OR dicts OR DataFrames. |
 | [src/random_bot.py](src/random_bot.py) | Random entry bot. `--backtest` mode (standalone, no MT5). Live mode extends BotBase. Entry probability configurable. |
+
+### Phase 8 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/risk_manager.py](src/risk_manager.py) | Confidence-tiered position sizer. `RiskConfig` controls tiers, Kelly, ATR stop, portfolio cap, drawdown throttle. `RiskManager.size(confidence, balance, sl_pips, tp_pips, ...)` → `SizingResult` with `skip`, `risk_pct`, `sl_pips`, `tp_pips`, `dollar_risk`. |
+| [src/backtester.py](src/backtester.py) | Updated: `BacktestConfig.risk_manager` field wires `RiskManager` for per-trade dynamic sizing. `Trade` dataclass gains `risk_pct` field. `_close_trade()` and `_pnl_dollars()` use per-trade pips/risk instead of fixed config values. |
+| [src/bot_base.py](src/bot_base.py) | Extended (not rewritten): `risk_sized_lot(symbol, confidence, sl_pips, tp_pips, atr_value, drawdown_pct)` → `(lot, effective_sl_pips)`. Returns `(0.0, sl_pips)` when confidence is below minimum. |
+| [scripts/phase8_compare.py](scripts/phase8_compare.py) | A/B/C walk-forward comparison script. Loads parquet features and runs 3 configs through `WalkForwardValidator`. |
+
+**`config.yaml` additions:**
+```yaml
+risk_manager:
+  tiers: [[0.75, 0.020], [0.65, 0.015], [0.55, 0.0075], [0.40, 0.005]]
+  min_confidence: 0.40
+  use_kelly: false  / kelly_fraction: 0.25 / kelly_max_risk: 0.03
+  use_atr_stop: false / atr_multiplier: 1.5 / min_sl_pips: 15.0 / max_sl_pips: 60.0
+  max_portfolio_risk: 0.03
+  drawdown_threshold: 0.10 / drawdown_throttle: 0.50
+```
+
+**Phase 8 verified results (XGBoost, walk-forward, 19 folds, threshold=0.40, spread=1.0p):**
+
+| Config | Sharpe | Max DD | Return | Trades | Key change |
+| --- | --- | --- | --- | --- | --- |
+| A — Fixed 1% risk (baseline) | +0.72 | 14.6% | -0.3% | 126 | — |
+| **B — Confidence-tiered risk** | **+0.72** | **7.5%** | **+0.2%** | 126 | Same Sharpe, **−49% drawdown** |
+| C — Tiered + ATR stop | +0.22 | 3.4% | +0.3% | 69 | Lower drawdown, fewer trades, lower Sharpe |
+
+**Key findings:**
+
+- **Tiered risk (B) is the winner**: identical Sharpe (0.72) but drawdown cut from 14.6% → 7.5% at zero cost. Return flips from -0.3% → +0.2%.
+- ATR stop (C) further reduces drawdown to 3.4% but wide ATR stops reduce pips/risk efficiency → Sharpe falls to 0.22. Useful for very risk-averse accounts.
+- The confidence tiers (0.75→2%, 0.65→1.5%, 0.55→0.75%, 0.40→0.5%) naturally downsize losing runs (low confidence streaks) and upsize winning runs — the core risk management benefit.
+- `BotBase.risk_sized_lot()` makes tiered sizing available to all live bots with one line.
+
+**Bug fixed during Phase 8:** `src/walk_forward.py` `fold_cfg` constructor was missing `risk_manager=config.backtest.risk_manager`. All three configs appeared identical until this was fixed.
+
+**Key commands:**
+```bash
+conda run -n envmt5 --cwd /home/rock/Desktop/2026_Projects/MT5 python scripts/phase8_compare.py
+```
+
+---
 
 ### Phase 7 — Built
 
