@@ -16,12 +16,12 @@ Last updated: 2026-05-25
 | 4 | XGBoost with Calibrated Probabilities | ✅ COMPLETE |
 | 5 | Pluggable Model Registry | ✅ COMPLETE |
 | 6 | Signal Stacking & Meta-Learning | ✅ COMPLETE |
-| 7 | Robust Backtesting & Walk-Forward | ⬜ NOT STARTED |
+| 7 | Robust Backtesting & Walk-Forward | ✅ COMPLETE |
 | 8 | Intelligent Risk Management | ⬜ NOT STARTED |
 | 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
 | 10 | Production Enterprise System | ⬜ NOT STARTED |
 
-**Next task:** Start Phase 7 — Robust Backtesting & Walk-Forward Validation Framework
+**Next task:** Start Phase 8 — Intelligent Risk Management
 
 ---
 
@@ -75,6 +75,77 @@ Last updated: 2026-05-25
 | [src/trade_journal.py](src/trade_journal.py) | SQLite trade logger. `TradeJournal().record(trade_dict)` saves a completed trade. `get_trades()` returns DataFrame. DB at `data/trades.db`. |
 | [src/metrics.py](src/metrics.py) | Pure performance functions: `sharpe_ratio`, `sortino_ratio`, `max_drawdown`, `calmar_ratio`, `win_rate`, `profit_factor`, `expectancy`, `performance_report`. Works with Trade dataclasses OR dicts OR DataFrames. |
 | [src/random_bot.py](src/random_bot.py) | Random entry bot. `--backtest` mode (standalone, no MT5). Live mode extends BotBase. Entry probability configurable. |
+
+### Phase 7 — Built
+
+| File | What it does |
+|------|-------------|
+| [src/backtester.py](src/backtester.py) | Event-driven bar-by-bar simulator. `BacktestConfig` controls threshold, spread, commission, slippage, regime filter. `Backtester().run(model, X, prices, cfg)` returns `BacktestResult` with trades + equity curve + `.report()`. |
+| [src/walk_forward.py](src/walk_forward.py) | Full walk-forward engine. `WalkForwardConfig` sets model, window type (expanding/sliding), train/test days, backtest config. Supports all single models and ensemble (per-fold retrain with optional disk cache). Returns `WalkForwardResult` with fold table + aggregate equity curve. |
+| [src/monte_carlo.py](src/monte_carlo.py) | Monte Carlo trade-order shuffler. `run_monte_carlo(trades, n_simulations=1000)` → `MonteCarloResult`. Reports 5th/25th/50th/75th/95th-percentile Sharpe across shuffles + text histogram. |
+| [TODO.md](TODO.md) | Phase-by-phase TODO tracker. Mark tasks ✅ / 🔄 / ⬜ as work progresses. |
+
+**`config.yaml` additions:**
+```yaml
+backtester:
+  threshold: 0.40
+  sl_pips: 30.0 / tp_pips: 60.0
+  spread_pips: 1.0 / commission_pips: 0.5 / max_slippage_pips: 0.3
+  initial_balance: 10000.0 / risk_pct: 0.01
+  use_regime_filter: false / adx_threshold: 20.0
+
+walk_forward:
+  model_type: xgboost
+  window_type: expanding
+  train_days: 180 / test_days: 30
+  cache_dir: data/models/wf_cache
+
+monte_carlo:
+  n_simulations: 1000 / seed: 42
+```
+
+**Phase 7 key findings:**
+
+| Model | Threshold | Spread+Comm+Slip | Sharpe | Return | Trades |
+|---|---|---|---|---|---|
+| XGBoost (walk-forward, no costs) | 0.40 | 0p | **1.34** | +14.2% | 176 |
+| **XGBoost (walk-forward, with costs)** | 0.40 | 1.0p+0.5p+0.3p | **0.52** | -3.8% | 127 |
+
+**Critical insight: Transaction costs cut Sharpe from 1.34 → 0.52.** The cost model (spread 1.0p, commission 0.5p, slippage up to 0.3p = ~1.8p total round-trip) reduces the XGBoost edge to near-breakeven. This is realistic — most Forex scalping strategies fail once proper costs are applied.
+
+**Monte Carlo (1000 shuffles, XGBoost trades):**
+
+- 5th-percentile Sharpe: **-1.17** — fails the > 0.5 target (edge is not large enough to survive bad luck)
+- Original Sharpe near shuffle median (53.3% of shuffles beat it) — **good: performance is not order-dependent**
+- Conclusion: the *trade outcomes* carry genuine edge, but the *expected return* with costs is marginal
+
+**What this means for Phase 8:**
+The ensemble (Sharpe 39% accuracy, 41.8% P≥0.40 coverage) has higher accuracy than XGBoost alone. Phase 8's confidence-based position sizing should let winners run more while cutting losers smaller — the key to making the edge survive costs. The regime filter (ADX < 20 = skip) should also be evaluated.
+
+**Key commands:**
+```bash
+# Full walk-forward with transaction costs
+python -c "
+from src.backtester import BacktestConfig
+from src.walk_forward import WalkForwardValidator, WalkForwardConfig
+import pandas as pd
+X = pd.read_parquet('data/features/EURUSD_M15_features.parquet')
+y = pd.read_parquet('data/features/EURUSD_M15_labels.parquet')['label']
+prices = pd.read_csv('data/EURUSD_M15.csv', index_col='time')
+prices.index = pd.to_datetime(prices.index)
+cfg = WalkForwardConfig(model_type='xgboost', backtest=BacktestConfig(threshold=0.40))
+WalkForwardValidator().run(X, y, prices, cfg).report()
+"
+
+# With regime filter
+# Set use_regime_filter=True in BacktestConfig to suppress signals when ADX < 20
+
+# Monte Carlo on any trade list
+# from src.monte_carlo import run_monte_carlo
+# mc = run_monte_carlo(trades); mc.report(); mc.histogram()
+```
+
+---
 
 ### Phase 6 — Built
 

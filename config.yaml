@@ -85,6 +85,32 @@ ensemble:
   n_folds: 5               # CV folds for out-of-fold stacking
   use_original_features: false
 
+# ── Phase 7: Backtester / Walk-Forward / Monte Carlo ──────────────────────────
+backtester:
+  threshold: 0.40             # min P_buy / P_sell to trade
+  sl_pips: 30.0
+  tp_pips: 60.0
+  pip_size: 0.0001            # EURUSD
+  spread_pips: 1.0            # realistic EURUSD spread
+  commission_pips: 0.5        # round-trip commission
+  max_slippage_pips: 0.3      # max random slippage per fill
+  initial_balance: 10000.0
+  risk_pct: 0.01              # 1% per trade
+  use_regime_filter: false    # set true to suppress signals when ADX < adx_threshold
+  adx_threshold: 20.0
+  adx_col: adx_14
+
+walk_forward:
+  model_type: xgboost         # xgboost | lightgbm | catboost | random_forest | ensemble
+  window_type: expanding      # expanding | sliding
+  train_days: 180
+  test_days: 30
+  cache_dir: data/models/wf_cache
+
+monte_carlo:
+  n_simulations: 1000
+  seed: 42
+
 # ── Phase 2: Rule-based signal bot ────────────────────────────────────────────
 rule_bot:
   symbol: "EURUSD"
