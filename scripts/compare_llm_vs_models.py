@@ -27,46 +27,19 @@ def load_prices(path: str = "data/EURUSD_M15.csv") -> pd.DataFrame:
     return prices
 
 
-def get_model_probas(model_name: str, X: pd.DataFrame) -> np.ndarray:
-    """Load a saved model and call predict_proba on X."""
-    from src.model_registry import ModelRegistry
-    registry = ModelRegistry.from_config("config.yaml", auto_load=True)
-    if model_name not in registry:
-        raise KeyError(f"Model '{model_name}' not found in registry")
-    model = registry.get(model_name)
-    proba = model.predict_proba(X)
-    if proba.ndim == 1:
-        proba = proba.reshape(1, -1)
-    return proba
 
+class _ProbaWrapper:
+    """Minimal ModelInterface shim that serves a pre-computed probability array."""
+    def __init__(self, probas: np.ndarray):
+        self._probas = probas
 
-def run_backtest(
-    probas: np.ndarray,
-    prices: pd.DataFrame,
-    X_index: pd.Index,
-    cfg: BacktestConfig,
-) -> dict:
-    """Run backtester and return summary metrics."""
-    bt = Backtester(cfg)
-    result = bt.run(probas, prices.loc[X_index], X_index)
-    trades = result.trades
-    equity = result.equity_curve
+    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+        return self._probas
 
-    if len(trades) == 0:
-        return {"trades": 0, "sharpe": 0.0, "return_pct": 0.0, "drawdown": 0.0, "win_rate": 0.0}
-
-    returns = equity.pct_change().dropna()
-    sharpe  = (returns.mean() / returns.std() * np.sqrt(252 * 96)) if returns.std() > 0 else 0.0
-    total_return = (equity.iloc[-1] / equity.iloc[0] - 1) * 100
-    wins = sum(1 for t in trades if t.pnl > 0)
-
-    return {
-        "trades":      len(trades),
-        "sharpe":      round(float(sharpe), 3),
-        "return_pct":  round(float(total_return), 2),
-        "drawdown":    round(float(result.drawdown * 100), 2),
-        "win_rate":    round(wins / len(trades) * 100, 1),
-    }
+    def train(self, *a, **kw): return self
+    def save(self, *a, **kw): pass
+    def load(self, *a, **kw): return self
+    def metadata(self): return {}
 
 
 def main():
@@ -114,11 +87,51 @@ def main():
 
     # ── Run each model ─────────────────────────────────────────────────────────
     results = {}
-    for name in args.models:
+    from src.model_registry import ModelRegistry
+    registry = ModelRegistry.from_config("config.yaml", auto_load=True)
+
+    # Collect raw probabilities for blend models
+    raw_probas: dict[str, np.ndarray] = {}
+
+    for name in args.models + ["xgb+llm"]:
         print(f"Running {name}...", end=" ", flush=True)
         try:
-            probas = get_model_probas(name, X)
-            metrics = run_backtest(probas, prices, X.index, cfg)
+            if name == "xgb+llm":
+                # Simple equal-weight blend of XGBoost and LLM signals
+                if "xgboost" not in raw_probas or "llm_signal" not in raw_probas:
+                    raise KeyError("need both xgboost and llm_signal results first")
+                blended = (raw_probas["xgboost"] + raw_probas["llm_signal"]) / 2.0
+                model = _ProbaWrapper(blended)
+            else:
+                if name not in registry:
+                    raise KeyError(f"not in registry (artifact missing?)")
+                model = registry.get(name)
+
+            # Collect raw probas for blending before backtest
+            if name in ("xgboost", "llm_signal"):
+                p = model.predict_proba(X)
+                if p.ndim == 1:
+                    p = p.reshape(1, -1)
+                raw_probas[name] = p
+
+            # Run backtest
+            bt = Backtester()
+            result = bt.run(model, X, prices.loc[X.index], cfg)
+            trades = result.trades
+            equity = result.equity
+
+            if len(trades) == 0:
+                metrics = {"trades": 0, "sharpe": 0.0, "return_pct": 0.0, "drawdown": 0.0, "win_rate": 0.0}
+            else:
+                total_return = (equity.iloc[-1] / equity.iloc[0] - 1) * 100
+                wins = sum(1 for t in trades if t.get("pnl_dollars", t.get("pnl", 0)) > 0)
+                metrics = {
+                    "trades":     len(trades),
+                    "sharpe":     round(float(result.sharpe), 3),
+                    "return_pct": round(float(total_return), 2),
+                    "drawdown":   round(float(result.drawdown), 2),
+                    "win_rate":   round(wins / len(trades) * 100, 1),
+                }
             results[name] = metrics
             print(f"done  ({metrics['trades']} trades, Sharpe={metrics['sharpe']})")
         except Exception as e:
@@ -144,14 +157,14 @@ def main():
     print(f"{'─' * w}")
     print(f"\nThreshold={args.threshold}  Period: {cache_start.date()} → {cache_end.date()}")
 
-    # ── LLM delta ─────────────────────────────────────────────────────────────
-    if "llm_signal" in results and results["llm_signal"]:
-        llm_sharpe = results["llm_signal"]["sharpe"]
-        for name, r in results.items():
-            if name != "llm_signal" and r:
-                delta = llm_sharpe - r["sharpe"]
-                sign  = "+" if delta >= 0 else ""
-                print(f"  LLM vs {name:<10}: Sharpe {sign}{delta:+.3f}")
+    # ── Blend delta ────────────────────────────────────────────────────────────
+    if results.get("xgb+llm"):
+        blend_sharpe = results["xgb+llm"]["sharpe"]
+        for name in ("xgboost", "llm_signal", "ensemble"):
+            r = results.get(name)
+            if r:
+                delta = blend_sharpe - r["sharpe"]
+                print(f"  xgb+llm vs {name:<12}: Sharpe {delta:+.3f}")
 
 
 if __name__ == "__main__":

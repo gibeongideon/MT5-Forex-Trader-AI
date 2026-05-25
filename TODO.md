@@ -96,16 +96,83 @@
 
 ---
 
-## Phase 9 — LLM Integration as Probability Signal ⬜
+## Phase 9 — LLM Integration as Probability Signal ✅ (partial)
 
-- [ ] `src/models/llm_signal_model.py`
-  - [ ] Implements `ModelInterface`
-  - [ ] Claude API with `{"P_buy", "P_hold", "P_sell", "reasoning"}` JSON output
-  - [ ] Anthropic prompt caching (`cache_control: ephemeral`) on system prompt
-  - [ ] Rate limit: call once per N bars, cache result in between
-- [ ] `src/models/llm_news_model.py` (optional — news sentiment)
-- [ ] Register in model registry; add to ensemble Layer 0
-- [ ] Compare ensemble-with-LLM vs ensemble-without-LLM Sharpe
+### Completed
+
+- [x] `src/features/bar_tokenizer.py` — OHLCV → DIR_SIZE_WICK tokens (vocab=47); `fit/encode_sequence/encode_ids/context_prefix`
+- [x] `src/models/llm_signal_model.py` — Claude API signal model
+  - [x] Implements `ModelInterface` — plugs into registry + ensemble with zero wiring changes
+  - [x] Two providers: `claude_cli` (terminal auth) and `claude_api` (ANTHROPIC_API_KEY)
+  - [x] Anthropic prompt caching (`cache_control: ephemeral`) — ~80% token cost reduction
+  - [x] Disk-backed parquet cache (DatetimeIndex → P_buy/P_hold/P_sell) — no API calls during walk-forward
+  - [x] `provider` saved/loaded in joblib artifact; switchable via `config.yaml`
+- [x] `src/models/bar_lm_model.py` — local tiny Transformer (~200k params) on token sequences (offline, no API)
+- [x] `scripts/precompute_llm_signals.py` — offline cache builder; `--dry-run`, `--stride`, `--start` resume
+- [x] `scripts/train_bar_lm.py` — CLI to train + evaluate local bar language model
+- [x] `src/model_registry.py` — `llm_signal` and `bar_lm` registered; reads config for provider/model_id
+- [x] `config.yaml` — `llm_signal`, `bar_lm`, `bar_tokenizer` sections added
+- [x] Verified: LLM Sharpe -0.629 vs XGBoost (2yr trained) -0.497 on Apr–May 2026 test window
+
+### Findings (May 2026 experiment)
+
+- LLM signal outperforms ensemble Sharpe by +0.86 on the 3-month out-of-sample window
+- LLM alone beats a simple XGB+LLM equal-weight blend — blending only helps when both signals
+  are independently strong; XGBoost needs its full 2-year training window to contribute
+- Sequential bar-pattern context (32-bar token history) carries signal the tree models miss
+
+---
+
+## Improvements to Explore
+
+### 9-A — Full Dataset LLM Cache + Proper Ensemble Blend  ⬜  ← NEXT
+
+- [ ] Precompute LLM signals for all 49,892 bars at stride=4 (~$1.50, ~60 min)
+      `python scripts/precompute_llm_signals.py --provider claude_api`
+- [ ] Add `llm_signal` to `config.yaml` ensemble `base_models` list
+- [ ] Retrain ensemble (XGBoost + LightGBM + CatBoost + RF + LLM) on full dataset
+- [ ] Run walk-forward: compare `ensemble_with_llm` vs `ensemble_without_llm`
+- [ ] Expected gain: meta-learner learns to use LLM for sequential patterns + trees for cross-sectional features
+
+### 9-B — Bar Language Model (Local, No API Cost)  ⬜
+
+- [ ] Train `BarLMModel` on full dataset: `python scripts/train_bar_lm.py --epochs 30`
+- [ ] Compare Sharpe vs `llm_signal` — can a local 200k-param model match Claude?
+- [ ] If competitive, use as cheaper replacement for live trading (zero API cost per signal)
+- [ ] Try larger architecture: d_model=64, n_layers=6, seq_len=64
+
+### 9-C — LLM Signal Quality Improvements  ⬜
+
+- [ ] Try `claude-sonnet-4-6` instead of `claude-haiku-4-5-20251001` for richer reasoning
+      (10× more expensive but may generate higher-quality probability estimates)
+- [ ] Extend context window from 32 to 64 bars — more pattern history per prompt
+- [ ] Add volume context to the token (e.g., HIGH_VOL / LOW_VOL flag per bar)
+- [ ] Include session context in prompt (London/NY/Asia overlap indicator)
+- [ ] Experiment with multi-timeframe tokens: M15 + H1 + H4 combined in one prompt
+
+### 9-D — Adaptive Blend / Dynamic Weighting  ⬜
+
+- [ ] Replace equal-weight blend with confidence-weighted blend:
+      `w_llm = P_llm.max() / (P_llm.max() + P_xgb.max())` — weight by relative certainty
+- [ ] Rolling correlation between LLM signal and XGBoost signal — high correlation → reduce LLM weight
+- [ ] Regime-dependent blending: use LLM more in trending markets (ADX > 25), trees in ranging
+
+### 9-E — Cost Optimisation  ⬜
+
+- [ ] Stride=8 vs stride=4 comparison — halves API cost, check if Sharpe degrades
+- [ ] Cache invalidation: re-call API only when market regime shifts (ADX crossover / volatility spike)
+- [ ] Track actual API spend per trading session in trade journal
+
+### 10-A — Production / Dashboard  ⬜
+
+- [ ] `src/paper_trader.py` — shadow execution, virtual P&L, switch via `config.yaml: mode: paper|live`
+- [ ] `src/api/server.py` — FastAPI: `/metrics`, `/trades`, `/model/swap`, `/model/retrain`
+- [ ] `src/explainer.py` — SHAP values per trade, top-3 features logged
+- [ ] `src/drift_detector.py` — accuracy vs baseline, alert if drop > 15%
+- [ ] `src/alerter.py` — email / Slack webhook for drawdown, drift, daily summary
+- [ ] `scripts/retrain_schedule.py` — weekly auto-retrain + auto-promote if Sharpe improves ≥5%
+- [ ] Multi-symbol support (separate pipelines, shared risk manager)
+- [ ] 30-day paper mode before any live capital
 
 ---
 
