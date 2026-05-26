@@ -186,3 +186,21 @@ rule_bot:
   weight_rsi: 1.5
   weight_bb: 1.0
   weight_macd: 1.0
+
+# ── Latent Feature Encoder (Phase 9 extension) ────────────────────────────────
+# Decoupled autoencoder that compresses raw OHLCV windows into latent market-state
+# vectors. These are merged with the existing 31-feature matrix to produce an
+# enriched input for XGBoost/LightGBM/CatBoost/Ensemble.
+#
+# Training:  conda run -n envmt5 python scripts/train_autoencoder.py
+# Merging:   conda run -n envmt5 python scripts/build_latent_features.py
+# Comparing: conda run -n envmt5 python scripts/compare_latent_vs_baseline.py
+latent_encoder:
+  enabled: false                              # set true to use extended feature matrix
+  window_size: 50                             # OHLCV bars per input window (bars t-W to t-1)
+  latent_dim: 16                              # compressed dimensions output per bar
+  epochs: 30                                  # autoencoder training epochs
+  batch_size: 512                             # mini-batch size
+  lr: 0.001                                   # Adam learning rate
+  path: data/models/autoencoder.pt            # saved encoder artifact
+  features_output: data/features/EURUSD_M15_features_latent.parquet  # merged output
