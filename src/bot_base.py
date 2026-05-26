@@ -35,7 +35,7 @@ class BotBase(ABC):
         self.risk_per_trade: float = trading["risk_per_trade"]
         self.tick_interval = tick_interval  # seconds between on_tick() calls
 
-        self.conn: MT5Connector = MT5Connector(auto_launch=False)
+        self.conn: MT5Connector = MT5Connector()
         self._running = False
         self._daily_loss = 0.0
         self._day_start_balance = 0.0
@@ -162,7 +162,7 @@ class BotBase(ABC):
 
     def log(self, msg: str) -> None:
         ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{ts}] [{self.name}] {msg}")
+        print(f"[{ts}] [{self.name}] {msg}", flush=True)
 
     # ------------------------------------------------------------------ #
     # Internal
