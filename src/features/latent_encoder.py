@@ -1,5 +1,5 @@
 """
-Latent Feature Encoder — two training modes.
+Latent Feature Encoder — three training modes.
 
 MODE 1: autoencoder (unsupervised)
     Encoder learns to reconstruct raw OHLCV windows.
@@ -7,15 +7,27 @@ MODE 1: autoencoder (unsupervised)
     to correlate with future price direction.
 
 MODE 2: supervised (default, recommended)
-    Encoder + classification head trained jointly with CrossEntropyLoss
+    MLP encoder + classification head trained jointly with CrossEntropyLoss
     on the buy/hold/sell labels. Latent features are forced to encode
     information that is predictive of next-bar direction, not just
     reconstruction quality.
+    Current best: Sharpe +3.13 with latent_dim=8 on 49k rows (May 2024+).
+
+MODE 3: transformer (drop-in upgrade to supervised)
+    Self-attention Transformer encoder instead of MLP. Learns which bars
+    within the 50-bar window matter most for the current prediction.
+    Same interface as supervised — drop-in replacement via config.yaml:
+        encoder.mode: transformer
 
 Usage:
-    # Supervised (default — trains on direction labels)
+    # Supervised MLP (current default — best known result +3.13)
     enc = LatentEncoder(mode="supervised", latent_dim=8)
-    enc.fit(train_df, y_train)    # y_train: pd.Series of -1/0/1 aligned to df
+    enc.fit(train_df, y_train)
+    latent_df = enc.transform(full_df)
+
+    # Transformer (experiment vs supervised baseline)
+    enc = LatentEncoder(mode="transformer", latent_dim=8)
+    enc.fit(train_df, y_train)
     latent_df = enc.transform(full_df)
 
     # Autoencoder (unsupervised, no labels needed)
@@ -86,11 +98,12 @@ class _AutoEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
 
 
 class _SupervisedEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
-    """Encoder + classification head trained end-to-end on direction labels.
+    """MLP encoder + classification head trained end-to-end on direction labels.
 
     After training the head is discarded; only encoder weights are used
     during transform(). This forces the latent space to encode features
     that are predictive of buy/hold/sell, not just reconstructive.
+    Current best: Sharpe +3.13 with latent_dim=8.
     """
 
     def __init__(self, input_dim: int, latent_dim: int, n_classes: int = 3):
@@ -113,6 +126,62 @@ class _SupervisedEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
         return self.encoder(x)
 
 
+class _TransformerEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
+    """Transformer encoder + classification head trained on direction labels.
+
+    Drop-in replacement for _SupervisedEncoderNet. Instead of flattening the
+    50-bar window into a vector and treating all bars equally, self-attention
+    learns which bars within the window matter most for the prediction.
+
+    Architecture: (batch, W*F flat) → reshape → (batch, W, F)
+      → Linear(F→d_model) → TransformerEncoder(d_model, n_heads, n_layers)
+      → CLS token → Linear(d_model→latent_dim) → Linear(latent_dim→3 classes)
+
+    The CLS token aggregates sequence context; its representation after attention
+    is used as the latent vector — analogous to BERT's [CLS] token.
+    """
+
+    def __init__(
+        self,
+        window_size: int,
+        n_feats:     int,
+        latent_dim:  int,
+        d_model:     int = 32,
+        n_heads:     int = 4,
+        n_layers:    int = 2,
+        n_classes:   int = 3,
+    ):
+        if not _TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available")
+        super().__init__()
+        self._W = window_size
+        self._F = n_feats
+        self.input_proj = nn.Linear(n_feats, d_model)
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=d_model, nhead=n_heads, dim_feedforward=d_model * 4,
+            dropout=0.1, batch_first=True,
+        )
+        self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
+        self.cls_token   = nn.Parameter(torch.zeros(1, 1, d_model))
+        self.latent_head = nn.Linear(d_model, latent_dim)
+        self.head        = nn.Linear(latent_dim, n_classes)
+
+    def forward(self, x: "torch.Tensor"):
+        B  = x.size(0)
+        x  = x.view(B, self._W, self._F)                  # (B, W, F)
+        x  = self.input_proj(x)                            # (B, W, d_model)
+        cls = self.cls_token.expand(B, -1, -1)             # (B, 1, d_model)
+        x  = torch.cat([cls, x], dim=1)                    # (B, W+1, d_model)
+        x  = self.transformer(x)                           # (B, W+1, d_model)
+        z  = self.latent_head(x[:, 0, :])                  # CLS → (B, latent_dim)
+        logits = self.head(z)
+        return logits, z
+
+    def encode(self, x: "torch.Tensor") -> "torch.Tensor":
+        _, z = self.forward(x)
+        return z
+
+
 # ---------------------------------------------------------------------------
 # Public class
 # ---------------------------------------------------------------------------
@@ -123,13 +192,19 @@ class LatentEncoder:
 
     Parameters
     ----------
-    mode        : "supervised" (default) or "autoencoder"
+    mode        : "supervised" (default) | "transformer" | "autoencoder"
+                  supervised  — MLP enc + classification head (current best: Sharpe +3.13)
+                  transformer — Attention enc + classification head (drop-in upgrade to test)
+                  autoencoder — Unsupervised MSE reconstruction (no labels needed)
     window_size : OHLCV bars per input window (bars t-W … t-1)
-    latent_dim  : size of the latent vector (8 recommended for supervised)
+    latent_dim  : size of the latent vector (8 recommended)
     epochs      : training epochs
     batch_size  : mini-batch size
     lr          : Adam learning rate
     random_state: seed
+    transformer_d_model  : Transformer hidden dim (only used when mode="transformer")
+    transformer_n_heads  : Transformer attention heads (must divide d_model evenly)
+    transformer_n_layers : Transformer encoder layers
     """
 
     OHLCV_COLS = ["open", "high", "low", "close", "tick_volume"]
@@ -145,9 +220,12 @@ class LatentEncoder:
         batch_size:   int   = 4096,
         lr:           float = 1e-3,
         random_state: int   = 42,
+        transformer_d_model:  int = 32,
+        transformer_n_heads:  int = 4,
+        transformer_n_layers: int = 2,
     ):
-        if mode not in ("supervised", "autoencoder"):
-            raise ValueError('mode must be "supervised" or "autoencoder"')
+        if mode not in ("supervised", "transformer", "autoencoder"):
+            raise ValueError('mode must be "supervised", "transformer", or "autoencoder"')
         self.mode         = mode
         self.window_size  = window_size
         self.latent_dim   = latent_dim
@@ -155,6 +233,10 @@ class LatentEncoder:
         self.batch_size   = batch_size
         self.lr           = lr
         self.random_state = random_state
+
+        self.transformer_d_model  = transformer_d_model
+        self.transformer_n_heads  = transformer_n_heads
+        self.transformer_n_layers = transformer_n_layers
 
         self._net: Optional[object] = None
         self._input_dim: int = window_size * len(self.OHLCV_COLS)
@@ -221,7 +303,7 @@ class LatentEncoder:
         input_dim = X.shape[1]
         self._input_dim = input_dim
 
-        if self.mode == "supervised":
+        if self.mode in ("supervised", "transformer"):
             self._fit_supervised(X, ohlcv_df.index, y)
         else:
             self._fit_autoencoder(X)
@@ -247,7 +329,27 @@ class LatentEncoder:
             [self._LABEL_MAP[int(l)] for l in y_valid], dtype=np.int64
         )
 
-        net       = _SupervisedEncoderNet(self._input_dim, self.latent_dim)
+        if self.mode == "transformer":
+            n_feats = self._input_dim // self.window_size
+            net = _TransformerEncoderNet(
+                window_size = self.window_size,
+                n_feats     = n_feats,
+                latent_dim  = self.latent_dim,
+                d_model     = self.transformer_d_model,
+                n_heads     = self.transformer_n_heads,
+                n_layers    = self.transformer_n_layers,
+            )
+            print(
+                f"[LatentEncoder] Architecture: Transformer  "
+                f"d_model={self.transformer_d_model}  "
+                f"n_heads={self.transformer_n_heads}  "
+                f"n_layers={self.transformer_n_layers}",
+                flush=True,
+            )
+        else:
+            net = _SupervisedEncoderNet(self._input_dim, self.latent_dim)
+            print(f"[LatentEncoder] Architecture: MLP  input_dim={self._input_dim}", flush=True)
+
         optimizer = torch.optim.Adam(net.parameters(), lr=self.lr, weight_decay=1e-4)
         criterion = nn.CrossEntropyLoss()
 
@@ -377,6 +479,9 @@ class LatentEncoder:
                     "batch_size":   self.batch_size,
                     "lr":           self.lr,
                     "random_state": self.random_state,
+                    "transformer_d_model":  self.transformer_d_model,
+                    "transformer_n_heads":  self.transformer_n_heads,
+                    "transformer_n_layers": self.transformer_n_layers,
                 },
                 "trained_on": self._trained_on,
             },
@@ -397,9 +502,22 @@ class LatentEncoder:
         self.batch_size   = p["batch_size"]
         self.lr           = p["lr"]
         self.random_state = p["random_state"]
+        self.transformer_d_model  = p.get("transformer_d_model",  32)
+        self.transformer_n_heads  = p.get("transformer_n_heads",  4)
+        self.transformer_n_layers = p.get("transformer_n_layers", 2)
         self._trained_on  = ckpt.get("trained_on")
 
-        if self.mode == "supervised":
+        if self.mode == "transformer":
+            n_feats = p["input_dim"] // p["window_size"]
+            net = _TransformerEncoderNet(
+                window_size = p["window_size"],
+                n_feats     = n_feats,
+                latent_dim  = p["latent_dim"],
+                d_model     = self.transformer_d_model,
+                n_heads     = self.transformer_n_heads,
+                n_layers    = self.transformer_n_layers,
+            )
+        elif self.mode == "supervised":
             net = _SupervisedEncoderNet(p["input_dim"], p["latent_dim"])
         else:
             net = _AutoEncoderNet(p["input_dim"], p["latent_dim"])

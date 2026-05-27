@@ -13,7 +13,9 @@
 pipeline:
 
   # ── Core ──────────────────────────────────────────────────────────────────
-  model_type: ensemble          # xgboost | lightgbm | catboost | ensemble
+  # DEFAULT: XGBoost + supervised enc8 → Sharpe +3.13, MaxDD 13.3% (Phase 9 champion)
+  # To try Transformer encoder: change encoder.mode to "transformer" below.
+  model_type: xgboost           # xgboost | lightgbm | catboost | ensemble
   data_path: data/EURUSD_M15.csv
   train_frac: 0.8              # fraction used to fit scaler + encoder
 
@@ -25,15 +27,20 @@ pipeline:
 
   # ── Supervised latent encoder ─────────────────────────────────────────────
   # Set enabled: false to fall back to baseline 31-feature XGBoost.
-  # Current best result: supervised + latent_dim=8 → Sharpe +3.13 (vs +0.72 baseline)
+  # DEFAULT (champion): mode=supervised, latent_dim=8 → Sharpe +3.13, MaxDD 13.3%
+  # EXPERIMENT:         mode=transformer               → run compare_transformer_vs_mlp.py
   encoder:
     enabled: true
-    mode: supervised           # supervised (recommended) | autoencoder
-    latent_dim: 8              # 8 = current best; try 4 (less noise) or 16 (more info)
+    mode: supervised           # supervised (default) | transformer (experiment) | autoencoder
+    latent_dim: 8              # 8 = current best; enc16 tested and worse (+2.82, MaxDD 35%)
     window_size: 50            # OHLCV bars per encoder input window
-    epochs: 30                 # training epochs (try 60-80 for more accuracy)
+    epochs: 30
     batch_size: 4096
     lr: 0.001
+    # Transformer-specific (only read when mode: transformer)
+    d_model: 32                # attention hidden dim
+    n_heads: 4                 # attention heads (must divide d_model evenly)
+    n_layers: 2                # transformer encoder layers
 
   # ── Walk-forward evaluation ───────────────────────────────────────────────
   walk_forward:

@@ -62,12 +62,16 @@ class PipelineConfig:
 
     # Latent encoder
     encoder_enabled:    bool  = True
-    encoder_mode:       str   = "supervised"    # supervised | autoencoder
+    encoder_mode:       str   = "supervised"    # supervised | transformer | autoencoder
     encoder_latent_dim: int   = 8
     encoder_window:     int   = 50              # OHLCV bars per input window
     encoder_epochs:     int   = 30
     encoder_batch:      int   = 4096
     encoder_lr:         float = 1e-3
+    # Transformer-specific (only used when encoder_mode="transformer")
+    encoder_d_model:    int   = 32
+    encoder_n_heads:    int   = 4
+    encoder_n_layers:   int   = 2
 
     # Walk-forward
     wf_window_type: str          = "expanding"  # expanding | sliding
@@ -127,6 +131,9 @@ class PipelineConfig:
             encoder_epochs     = enc.get("epochs",      30),
             encoder_batch      = enc.get("batch_size",  4096),
             encoder_lr         = enc.get("lr",          1e-3),
+            encoder_d_model    = enc.get("d_model",     32),
+            encoder_n_heads    = enc.get("n_heads",     4),
+            encoder_n_layers   = enc.get("n_layers",    2),
 
             wf_window_type = wf.get("window_type", "expanding"),
             wf_train_days  = wf.get("train_days",  180),
@@ -194,12 +201,15 @@ class PredictorPipeline:
 
         self._enc: Optional[LatentEncoder] = (
             LatentEncoder(
-                mode        = cfg.encoder_mode,
-                latent_dim  = cfg.encoder_latent_dim,
-                window_size = cfg.encoder_window,
-                epochs      = cfg.encoder_epochs,
-                batch_size  = cfg.encoder_batch,
-                lr          = cfg.encoder_lr,
+                mode                 = cfg.encoder_mode,
+                latent_dim           = cfg.encoder_latent_dim,
+                window_size          = cfg.encoder_window,
+                epochs               = cfg.encoder_epochs,
+                batch_size           = cfg.encoder_batch,
+                lr                   = cfg.encoder_lr,
+                transformer_d_model  = cfg.encoder_d_model,
+                transformer_n_heads  = cfg.encoder_n_heads,
+                transformer_n_layers = cfg.encoder_n_layers,
             )
             if cfg.encoder_enabled else None
         )
@@ -541,9 +551,12 @@ class PredictorPipeline:
         if meta.get("encoder_enabled") and enc_path.exists():
             cfg = self.cfg
             self._enc = LatentEncoder(
-                mode        = cfg.encoder_mode,
-                latent_dim  = cfg.encoder_latent_dim,
-                window_size = cfg.encoder_window,
+                mode                 = cfg.encoder_mode,
+                latent_dim           = cfg.encoder_latent_dim,
+                window_size          = cfg.encoder_window,
+                transformer_d_model  = cfg.encoder_d_model,
+                transformer_n_heads  = cfg.encoder_n_heads,
+                transformer_n_layers = cfg.encoder_n_layers,
             )
             self._enc.load(str(enc_path))
 
