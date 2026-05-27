@@ -5,3 +5,11 @@ __pycache__/
 .pytest_cache/
 logs/
 *.log
+
+# Walk-forward model cache (regeneratable, large binary files)
+data/models/wf_cache*/
+data/models/pipeline_wf_cache/
+data/models/ens_compare_cache/
+
+# Large model artifacts (keep pipeline/ but ignore cache folds)
+data/models/wf_cache/

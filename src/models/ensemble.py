@@ -48,15 +48,18 @@ from src.models.model_interface import ModelInterface
 
 class Ensemble(ModelInterface):
     """
-    Two-layer stacking ensemble.
+    Two-layer stacking ensemble (mode="stack") or weighted-blend ensemble (mode="blend").
 
     Parameters
     ----------
     base_models  : list of trained-or-untrained ModelInterface instances
-    meta_model   : "logistic" | "lightgbm" — the Layer-1 combiner
-    n_folds      : CV folds for generating out-of-fold base predictions
+    meta_model   : "logistic" | "lightgbm" — the Layer-1 combiner (stack mode only)
+    n_folds      : CV folds for generating out-of-fold base predictions (stack mode only)
     use_original : if True, also pass the original features to the meta-learner
-                   alongside the stacked probabilities (can help or hurt)
+                   alongside the stacked probabilities (stack mode only)
+    mode         : "blend" (weighted average, default) | "stack" (meta-learner OOF)
+    weights      : per-model weights for blend mode; normalized to sum to 1 automatically.
+                   Defaults to equal weights if not provided.
     """
 
     def __init__(
@@ -65,11 +68,15 @@ class Ensemble(ModelInterface):
         meta_model:  str = "logistic",
         n_folds:     int = 5,
         use_original: bool = False,
+        mode:        str = "blend",
+        weights:     Optional[List[float]] = None,
     ):
         self.base_models   = base_models  # may be empty when loading from file
         self.meta_model_type = meta_model
         self.n_folds       = n_folds
         self.use_original  = use_original
+        self.mode          = mode
+        self._weights      = weights if weights else [1.0] * len(base_models)
 
         self._meta: Optional[object] = None
         self._feature_names: list[str] = []
@@ -85,9 +92,11 @@ class Ensemble(ModelInterface):
         extra_meta: Optional[pd.DataFrame] = None,
     ) -> "Ensemble":
         """
-        1. Generate out-of-fold Layer-0 predictions via StratifiedKFold.
-        2. Train meta-learner on stacked OOF predictions (+ extra_meta if given).
-        3. Retrain all base models on the full training set.
+        Blend mode: trains each base model independently on (X, y). No OOF, no meta-learner.
+        Stack mode:
+          1. Generate out-of-fold Layer-0 predictions via StratifiedKFold.
+          2. Train meta-learner on stacked OOF predictions (+ extra_meta if given).
+          3. Retrain all base models on the full training set.
 
         Parameters
         ----------
@@ -95,9 +104,25 @@ class Ensemble(ModelInterface):
             Extra columns appended to the meta-feature matrix only (not passed to
             base models). Use this to inject latent/regime features into the
             meta-learner without inflating the base model feature space.
+            (Stack mode only — ignored in blend mode.)
         """
         if not self.base_models:
             raise ValueError("Ensemble needs at least one base model.")
+
+        # ── Blend mode ────────────────────────────────────────────────────────
+        if self.mode == "blend":
+            self._feature_names = list(X.columns)
+            self._trained_on = f"{X.index[0].date()} → {X.index[-1].date()}"
+            print(f"Ensemble (blend): training {len(self.base_models)} base models...")
+            for i, model in enumerate(self.base_models):
+                name = type(model).__name__
+                w = self._weights[i] if i < len(self._weights) else 1.0
+                print(f"  [{i+1}/{len(self.base_models)}] {name}  weight={w:.2f}")
+                model.train(X, y)
+            print("Ensemble (blend) training complete.")
+            return self
+
+        # ── Stack mode (existing logic) ───────────────────────────────────────
         self._feature_names = list(X.columns)
         self._trained_on    = f"{X.index[0].date()} → {X.index[-1].date()}"
         self._classes       = np.sort(np.unique(y.values))
@@ -173,10 +198,27 @@ class Ensemble(ModelInterface):
         Returns shape (n_rows, 3) — columns: [P_buy, P_hold, P_sell].
         For single-row input, returns shape (3,).
 
+        Blend mode: weighted average of base model probabilities.
+        Stack mode: passes stacked probabilities through the meta-learner.
+
         Parameters
         ----------
         extra_meta : same extra columns passed at train() time, aligned to X.index.
+                     (Stack mode only — ignored in blend mode.)
         """
+        # ── Blend mode ────────────────────────────────────────────────────────
+        if self.mode == "blend":
+            total = sum(self._weights)
+            blended = None
+            for model, w in zip(self.base_models, self._weights):
+                p = model.predict_proba(X)
+                if p.ndim == 1:
+                    p = p.reshape(1, -1)
+                blended = (blended + p * w) if blended is not None else p * w
+            result = blended / total
+            return result[0] if len(X) == 1 else result
+
+        # ── Stack mode (existing logic) ───────────────────────────────────────
         if self._meta is None:
             raise RuntimeError("Ensemble not trained. Call train() first.")
 
@@ -223,6 +265,8 @@ class Ensemble(ModelInterface):
             "n_folds":          self.n_folds,
             "use_original":     self.use_original,
             "extra_meta_cols":  getattr(self, "_extra_meta_cols", []),
+            "mode":             self.mode,
+            "weights":          self._weights,
         }
         joblib.dump(payload, path)
         print(f"Ensemble saved → {path}")
@@ -238,6 +282,8 @@ class Ensemble(ModelInterface):
         self.n_folds           = payload.get("n_folds", 5)
         self.use_original      = payload.get("use_original", False)
         self._extra_meta_cols  = payload.get("extra_meta_cols", [])
+        self.mode              = payload.get("mode", "stack")
+        self._weights          = payload.get("weights", [1.0] * len(self.base_models))
         print(f"Ensemble loaded ← {path}")
         return self
 
@@ -250,7 +296,9 @@ class Ensemble(ModelInterface):
             "features":   self._feature_names,
             "n_classes":  3,
             "params": {
+                "mode":            self.mode,
                 "base_models":     base_names,
+                "weights":         self._weights,
                 "meta_model":      self.meta_model_type,
                 "n_folds":         self.n_folds,
                 "use_original":    self.use_original,

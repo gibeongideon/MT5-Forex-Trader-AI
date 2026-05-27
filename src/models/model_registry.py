@@ -255,8 +255,28 @@ def _build_model(model_type: str) -> ModelInterface:
             ff_dim   = _cfg.get("ff_dim",   64),
             epochs   = _cfg.get("epochs",   30),
         )
+    # ── Named ensemble variants for comparison scripts ────────────────────────
+    if t == "ensemble_xgb_cat":
+        from src.models.ensemble import Ensemble
+        from src.models.xgboost_model import XGBoostModel
+        from src.models.catboost_model import CatBoostModel
+        return Ensemble(base_models=[XGBoostModel(), CatBoostModel()],
+                        mode="blend", weights=[1.0, 1.0])
+    if t == "ensemble_xgb_cat_lgb":
+        from src.models.ensemble import Ensemble
+        from src.models.xgboost_model import XGBoostModel
+        from src.models.catboost_model import CatBoostModel
+        from src.models.lightgbm_model import LightGBMModel
+        return Ensemble(base_models=[XGBoostModel(), CatBoostModel(), LightGBMModel()],
+                        mode="blend", weights=[1.0, 1.0, 1.0])
+    if t == "ensemble_stack":
+        from src.models.ensemble import Ensemble
+        from src.models.xgboost_model import XGBoostModel
+        from src.models.catboost_model import CatBoostModel
+        return Ensemble(base_models=[XGBoostModel(), CatBoostModel()],
+                        meta_model="lightgbm", n_folds=3, mode="stack")
     raise ValueError(
         f"Unknown model type: '{model_type}'. "
         f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble, "
-        f"llm_signal, bar_lm"
+        f"llm_signal, bar_lm, ensemble_xgb_cat, ensemble_xgb_cat_lgb, ensemble_stack"
     )

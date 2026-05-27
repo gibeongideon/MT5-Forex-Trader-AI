@@ -388,6 +388,48 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | + Unsupervised AE 16-dim | -0.41 | — | — | — | Failed |
 | **+ Supervised enc 8-dim** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Current best** |
 
+**Phase 10 experiments (in progress — see `scripts/compare_ensemble_variants.py`):**
+
+| Config | Description | Expected Sharpe lift |
+| ------ | ----------- | -------------------- |
+| A | XGBoost alone (baseline, enc 8-dim) | reference |
+| B | XGBoost + CatBoost blend (50/50) | +0.1 to +0.3 |
+| C | XGBoost + CatBoost + LightGBM blend (equal weights) | +0.2 to +0.4 |
+| D | XGBoost + CatBoost stack (LightGBM meta-learner, 3-fold OOF) | +0.3 to +0.6 |
+| E | XGBoost alone + larger encoder (latent_dim=16, epochs=60) | +0.2 to +0.5 |
+
+**Future experiments (cloud / LLM ensemble — requires cache build first):**
+
+| Priority | Config | Description | Prerequisite |
+| -------- | ------ | ----------- | ------------ |
+| F | LLM blend (low weight) | XGBoost + CatBoost + Anthropic Claude (weight 0.2) | Run `scripts/precompute_llm_signals.py` over full dataset |
+| G | LLM stack (meta-learner) | XGBoost + CatBoost + LLM → LightGBM meta-learner | Same as F — needs full signal cache |
+| H | Cloud model blend | XGBoost + SageMaker/Vertex endpoint | Deploy model to cloud, create `src/models/cloud_model.py` |
+| I | Hybrid ensemble | XGBoost (local) + Cloud (60/40 blend) | H complete |
+
+**Why LLM in ensemble makes sense:** XGBoost/CatBoost learn statistical feature patterns.
+Claude reads the tokenized bar sequence and reasons about momentum, compression, and context
+— orthogonal signal sources. Meta-learner learns when to trust each.
+
+**Why to do local ensemble first:** LLM signals require a one-time cache build (38k+ API calls
+for the full dataset) which costs money and time. Local ensemble (configs A–E) is free
+and fast. Establish a strong local baseline before adding cloud cost.
+
+**How to add LLM to the ensemble (once cache is built):**
+
+```yaml
+# config.yaml
+ensemble:
+  mode: blend
+  base_models:
+    - name: xgboost
+      weight: 0.4
+    - name: catboost
+      weight: 0.4
+    - name: llm_signal
+      weight: 0.2   # low weight until LLM accuracy is validated
+```
+
 **Next experiments to try (in order):**
 1. Train encoder 60–80 epochs (free — just time)
 2. Test `latent_dim=4` and `latent_dim=16`
@@ -505,3 +547,20 @@ Pred1 Pred2 Pred3
                                               ▼
                                     MT5 Terminal (ICMarkets Demo)
                                     via rpyc bridge on :18812
+
+
+
+
+MODES TO EXPLORE
+
+
+Option	Expected Sharpe lift	Risk	Time
+XGBoost + CatBoost blend	+0.1 to +0.3	Low	5 min
+XGBoost + CatBoost + LightGBM blend	+0.2 to +0.4	Low	5 min
+XGBoost + CatBoost stack (meta-learner)	+0.3 to +0.6	Low	15 min
+Increase encoder to latent_dim=16, epochs=60	+0.2 to +0.5	Low	20 min
+XGB + CatBoost + LLM blend (cache=partial)	unpredictable	Medium	build cache first
+XGB + CatBoost + LLM stack (full cache)	+0.5 to +1.0	High	hours (cache build)
+My recommendation: Run the stack meta-learner with XGBoost + CatBoost first — no API costs, no cache needed, fast. If that doesn't beat +3.13, add LightGBM to the mix. LLM should be step 3 after you've seen what local models can do.
+
+Let's run the comparison now — first the current blend, then stack:

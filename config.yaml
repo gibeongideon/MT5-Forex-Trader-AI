@@ -13,7 +13,7 @@
 pipeline:
 
   # ── Core ──────────────────────────────────────────────────────────────────
-  model_type: xgboost          # xgboost | lightgbm | catboost | ensemble
+  model_type: ensemble          # xgboost | lightgbm | catboost | ensemble
   data_path: data/EURUSD_M15.csv
   train_frac: 0.8              # fraction used to fit scaler + encoder
 
@@ -138,14 +138,18 @@ models:
 
 # ── Phase 6: Ensemble configuration ───────────────────────────────────────────
 ensemble:
-  base_models:
-    - xgboost
-    - lightgbm
-    - catboost
-    - random_forest
-  meta_model: lightgbm     # logistic | lightgbm — lightgbm found to be better (lower log-loss, 2x confidence coverage)
-  n_folds: 5               # CV folds for out-of-fold stacking
+  mode: blend            # blend (weighted avg, default) | stack (meta-learner, slower)
+  meta_model: lightgbm   # only used when mode: stack
+  n_folds: 5             # only used when mode: stack
   use_original_features: false
+  # Choose which models to combine and their weights.
+  # Weights are relative (they are normalized to sum to 1 automatically).
+  # To add a cloud model: add "- name: cloud_model  weight: 1.0" here.
+  base_models:
+    - name: xgboost
+      weight: 1.0
+    - name: catboost
+      weight: 1.0
 
 # ── Phase 9: LLM Signal + Bar Language Model ──────────────────────────────────
 llm_signal:
