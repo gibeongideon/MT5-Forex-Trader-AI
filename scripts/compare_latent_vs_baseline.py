@@ -1,20 +1,21 @@
 """
-A/B walk-forward comparison: baseline features vs. latent-enriched features.
+A/B/C walk-forward comparison: baseline vs. latent-enriched features.
 
-Runs the same XGBoost walk-forward on two feature sets and prints a side-by-side
-table so you can see whether the autoencoder's latent features improve edge.
+Config A — Baseline: 31 features → XGBoost walk-forward
+Config B — Unsupervised AE (16-dim): 31+16=47 features → XGBoost
+Config C — Supervised encoder (8-dim): 31+8=39 features → XGBoost  ← main test
 
 Usage:
+    # Full comparison (requires all latent parquets built)
     conda run -n envmt5 python scripts/compare_latent_vs_baseline.py
 
-Requirements:
-    1. Run scripts/train_autoencoder.py     (creates data/models/autoencoder.pt)
-    2. Run scripts/build_latent_features.py (creates data/features/EURUSD_M15_features_latent.parquet)
-    Then run this script.
+    # Only A vs C (skip old unsupervised Config B)
+    conda run -n envmt5 python scripts/compare_latent_vs_baseline.py --skip-b
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 import warnings
 from pathlib import Path
@@ -34,13 +35,14 @@ from src.walk_forward import WalkForwardConfig, WalkForwardValidator
 # Paths
 # ---------------------------------------------------------------------------
 
-FEATURES_BASE   = ROOT / "data" / "features" / "EURUSD_M15_features.parquet"
-FEATURES_LATENT = ROOT / "data" / "features" / "EURUSD_M15_features_latent.parquet"
-LABELS          = ROOT / "data" / "features" / "EURUSD_M15_labels.parquet"
-PRICES          = ROOT / "data" / "EURUSD_M15.csv"
+FEATURES_BASE    = ROOT / "data" / "features" / "EURUSD_M15_features.parquet"
+FEATURES_LATENT  = ROOT / "data" / "features" / "EURUSD_M15_features_latent.parquet"
+FEATURES_SUP8    = ROOT / "data" / "features" / "EURUSD_M15_features_latent_sup8.parquet"
+LABELS           = ROOT / "data" / "features" / "EURUSD_M15_labels.parquet"
+PRICES           = ROOT / "data" / "EURUSD_M15.csv"
 
 # ---------------------------------------------------------------------------
-# Shared backtester config (matches Phase 8 winner: confidence-tiered risk)
+# Shared backtester config (Phase 8 winner: confidence-tiered risk)
 # ---------------------------------------------------------------------------
 
 BACKTEST_CFG = BacktestConfig(
@@ -54,7 +56,7 @@ BACKTEST_CFG = BacktestConfig(
     initial_balance   = 10_000.0,
     risk_pct          = 0.01,
     use_regime_filter = False,
-    risk_manager      = RiskManager(RiskConfig()),   # Phase 8 tiered risk
+    risk_manager      = RiskManager(RiskConfig()),
 )
 
 WF_CFG_BASE = dict(
@@ -66,24 +68,39 @@ WF_CFG_BASE = dict(
 )
 
 
-def _run(X: pd.DataFrame, y: pd.Series, prices: pd.DataFrame, label: str):
+def _run(X: pd.DataFrame, y: pd.Series, prices: pd.DataFrame, label: str,
+         cache_dir: str = "data/models/wf_cache"):
     print(f"\n{'=' * 60}")
     print(f"  {label}")
     print(f"  Features: {X.shape[1]} columns")
     print(f"{'=' * 60}")
-    cfg = WalkForwardConfig(**WF_CFG_BASE)
+    cfg = WalkForwardConfig(**WF_CFG_BASE, cache_dir=cache_dir)
     result = WalkForwardValidator(verbose=True).run(X, y, prices, cfg)
     result.report(title=label)
     return result
 
 
 def main() -> None:
+    p = argparse.ArgumentParser()
+    p.add_argument("--skip-b", action="store_true",
+                   help="Skip Config B (old unsupervised 16-dim latent)")
+    args = p.parse_args()
+
     # ---- Pre-flight checks ----
-    if not FEATURES_LATENT.exists():
-        print(f"ERROR: Latent features not found at {FEATURES_LATENT}")
-        print("\nRun these steps first:")
-        print("  1. conda run -n envmt5 python scripts/train_autoencoder.py")
-        print("  2. conda run -n envmt5 python scripts/build_latent_features.py")
+    missing = []
+    if not FEATURES_SUP8.exists():
+        missing.append(f"  {FEATURES_SUP8.name}  — run: python scripts/build_latent_features.py --suffix sup8")
+    if not args.skip_b and not FEATURES_LATENT.exists():
+        print(f"  NOTE: {FEATURES_LATENT.name} not found — Config B will be skipped (use --skip-b to silence)")
+        args.skip_b = True
+
+    if missing:
+        print("ERROR: Required files not found:")
+        for m in missing:
+            print(m)
+        print("\nTo generate supervised features:")
+        print("  1. conda run -n envmt5 python scripts/train_autoencoder.py --mode supervised --latent-dim 8")
+        print("  2. conda run -n envmt5 python scripts/build_latent_features.py --suffix sup8")
         sys.exit(1)
 
     # ---- Load shared data ----
@@ -92,57 +109,76 @@ def main() -> None:
     prices = pd.read_csv(PRICES, index_col="time")
     prices.index = pd.to_datetime(prices.index)
 
-    X_base   = pd.read_parquet(FEATURES_BASE)
-    X_latent = pd.read_parquet(FEATURES_LATENT)
+    X_base = pd.read_parquet(FEATURES_BASE)
+    X_sup8 = pd.read_parquet(FEATURES_SUP8)
 
-    print(f"  Base features   : {X_base.shape}")
-    print(f"  Latent features : {X_latent.shape}")
-    print(f"  Prices          : {len(prices):,} bars")
+    print(f"  Base features      : {X_base.shape}")
+    print(f"  Supervised 8-dim   : {X_sup8.shape}")
+    print(f"  Prices             : {len(prices):,} bars")
 
-    # ---- Align labels to each feature set ----
-    y_base   = y.loc[y.index.isin(X_base.index)]
-    y_latent = y.loc[y.index.isin(X_latent.index)]
+    y_base = y.loc[y.index.isin(X_base.index)]
+    y_sup8 = y.loc[y.index.isin(X_sup8.index)]
 
-    # ---- Run A/B ----
-    res_a = _run(X_base,   y_base,   prices, "A — Baseline (31 features)")
-    res_b = _run(X_latent, y_latent, prices,
-                 f"B — Latent-enriched ({X_latent.shape[1]} features: "
-                 f"31 base + {X_latent.shape[1] - X_base.shape[1]} latent)")
+    # ---- Run configs ----
+    results = {}
+
+    results["A"] = _run(X_base, y_base, prices, "A — Baseline (31 features)",
+                        cache_dir="data/models/wf_cache")
+
+    if not args.skip_b:
+        X_latent = pd.read_parquet(FEATURES_LATENT)
+        y_latent = y.loc[y.index.isin(X_latent.index)]
+        print(f"  Unsupervised 16-dim: {X_latent.shape}")
+        results["B"] = _run(X_latent, y_latent, prices,
+                            f"B — Unsupervised AE ({X_latent.shape[1]} features)",
+                            cache_dir="data/models/wf_cache_latent")
+
+    results["C"] = _run(X_sup8, y_sup8, prices,
+                        f"C — Supervised enc 8-dim ({X_sup8.shape[1]} features)",
+                        cache_dir="data/models/wf_cache_sup8")
 
     # ---- Summary table ----
     print()
-    print("╔" + "═" * 62 + "╗")
-    print("║  LATENT ENCODER A/B COMPARISON" + " " * 31 + "║")
-    print("╠" + "═" * 62 + "╣")
-    print(f"  {'Config':<30} {'Sharpe':>7} {'MaxDD':>7} {'Return':>8} {'Trades':>7}")
-    print("  " + "-" * 57)
+    print("╔" + "═" * 68 + "╗")
+    print("║  LATENT ENCODER A/B/C COMPARISON" + " " * 34 + "║")
+    print("╠" + "═" * 68 + "╣")
+    print(f"  {'Config':<36} {'Sharpe':>7} {'MaxDD':>7} {'Return':>8} {'Trades':>7}")
+    print("  " + "-" * 63)
 
-    for label, res in [
-        (f"A Baseline (31 feat)",       res_a),
-        (f"B Latent ({X_latent.shape[1]} feat)", res_b),
-    ]:
+    config_labels = {
+        "A": f"A Baseline (31 feat)",
+        "B": f"B Unsupervised AE ({X_base.shape[1]+16} feat)",
+        "C": f"C Supervised enc 8-dim ({X_sup8.shape[1]} feat)",
+    }
+
+    for key, res in results.items():
         eq  = res.equity
         ret = (eq.iloc[-1] / eq.iloc[0] - 1) if len(eq) > 1 else 0.0
-        improvement = ""
-        print(f"  {label:<30} {res.sharpe:>+7.2f} {res.drawdown:>7.1%} "
+        label = config_labels[key]
+        print(f"  {label:<36} {res.sharpe:>+7.2f} {res.drawdown:>6.1f}% "
               f"{ret:>+8.1%} {len(res.trades):>7}")
 
     print()
-    sharpe_delta = res_b.sharpe - res_a.sharpe
-    dd_delta     = res_b.drawdown - res_a.drawdown
-    if sharpe_delta > 0:
-        print(f"  ✓ Latent features IMPROVED Sharpe by {sharpe_delta:+.2f}")
+    res_a = results["A"]
+    res_c = results["C"]
+    sharpe_delta = res_c.sharpe - res_a.sharpe
+    dd_delta     = res_c.drawdown - res_a.drawdown
+
+    if sharpe_delta > 0.05:
+        print(f"  ✓ Supervised latent IMPROVED Sharpe by {sharpe_delta:+.2f}")
     elif sharpe_delta < -0.05:
-        print(f"  ✗ Latent features HURT Sharpe by {sharpe_delta:.2f} — "
-              f"consider reducing latent_dim or increasing window_size")
+        print(f"  ✗ Supervised latent HURT Sharpe by {sharpe_delta:.2f} — "
+              f"try latent_dim=4 or more epochs")
     else:
-        print(f"  ~ Latent features neutral on Sharpe ({sharpe_delta:+.2f}) — "
+        print(f"  ~ Supervised latent neutral on Sharpe ({sharpe_delta:+.2f}) — "
               f"check drawdown and return for full picture")
 
     if dd_delta < -0.01:
-        print(f"  ✓ Max drawdown REDUCED by {abs(dd_delta):.1%}")
+        print(f"  ✓ Max drawdown REDUCED by {abs(dd_delta):.1f}%")
+    elif dd_delta > 0.01:
+        print(f"  ~ Max drawdown increased by {dd_delta:.1f}%")
     print()
-    print("╚" + "═" * 62 + "╝")
+    print("╚" + "═" * 68 + "╝")
 
 
 if __name__ == "__main__":

@@ -78,22 +78,43 @@ class Ensemble(ModelInterface):
 
     # ── ModelInterface ────────────────────────────────────────────────────────
 
-    def train(self, X: pd.DataFrame, y: pd.Series) -> "Ensemble":
+    def train(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        extra_meta: Optional[pd.DataFrame] = None,
+    ) -> "Ensemble":
         """
         1. Generate out-of-fold Layer-0 predictions via StratifiedKFold.
-        2. Train meta-learner on stacked OOF predictions.
+        2. Train meta-learner on stacked OOF predictions (+ extra_meta if given).
         3. Retrain all base models on the full training set.
+
+        Parameters
+        ----------
+        extra_meta : optional DataFrame aligned to X.index.
+            Extra columns appended to the meta-feature matrix only (not passed to
+            base models). Use this to inject latent/regime features into the
+            meta-learner without inflating the base model feature space.
         """
         if not self.base_models:
             raise ValueError("Ensemble needs at least one base model.")
         self._feature_names = list(X.columns)
         self._trained_on    = f"{X.index[0].date()} → {X.index[-1].date()}"
         self._classes       = np.sort(np.unique(y.values))
+        self._extra_meta_cols: list[str] = list(extra_meta.columns) if extra_meta is not None else []
 
         n_models  = len(self.base_models)
         n_rows    = len(X)
         # Each base model contributes 3 probability columns
         oof_stack = np.zeros((n_rows, n_models * 3), dtype=np.float32)
+
+        # Pre-align extra_meta to X's index once
+        if extra_meta is not None:
+            extra_aligned = extra_meta.reindex(X.index).fillna(0.0).values.astype(np.float32)
+            oof_extra = np.zeros((n_rows, extra_aligned.shape[1]), dtype=np.float32)
+        else:
+            extra_aligned = None
+            oof_extra = None
 
         skf = StratifiedKFold(n_splits=self.n_folds, shuffle=False)
         X_np = X.values
@@ -116,10 +137,17 @@ class Ensemble(ModelInterface):
                     proba = proba.reshape(1, -1)
                 oof_stack[val_idx, m_i*3 : m_i*3+3] = proba
 
+            if oof_extra is not None:
+                oof_extra[val_idx] = extra_aligned[val_idx]
+
             print(f"  fold {fold_i+1}/{self.n_folds} done")
 
         # Build meta-feature matrix
-        meta_X = self._build_meta_features(oof_stack, X if self.use_original else None)
+        meta_X = self._build_meta_features(
+            oof_stack,
+            X if self.use_original else None,
+            oof_extra,
+        )
 
         # Train meta-learner
         print("Training meta-learner...")
@@ -136,10 +164,18 @@ class Ensemble(ModelInterface):
               f"Meta model: {self.meta_model_type}")
         return self
 
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
+    def predict_proba(
+        self,
+        X: pd.DataFrame,
+        extra_meta: Optional[pd.DataFrame] = None,
+    ) -> np.ndarray:
         """
         Returns shape (n_rows, 3) — columns: [P_buy, P_hold, P_sell].
         For single-row input, returns shape (3,).
+
+        Parameters
+        ----------
+        extra_meta : same extra columns passed at train() time, aligned to X.index.
         """
         if self._meta is None:
             raise RuntimeError("Ensemble not trained. Call train() first.")
@@ -154,7 +190,11 @@ class Ensemble(ModelInterface):
                 proba = proba.reshape(1, -1)
             stack[:, m_i*3 : m_i*3+3] = proba
 
-        meta_X = self._build_meta_features(stack, X if self.use_original else None)
+        extra_arr = None
+        if extra_meta is not None:
+            extra_arr = extra_meta.reindex(X.index).fillna(0.0).values.astype(np.float32)
+
+        meta_X = self._build_meta_features(stack, X if self.use_original else None, extra_arr)
         raw    = self._meta.predict_proba(meta_X)   # sklearn order: sorted classes
 
         # Reorder to [P_buy, P_hold, P_sell]
@@ -174,28 +214,30 @@ class Ensemble(ModelInterface):
         path = Path(path)
         path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "base_models":     self.base_models,
-            "meta":            self._meta,
-            "meta_model_type": self.meta_model_type,
-            "feature_names":   self._feature_names,
-            "classes":         self._classes,
-            "trained_on":      self._trained_on,
-            "n_folds":         self.n_folds,
-            "use_original":    self.use_original,
+            "base_models":      self.base_models,
+            "meta":             self._meta,
+            "meta_model_type":  self.meta_model_type,
+            "feature_names":    self._feature_names,
+            "classes":          self._classes,
+            "trained_on":       self._trained_on,
+            "n_folds":          self.n_folds,
+            "use_original":     self.use_original,
+            "extra_meta_cols":  getattr(self, "_extra_meta_cols", []),
         }
         joblib.dump(payload, path)
         print(f"Ensemble saved → {path}")
 
     def load(self, path: str | Path = "data/models/ensemble.joblib") -> "Ensemble":
         payload = joblib.load(path)
-        self.base_models      = payload["base_models"]
-        self._meta            = payload["meta"]
-        self.meta_model_type  = payload["meta_model_type"]
-        self._feature_names   = payload["feature_names"]
-        self._classes         = payload["classes"]
-        self._trained_on      = payload.get("trained_on", "")
-        self.n_folds          = payload.get("n_folds", 5)
-        self.use_original     = payload.get("use_original", False)
+        self.base_models       = payload["base_models"]
+        self._meta             = payload["meta"]
+        self.meta_model_type   = payload["meta_model_type"]
+        self._feature_names    = payload["feature_names"]
+        self._classes          = payload["classes"]
+        self._trained_on       = payload.get("trained_on", "")
+        self.n_folds           = payload.get("n_folds", 5)
+        self.use_original      = payload.get("use_original", False)
+        self._extra_meta_cols  = payload.get("extra_meta_cols", [])
         print(f"Ensemble loaded ← {path}")
         return self
 
@@ -244,10 +286,14 @@ class Ensemble(ModelInterface):
         self,
         stack: np.ndarray,
         X_orig: Optional[pd.DataFrame] = None,
+        extra: Optional[np.ndarray] = None,
     ) -> np.ndarray:
+        parts = [stack]
         if X_orig is not None:
-            return np.hstack([stack, X_orig.values])
-        return stack
+            parts.append(X_orig.values)
+        if extra is not None:
+            parts.append(extra)
+        return np.hstack(parts) if len(parts) > 1 else stack
 
 
 # ── Module-level helpers ──────────────────────────────────────────────────────

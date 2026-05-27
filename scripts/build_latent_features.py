@@ -75,7 +75,16 @@ def main() -> None:
     p.add_argument("--data",     default=data_default,   help="Raw OHLCV CSV")
     p.add_argument("--encoder",  default=enc_default,    help="Trained encoder .pt path")
     p.add_argument("--output",   default=out_default,    help="Output parquet path")
+    p.add_argument("--suffix",   default=None,
+                   help="Suffix appended before .parquet in output name "
+                        "(e.g. --suffix sup8 → EURUSD_M15_features_latent_sup8.parquet). "
+                        "Overrides --output when set.")
     args = p.parse_args()
+
+    # --suffix overrides --output
+    if args.suffix:
+        feat_dir  = ROOT / "data" / "features"
+        args.output = str(feat_dir / f"EURUSD_M15_features_latent_{args.suffix}.parquet")
 
     encoder_path = ROOT / args.encoder if not Path(args.encoder).is_absolute() else Path(args.encoder)
     output_path  = ROOT / args.output  if not Path(args.output).is_absolute()  else Path(args.output)

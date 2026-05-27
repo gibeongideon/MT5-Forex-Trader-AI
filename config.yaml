@@ -1,6 +1,62 @@
 # MT5 Bot Configuration
 # Copy .env.example to .env and fill in your credentials (never commit .env)
 
+# ── End-to-end Predictor Pipeline ─────────────────────────────────────────────
+# Controls run_pipeline.py — one section to rule all pipeline behaviour.
+#
+# Quick commands:
+#   conda run -n envmt5 python scripts/run_pipeline.py backtest  # evaluate
+#   conda run -n envmt5 python scripts/run_pipeline.py train     # train + save
+#   conda run -n envmt5 python scripts/run_pipeline.py predict   # live signal
+#
+# CLI overrides: --model, --no-enc, --epochs, --latent, --data, --out
+pipeline:
+
+  # ── Core ──────────────────────────────────────────────────────────────────
+  model_type: xgboost          # xgboost | lightgbm | catboost | ensemble
+  data_path: data/EURUSD_M15.csv
+  train_frac: 0.8              # fraction used to fit scaler + encoder
+
+  # ── Feature engineering ───────────────────────────────────────────────────
+  features:
+    label_horizon: 4           # bars ahead for direction label
+    label_threshold: 0.0003    # min return to count as buy/sell (else hold)
+    scale: true                # StandardScaler on base features
+
+  # ── Supervised latent encoder ─────────────────────────────────────────────
+  # Set enabled: false to fall back to baseline 31-feature XGBoost.
+  # Current best result: supervised + latent_dim=8 → Sharpe +3.13 (vs +0.72 baseline)
+  encoder:
+    enabled: true
+    mode: supervised           # supervised (recommended) | autoencoder
+    latent_dim: 8              # 8 = current best; try 4 (less noise) or 16 (more info)
+    window_size: 50            # OHLCV bars per encoder input window
+    epochs: 30                 # training epochs (try 60-80 for more accuracy)
+    batch_size: 4096
+    lr: 0.001
+
+  # ── Walk-forward evaluation ───────────────────────────────────────────────
+  walk_forward:
+    window_type: expanding     # expanding (recommended) | sliding
+    train_days: 180            # minimum training window
+    test_days: 30              # test fold length
+    cache_dir: data/models/pipeline_wf_cache
+
+  # ── Backtester ────────────────────────────────────────────────────────────
+  backtest:
+    threshold: 0.40            # min P_buy or P_sell to open a trade
+    sl_pips: 30.0
+    tp_pips: 60.0              # 2:1 reward-to-risk
+    spread_pips: 1.0
+    initial_balance: 10000.0
+    risk_pct: 0.01             # base risk % (overridden per trade by risk_manager tiers)
+    use_regime_filter: false
+
+  # ── Artifact storage ──────────────────────────────────────────────────────
+  # All fitted objects (scaler, encoder, model) are saved here for live use.
+  artifacts:
+    directory: data/models/pipeline
+
 mt5:
   # Path to terminal64.exe — use the temp-launcher copy (start_mt5.sh runs MT5 from here
   # so the liveupdate can write the updated binary to Program Files without a sharing violation)
