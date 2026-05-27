@@ -282,7 +282,7 @@ class PredictorPipeline:
         if self._enc is not None:
             y_for_enc = (
                 y_full.reindex(df_tr.index)          # labels aligned to df_tr
-                if self._enc.mode == "supervised" else None
+                if self._enc.mode in ("supervised", "transformer") else None
             )
             print(
                 f"[Pipeline] Training {self._enc.mode} encoder "
