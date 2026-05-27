@@ -7,6 +7,27 @@
 > Last updated: 2026-05-27
 
 ---
+AIM
+
+
+We want I would usually evaluate:
+
+Annual return
+Sharpe ratio
+Max drawdown
+Win rate
+Profit factor
+Sortino ratio (downside risk only)
+
+A Forex model with:
+
+Sharpe >1.5
+Max drawdown <15–20%
+Profit factor >1.3
+Stable performance across different market periods
+
+is often considered a strong starting point.
+
 
 ## 1. System Architecture
 
@@ -378,17 +399,98 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 
 ## 5. Summary Leaderboard
 
-| Experiment | Sharpe | MaxDD | Return | Trades | Status |
-|------------|--------|-------|--------|--------|--------|
-| Random baseline | -0.17 | 21.6% | -2.5% | 354 | Reference |
-| Rule engine | -0.45 | — | -9.7% | 430 | Discarded |
-| XGBoost (no costs) | +1.34 | 10.5% | +14.2% | 176 | Reference |
-| XGBoost (1p spread) | +0.52 | — | -3.8% | 127 | Discarded |
-| Phase 8 winner (tiered risk) | +0.72 | 7.5% | +0.2% | 126 | Prev. best |
-| + Unsupervised AE 16-dim | -0.41 | — | — | — | Failed |
-| **+ Supervised enc 8-dim** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Current best (19 folds)** |
-| Phase 10 — XGBoost + enc 16-dim | +1.47 | 36.2% | +253.9% | 735 | Best on 31 folds |
-| Phase 10 — XGBoost + CatBoost stack (enc 8-dim) | +1.22 | 16.6% | +100.9% | 748 | Lowest MaxDD |
+> Target: Sharpe >1.5 · MaxDD <20% · Stable across market periods
+> ✅ = meets target · ❌ = fails target · ⚠️ = borderline
+
+| Experiment | Dataset | Sharpe | MaxDD | Return | Trades | Targets met |
+|------------|---------|--------|-------|--------|--------|-------------|
+| Random baseline | 49k | -0.17 | 21.6% | -2.5% | 354 | none |
+| Rule engine | 49k | -0.45 | — | -9.7% | 430 | none |
+| XGBoost alone (costs) | 49k | +0.52 | — | -3.8% | 127 | none |
+| Phase 8 — tiered risk | 49k | +0.72 | 7.5% | +0.2% | 126 | DD ✅ |
+| Unsupervised AE 16-dim | 49k | -0.41 | — | — | — | failed |
+| **Phase 9 — XGBoost + enc8** | **49k** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Sharpe ✅ DD ✅** |
+| Phase 10 — XGBoost + enc8 | 75k | +1.12 | 22.5% | +59.9% | 753 | DD ⚠️ |
+| Phase 10 — Stack enc8 | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
+| Phase 10 — XGBoost + enc16 | 75k | +1.47 | 36.2% | +253.9% | 735 | Sharpe ⚠️ DD ❌ |
+| Phase 10 — enc16 on 49k | 49k | +2.82 | 35.1% | +99.4% | 553 | Sharpe ✅ DD ❌ |
+| Stack enc8 on 49k | 49k | +2.48 | 35.4% | +266.4% | 497 | Sharpe ✅ DD ❌ |
+| Stack enc8 on 75k | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
+
+---
+
+## 6. Sweet Spot Analysis
+
+### Target Criteria (from AIM)
+
+```
+Sharpe ratio  > 1.5
+Max drawdown  < 15–20%
+Profit factor > 1.3
+Stable across different market periods (multiple folds, different regimes)
+```
+
+### What We Know So Far
+
+| Metric | 49k dataset (May 2024+) | 75k dataset (May 2023+) |
+| ------ | ----------------------- | ----------------------- |
+| **Best Sharpe** | +3.13 (XGBoost + enc8) | +1.47 (XGBoost + enc16) |
+| **Best MaxDD** | 13.3% (XGBoost + enc8) | 16.6% (Stack + enc8) |
+| **Meets BOTH targets** | ✅ Phase 9 enc8 (+3.13, 13.3%) | ⚠️ Stack enc8 (+1.22, 16.6%) |
+
+### The Core Tension
+
+**More data = lower Sharpe, better reliability.**
+
+- 49k rows (2024–2026): strong recent results, but only ~2 years tested
+- 75k rows (2023–2026): harder, includes more market regimes, more honest
+
+The +3.13 on 49k data is a real result but may reflect a particularly favourable period. The +1.22 on 75k is more conservative but tested across a wider range of conditions.
+
+### Where the Sweet Spot Lives
+
+Based on results so far, the sweet spot is at the intersection of:
+
+```
+Best model:    enc8 (8-dim supervised encoder, 30 epochs)
+Best signal:   XGBoost alone or Stack (XGBoost + CatBoost)
+Best dataset:  49k rows (May 2024+) — the period where our encoder was trained
+Best config:   Stack beats XGBoost alone on MaxDD (16.6% vs 22.5% on 75k)
+               Stack result on 49k = PENDING (running now)
+```
+
+**Stack result (completed 2026-05-27):**
+
+- Stack on 49k: +2.48 Sharpe / 35.4% MaxDD — worse than XGBoost alone on both metrics
+- Stack on 75k: +1.22 Sharpe / 16.6% MaxDD — marginally better than XGBoost alone (+0.10)
+- **Conclusion:** stacking adds value when base model is weak; when signal is strong (enc8 on 49k), keep it simple
+
+### Key Decisions Ahead
+
+| Question | Options | Decision |
+| -------- | ------- | -------- |
+| Which encoder? | enc8 ✅ (enc16 loses) | **enc8 confirmed** |
+| Blend or stack? | Stack wins on MaxDD | **stack** |
+| Which dataset to deploy on? | 49k (higher Sharpe) vs 75k (more robust) | **pending stack results** |
+| Deployment threshold? | Sharpe >1.5, MaxDD <15% | **TBD** |
+
+### After Stack Results — Next Steps
+
+If stack on 49k beats +3.13 or achieves same Sharpe with lower MaxDD:
+→ **This is the model to deploy.** Retrain on full 49k dataset and push to live bot.
+
+If stack on 49k doesn't beat +3.13:
+→ XGBoost + enc8 on 49k remains the deployment candidate (+3.13, MaxDD 13.3%).
+
+Either way the 75k stack result shows how the strategy holds up over the harder 2023-2024 period — important for confidence before going live.
+
+**Remaining experiments to try after stack:**
+
+1. Stack + enc8 on 49k → **running now**
+2. Stack + enc8 on 75k → **running now**
+3. CatBoost alone + enc8 on 49k (CatBoost was +1.17 baseline, may shine with enc8)
+4. Reduce MaxDD: tighten drawdown throttle from 10% → 7% (free, config change only)
+5. Extend 49k data: add 2023-2024 data gradually, find breakeven fold
 
 **Phase 10 results (2026-05-27, 31 folds, 2h 20min run):**
 
@@ -400,15 +502,47 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | D | XGBoost + CatBoost stack (LGB meta) | +1.22 | 16.6% | +100.9% | 748 |
 | **E** | **XGBoost + enc 16-dim / 60 epochs** | **+1.47** | **36.2%** | **+253.9%** | **735** |
 
-**Config E wins** — bigger encoder (16-dim, 60 epochs, 69% train acc vs 56%) extracts more regime signal.
-
-**Key findings:**
+**Key findings from Phase 10:**
 
 - Blending (B, C) *hurts* Sharpe — adding more models as a simple average dilutes the best model's signal
 - Stacking (D) *helps* vs blending — meta-learner learns when to trust each model, cuts MaxDD to 16.6%
-- Bigger encoder (E) gives best Sharpe and highest return, at the cost of higher MaxDD (36.2%)
-- **Logical next step:** combine E's 16-dim encoder with D's stack architecture → XGBoost + CatBoost stack on 47 features (31 base + 16 latent)
-- The +1.47 vs +3.13 gap: Phase 9 measured 19 folds (data through ~Oct 2025); Phase 10 used 31 folds through May 2026. The 12 additional folds on recent data pull the aggregate down. Model needs retraining on extended dataset.
+- Bigger encoder (E) gives best Sharpe on 75k data (+1.47), at the cost of very high MaxDD (36.2%)
+- The 75k vs 49k gap: Phase 9 measured 19 folds (May 2024–May 2026); Phase 10 used 31 folds (May 2023–May 2026). The extra 12 folds on older 2023-2024 data are harder and pull aggregate Sharpe down.
+
+---
+
+### Phase 10 — enc8 vs enc16 on 49k Dataset (2026-05-27)
+
+Direct test: does a bigger encoder beat the +3.13 record on the same data?
+
+| Config | Encoder | Features | Sharpe | MaxDD | Return | Trades |
+| ------ | ------- | -------- | ------ | ----- | ------ | ------ |
+| A (Phase 9 reference) | enc8 / 30ep | 39 | +3.13 | 13.3% | +358.3% | 524 |
+| B | enc16 / 60ep | 47 | +2.82 | 35.1% | +99.4% | 553 |
+
+**enc8 wins on every metric.** enc16 is -0.31 Sharpe worse and nearly 3× the drawdown.
+
+**Why:** the 8-dim bottleneck forces the encoder to keep only the most predictive regime signal — stronger regularisation. 16 dims captures noise alongside signal, hurting OOS generalisation.
+
+**Conclusion: enc8 / 30 epochs remains the best encoder.**
+
+---
+
+### Phase 10 — Stack on 49k vs 75k (2026-05-27, in progress)
+
+Running `scripts/compare_stack_49k_75k.py` — results pending.
+
+| Config | Dataset | Model | Sharpe | MaxDD | Return | Trades |
+| ------ | ------- | ----- | ------ | ----- | ------ | ------ |
+| Reference | 49k (May 2024+) | XGBoost + enc8 | +3.13 | 13.3% | +358.3% | 524 |
+| Reference | 75k (full) | XGBoost + enc8 | +1.12 | 22.5% | +59.9% | 753 |
+| Stack + enc8 | 49k (May 2024+) | Stack (XGB+Cat) + enc8 | +2.48 | 35.4% | +266.4% | 497 |
+| Stack + enc8 | 75k (full) | Stack (XGB+Cat) + enc8 | +1.22 | 16.6% | +100.9% | 748 |
+
+**Stack on 49k LOST to XGBoost alone** (-0.65 Sharpe, MaxDD nearly 3× worse).
+**Stack on 75k marginally better** (+0.10 Sharpe, MaxDD 6pp lower).
+
+**Insight:** Stacking adds value when the base model is weak. When the base model is already strong (enc8 on 49k = +3.13), the meta-learner adds noise from OOF folds — hurts rather than helps. Rule: **keep it simple when the signal is strong.**
 
 **Future experiments (cloud / LLM ensemble — requires cache build first):**
 
