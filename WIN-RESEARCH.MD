@@ -421,3 +421,87 @@ conda run -n envmt5 python scripts/compare_latent_vs_baseline.py --skip-b
 ---
 
 *All results are walk-forward validated — 19 independent folds, each trained on past data only and tested on future data the model never saw during training. These are not in-sample backtest numbers.*
+
+BASIC IDEA
+Raw OHLC + indicators
+        ↓
+ ┌─────────────┐
+ │ Base Models │
+ └─────────────┘
+   ↓    ↓    ↓
+Pred1 Pred2 Pred3
+      ↓
+ ┌─────────────┐
+ │Meta-Learner │
+ └─────────────┘
+      ↓
+ Final signal
+
+
+
+
+ MORE DETAILED 
+┌─────────────────────────────────────────────────────────────────────────┐
+│                    RAW DATA FLOW (MT5 Live or CSV)                       │
+└─────────────────────────────────────────────┬───────────────────────────┘
+                                              │ OHLCV bars (open/high/low/close/vol)
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LAYER 1 — Feature Engineering          src/features/feature_pipeline.py │
+│  FeaturePipeline                                                          │
+│  ─────────────────────────────────────────────────────────────────────── │
+│  RSI(14)  MACD  BB(20)  ATR(14)  ADX  SMA(9/21/50)  OBV  Stoch  ...    │
+│  + StandardScaler (fit on train set, transform all)                       │
+│  → 31-dim feature matrix                                                  │
+└─────────────────────────────────────────────┬───────────────────────────┘
+                                              │ 31 features
+                    ┌─────────────────────────┼────────────────────────────┐
+                    │   PLUG-IN (on/off)       ▼                           │
+                    │  ┌────────────────────────────────────────────────┐  │
+                    │  │  LAYER 2 — Latent Encoder  src/features/        │  │
+                    │  │  LatentEncoder (supervised mode)                │  │
+                    │  │  ───────────────────────────────────────────── │  │
+                    │  │  50-bar OHLCV sliding window → z-normalize      │  │
+                    │  │  MLP Encoder → 8-dim "regime fingerprint"       │  │
+                    │  │  Trained with CrossEntropyLoss on buy/hold/sell  │  │
+                    │  │  → latent_0 … latent_7  (appended to features)  │  │
+                    │  └──────────────────────┬─────────────────────────┘  │
+                    │  config.yaml:           │ +8 latent dims             │
+                    │  encoder.enabled: true  │                            │
+                    └─────────────────────────┘                            │
+                                              ▼
+                                   39-dim feature matrix (31+8)
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LAYER 3 — Prediction Model                     src/models/              │
+│  ModelInterface contract (swappable via config.yaml: model_type)         │
+│  ─────────────────────────────────────────────────────────────────────── │
+│  XGBoost  │  LightGBM  │  CatBoost  │  RandomForest  │  Ensemble        │
+│  → [P_buy, P_hold, P_sell] probability vector                            │
+└─────────────────────────────────────────────┬───────────────────────────┘
+                                              │ probabilities
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LAYER 4 — Risk Manager                     src/risk_manager.py          │
+│  Confidence tiers → position size                                         │
+│  ─────────────────────────────────────────────────────────────────────── │
+│  P≥0.75 → 2.0% risk  │  P≥0.65 → 1.5%  │  P≥0.55 → 0.75%  │  P≥0.40 → 0.5%  │
+│  Kelly / ATR-stop optional                                                │
+│  → signal + sizing (risk_pct, sl_pips, skip flag)                        │
+└─────────────────────────────────────────────┬───────────────────────────┘
+                                              │
+                                              ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│  LAYER 5 — Bot Execution                    src/pipeline_bot.py          │
+│  PipelineBot (extends BotBase)                                            │
+│  ─────────────────────────────────────────────────────────────────────── │
+│  Every 60s: fetch M15 bars → predict → manage positions                   │
+│  HOLD / skip → do nothing                                                 │
+│  BUY signal → close sells, open 1 buy  (magic=20260101)                  │
+│  SELL signal → close buys, open 1 sell                                   │
+└─────────────────────────────────────────────┬───────────────────────────┘
+                                              │
+                                              ▼
+                                    MT5 Terminal (ICMarkets Demo)
+                                    via rpyc bridge on :18812

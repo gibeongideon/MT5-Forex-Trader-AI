@@ -34,12 +34,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from src.backtester import BacktestConfig
+from src.evaluation.backtester import BacktestConfig
 from src.features.feature_pipeline import FeaturePipeline
 from src.features.latent_encoder import LatentEncoder
-from src.model_registry import _build_model
-from src.risk_manager import RiskManager, RiskConfig
-from src.walk_forward import WalkForwardConfig, WalkForwardResult, WalkForwardValidator
+from src.models.model_registry import _build_model
+from src.core.risk_manager import RiskManager, RiskConfig
+from src.evaluation.walk_forward import WalkForwardConfig, WalkForwardResult, WalkForwardValidator
 
 
 # ── Pipeline config ────────────────────────────────────────────────────────────
