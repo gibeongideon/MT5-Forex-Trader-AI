@@ -196,11 +196,13 @@ def main() -> None:
         cfg_e.encoder_latent_dim = 16
         cfg_e.encoder_epochs     = 60
         cfg_e.model_type         = "xgboost"
-        results.append(run_config(
-            "E", "xgboost (enc16)", cfg_e, df_raw, prices,
+        r_e = run_config(
+            "E", "xgboost", cfg_e, df_raw, prices,
             None, None,   # force fresh encoder build
             str(cache_root / "enc16"),
-        ))
+        )
+        r_e["model"] = "xgboost (enc16)"  # display label
+        results.append(r_e)
     else:
         print("\n  Config E skipped (--skip-e)")
 

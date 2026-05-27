@@ -386,17 +386,29 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | XGBoost (1p spread) | +0.52 | — | -3.8% | 127 | Discarded |
 | Phase 8 winner (tiered risk) | +0.72 | 7.5% | +0.2% | 126 | Prev. best |
 | + Unsupervised AE 16-dim | -0.41 | — | — | — | Failed |
-| **+ Supervised enc 8-dim** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Current best** |
+| **+ Supervised enc 8-dim** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Current best (19 folds)** |
+| Phase 10 — XGBoost + enc 16-dim | +1.47 | 36.2% | +253.9% | 735 | Best on 31 folds |
+| Phase 10 — XGBoost + CatBoost stack (enc 8-dim) | +1.22 | 16.6% | +100.9% | 748 | Lowest MaxDD |
 
-**Phase 10 experiments (in progress — see `scripts/compare_ensemble_variants.py`):**
+**Phase 10 results (2026-05-27, 31 folds, 2h 20min run):**
 
-| Config | Description | Expected Sharpe lift |
-| ------ | ----------- | -------------------- |
-| A | XGBoost alone (baseline, enc 8-dim) | reference |
-| B | XGBoost + CatBoost blend (50/50) | +0.1 to +0.3 |
-| C | XGBoost + CatBoost + LightGBM blend (equal weights) | +0.2 to +0.4 |
-| D | XGBoost + CatBoost stack (LightGBM meta-learner, 3-fold OOF) | +0.3 to +0.6 |
-| E | XGBoost alone + larger encoder (latent_dim=16, epochs=60) | +0.2 to +0.5 |
+| Config | Description | Sharpe | MaxDD | Return | Trades |
+| ------ | ----------- | ------ | ----- | ------ | ------ |
+| A | XGBoost alone (enc 8-dim, 39 feat) | +1.12 | 22.5% | +59.9% | 753 |
+| B | XGBoost + CatBoost blend 50/50 | +1.03 | 26.3% | +58.5% | 749 |
+| C | XGBoost + CatBoost + LightGBM blend | +0.65 | 28.9% | +34.4% | 756 |
+| D | XGBoost + CatBoost stack (LGB meta) | +1.22 | 16.6% | +100.9% | 748 |
+| **E** | **XGBoost + enc 16-dim / 60 epochs** | **+1.47** | **36.2%** | **+253.9%** | **735** |
+
+**Config E wins** — bigger encoder (16-dim, 60 epochs, 69% train acc vs 56%) extracts more regime signal.
+
+**Key findings:**
+
+- Blending (B, C) *hurts* Sharpe — adding more models as a simple average dilutes the best model's signal
+- Stacking (D) *helps* vs blending — meta-learner learns when to trust each model, cuts MaxDD to 16.6%
+- Bigger encoder (E) gives best Sharpe and highest return, at the cost of higher MaxDD (36.2%)
+- **Logical next step:** combine E's 16-dim encoder with D's stack architecture → XGBoost + CatBoost stack on 47 features (31 base + 16 latent)
+- The +1.47 vs +3.13 gap: Phase 9 measured 19 folds (data through ~Oct 2025); Phase 10 used 31 folds through May 2026. The 12 additional folds on recent data pull the aggregate down. Model needs retraining on extended dataset.
 
 **Future experiments (cloud / LLM ensemble — requires cache build first):**
 
