@@ -31,12 +31,14 @@ pipeline:
   # EXPERIMENT:         mode=transformer               → run compare_transformer_vs_mlp.py
   encoder:
     enabled: true
-    mode: supervised           # supervised (default) | transformer (experiment) | autoencoder
+    mode: supervised           # supervised (default) | multitask (experiment) | transformer | autoencoder
     latent_dim: 8              # 8 = current best; enc16 tested and worse (+2.82, MaxDD 35%)
     window_size: 50            # OHLCV bars per encoder input window
     epochs: 30
     batch_size: 4096
     lr: 0.001
+    # Multitask-specific (only read when mode: multitask)
+    multitask_alpha: 0.3       # weight of volatility loss: L = L_dir + alpha * L_vol
     # Transformer-specific (only read when mode: transformer)
     d_model: 32                # attention hidden dim
     n_heads: 4                 # attention heads (must divide d_model evenly)

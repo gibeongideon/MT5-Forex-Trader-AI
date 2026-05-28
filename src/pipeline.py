@@ -68,6 +68,8 @@ class PipelineConfig:
     encoder_epochs:     int   = 30
     encoder_batch:      int   = 4096
     encoder_lr:         float = 1e-3
+    # Multitask-specific (only used when encoder_mode="multitask")
+    encoder_multitask_alpha: float = 0.3
     # Transformer-specific (only used when encoder_mode="transformer")
     encoder_d_model:    int   = 32
     encoder_n_heads:    int   = 4
@@ -131,6 +133,7 @@ class PipelineConfig:
             encoder_epochs     = enc.get("epochs",      30),
             encoder_batch      = enc.get("batch_size",  4096),
             encoder_lr         = enc.get("lr",          1e-3),
+            encoder_multitask_alpha = enc.get("multitask_alpha", 0.3),
             encoder_d_model    = enc.get("d_model",     32),
             encoder_n_heads    = enc.get("n_heads",     4),
             encoder_n_layers   = enc.get("n_layers",    2),
@@ -207,6 +210,7 @@ class PredictorPipeline:
                 epochs               = cfg.encoder_epochs,
                 batch_size           = cfg.encoder_batch,
                 lr                   = cfg.encoder_lr,
+                multitask_alpha      = cfg.encoder_multitask_alpha,
                 transformer_d_model  = cfg.encoder_d_model,
                 transformer_n_heads  = cfg.encoder_n_heads,
                 transformer_n_layers = cfg.encoder_n_layers,
@@ -281,8 +285,8 @@ class PredictorPipeline:
         # Latent encoder — trained on train only
         if self._enc is not None:
             y_for_enc = (
-                y_full.reindex(df_tr.index)          # labels aligned to df_tr
-                if self._enc.mode in ("supervised", "transformer") else None
+                y_full.reindex(df_tr.index)
+                if self._enc.mode in ("supervised", "transformer", "multitask") else None
             )
             print(
                 f"[Pipeline] Training {self._enc.mode} encoder "
