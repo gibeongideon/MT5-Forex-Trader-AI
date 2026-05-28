@@ -421,7 +421,8 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | H1 uncalibrated enc8 (30p/60p) | H1 May24+ | +1.47 | 11.6% | +31.2% | 465 | Sharpe ⚠️ DD ✅ |
 | H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
 | Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
-| M30 enc8 | M30 May24+ | 🔄 queued | — | — | — | pending |
+| M30 enc8 same params (30p/60p) | M30 May24+ | +2.46 | 23.2% | +68.5% | 411 | Sharpe ✅ DD ❌ |
+| M30 enc8 wider stops (40p/80p) | M30 May24+ | +1.63 | 9.8% | +39.9% | 266 | Sharpe ✅ DD ✅ |
 
 ---
 
@@ -580,15 +581,39 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 
 ---
 
-### Phase 16 — M30 Timeframe Test (2026-05-28) 🔄 QUEUED
+### Phase 16 — M30 Timeframe Test (2026-05-28)
 
-Queued to run after Phase 15. Testing XGBoost + enc8 on EURUSD M30 (~25k bars, May 2024+).
+Testing XGBoost + enc8 on EURUSD M30 (~25k bars, May 2024+). Ran in **57 min total** (24 min Config A fold training + 33 min Config B fold training; stop variants 2 loaded from cache instantly).
 
-Two label configs:
-- Config A: same as M15 (horizon=4 bars=2h, threshold=3pip, SL=30p/60p)
-- Config B: time-matched (horizon=2 bars=1h, threshold=3pip, SL=30p/60p)
+Two label configs × two stop variants = 4 runs:
 
-Results: **pending**
+| Config | Sharpe | MaxDD | Return | Trades |
+| ------ | ------ | ----- | ------ | ------ |
+| M15 XGBoost+enc8 30p/60p [CHAMPION] | +3.13 | 13.3% | +358.3% | 524 |
+| **M30 same-as-M15  horizon=4 (2h)  30p/60p** | **+2.46** | **23.2%** | **+68.5%** | **411** |
+| M30 same-as-M15  horizon=4 (2h)  40p/80p | +1.63 | 9.8% | +39.9% | 266 |
+| M30 time-matched  horizon=2 (1h)  30p/60p | +1.38 | 9.8% | +28.9% | 206 |
+| M30 time-matched  horizon=2 (1h)  40p/80p | +0.96 | 12.1% | +17.3% | 153 |
+
+**M15 wins but M30 is the closest challenger — only -0.67 Sharpe behind.**
+
+**Key findings:**
+
+1. **Best M30 Sharpe (+2.46) has MaxDD 23.2%** — just above the 20% target. Nearly there.
+2. **MaxDD-safe M30 (+1.63 / 9.8% MaxDD)** — meets BOTH targets (Sharpe >1.5 ✅, MaxDD <20% ✅) with wider 40p/80p stops. Only 266 trades vs M15's 524.
+3. **Time-matching hurts.** horizon=2 (same 1-hour wall clock as M15) is worse than horizon=4 (same count). Predicting 2 hours ahead gives a cleaner signal on M30 than 1 hour.
+4. **Timeframe gradient confirmed:** M15 > M30 > H1 — more bars = more training signal, more compounding opportunities.
+
+**Complete timeframe picture:**
+
+| Timeframe | Best Sharpe | MaxDD | Trades/2yr | Meets targets? |
+| --------- | ----------- | ----- | ---------- | -------------- |
+| M15 | +3.13 | 13.3% | 524 | ✅ Both |
+| M30 (30p/60p) | +2.46 | 23.2% | 411 | Sharpe ✅ DD ❌ |
+| M30 (40p/80p) | +1.63 | 9.8% | 266 | ✅ Both |
+| H1 calibrated | +1.56 | 4.8% | 69 | Sharpe ⚠️ DD ✅ |
+
+**Decision: M15 remains the deployment timeframe.** M30 at 40p/80p is a viable secondary if wider stops are preferred (lower MaxDD at cost of fewer trades). The key question for M30 is whether 266 trades over 2 years provides enough compounding — at +39.9% return over 2 years vs M15's +358.3%, M15 compounds far more efficiently.
 
 ---
 
