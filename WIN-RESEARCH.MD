@@ -423,6 +423,8 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
 | M30 enc8 same params (30p/60p) | M30 May24+ | +2.46 | 23.2% | +68.5% | 411 | Sharpe ✅ DD ❌ |
 | M30 enc8 wider stops (40p/80p) | M30 May24+ | +1.63 | 9.8% | +39.9% | 266 | Sharpe ✅ DD ✅ |
+| M5 enc8 time-matched (h=12) | M5 May25+ | +1.06 | 21.6% | +24.8% | 139 | DD ❌ |
+| M5 enc8 same params (h=4) | M5 May25+ | -0.60 | 23.7% | -14.7% | 144 | loses money |
 
 ---
 
@@ -500,7 +502,7 @@ Best config:   Stack beats XGBoost alone on MaxDD (16.6% vs 22.5% on 75k)
 | Blend or stack? | Blend hurts, Stack helps MaxDD on 75k | **XGBoost alone on 49k is unbeaten** |
 | Which dataset? | 49k (Sharpe +3.13) vs 75k (Sharpe +1.12) | **49k for deployment, 75k for robustness check** |
 | Which model? | XGBoost +3.13 vs CatBoost +2.27 | **XGBoost wins on Sharpe AND MaxDD** |
-| Which timeframe? | M15 +3.13 vs H1 +1.56 vs M30 pending | **M15 champion — H1 too few signals (69 trades/2yr)** |
+| Which timeframe? | M15/M30/H1/M5 all tested | **M15 = sweet spot. M30 viable secondary. M5 loses money.** |
 | Regime routing? | 4-specialist RegimeRouter vs XGBoost | **XGBoost wins — KMeans labels unstable across folds** |
 | Deployment ready? | Sharpe >1.5 ✅, MaxDD <20% ✅ | **Phase 9 enc8 is the deploy candidate** |
 
@@ -578,6 +580,50 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 - Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
 
 **Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
+### Phase 17 — M5 Timeframe Test (2026-05-28)
+
+Testing XGBoost + enc8 on EURUSD M5 (May 2025 → May 2026, 75k bars, ~1 year).
+⚠ Different date range — only ~7 folds vs M15's 19. Results have higher variance.
+
+Two label configs × two stop variants:
+
+| Config | Sharpe | MaxDD | Return | Trades |
+| ------ | ------ | ----- | ------ | ------ |
+| M15 XGBoost+enc8 30p/60p [CHAMPION] | +3.13 | 13.3% | +358.3% | 524 |
+| M5 same-as-M15  h=4 (20min)  30p/60p | -0.60 | 23.7% | -14.7% | 144 |
+| M5 same-as-M15  h=4 (20min)  40p/80p | -2.26 | 17.7% | -13.9% | 84 |
+| M5 time-matched h=12 (60min) 30p/60p | +1.06 | 21.6% | +24.8% | 139 |
+| M5 time-matched h=12 (60min) 40p/80p | +0.71 | 13.1% | +11.2% | 83 |
+
+**M5 is the worst timeframe tested — below even H1.**
+
+**Why M5 fails:**
+
+1. **Spread destroys the edge.** 1-pip spread on a 3-pip threshold (h=4, 20min horizon) = spread is 33% of the signal. On M15 the same 1-pip spread is ~17% of a 3-pip move over 60 min — proportionally half as destructive.
+
+2. **Encoder accuracy stagnates at 57%.** M5 bars contain more microstructure noise. The same 50-bar window covers only 250 minutes (4 hours) vs M15's 12.5 hours — not enough to capture meaningful regime patterns.
+
+3. **Label distribution reveals extreme uncertainty:** hold=60% of bars (vs M15's 20%). The model simply cannot predict 20-minute moves reliably.
+
+**Time-matching (h=12) helps significantly:** +1.06 vs -0.60 — making the horizon 60 minutes matches M15's wall-clock prediction window. But MaxDD remains high (21.6%) and Sharpe is still well below M15.
+
+**Complete timeframe leaderboard:**
+
+| Timeframe | Bars/2yr | Best Sharpe | MaxDD | Verdict |
+| --------- | -------- | ----------- | ----- | ------- |
+| M15 | ~49k | +3.13 | 13.3% | ✅ Champion — deploy |
+| M30 | ~25k | +2.46 | 23.2% | ⚠️ Viable secondary (40p/80p: +1.63 / 9.8%) |
+| H1 cal | ~12k | +1.56 | 4.8% | ❌ Too few signals (69 trades/2yr) |
+| M5 | ~75k* | +1.06 | 21.6% | ❌ Spread kills edge |
+
+*M5 only 1 year of data (May 2025+).
+
+**Conclusion: M15 is the undisputed sweet spot.** Going faster (M5) or slower (H1) both hurt. M15's 15-minute resolution is optimal for this enc8 + XGBoost architecture: enough bars to train a strong encoder (49k windows), clean regime patterns in the 50-bar window (12.5 hours), and a prediction horizon (60 min) where directional moves are detectable above the spread.
+
+**All timeframe experiments complete. Champion confirmed: XGBoost + enc8, M15, +3.13 Sharpe, 13.3% MaxDD.**
 
 ---
 

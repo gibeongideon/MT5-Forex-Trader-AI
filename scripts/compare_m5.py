@@ -143,7 +143,7 @@ def _run_config(cfg_dict: dict, df_m5: pd.DataFrame,
         print(f"  MaxDD  : {result.drawdown:.1f}%")
         print(f"  Return : {ret:+.1%}")
         print(f"  Trades : {len(result.trades)}")
-        print(f"  Folds  : {len(set(t.fold for t in result.trades)) if result.trades else 0}")
+        print(f"  Folds  : {result.n_folds if hasattr(result, 'n_folds') else '?'}")
         print(f"  Time   : {elapsed/60:.1f} min")
 
         results.append(dict(
