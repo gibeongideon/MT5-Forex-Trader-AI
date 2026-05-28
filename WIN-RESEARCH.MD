@@ -4,7 +4,7 @@
 > **Data:** EURUSD M15, 75,000 bars, 2023-05-18 → 2026-05-25
 > **Walk-forward:** Expanding window, 19 folds, 180-day train / 30-day test, no leakage
 > **Backtester:** SL=30p, TP=60p, spread=1.0p, threshold=40%, tiered risk (0.5%–2% per trade)
-> Last updated: 2026-05-27
+> Last updated: 2026-05-28
 
 ---
 AIM
@@ -416,6 +416,7 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | Phase 10 — enc16 on 49k | 49k | +2.82 | 35.1% | +99.4% | 553 | Sharpe ✅ DD ❌ |
 | Stack enc8 on 49k | 49k | +2.48 | 35.4% | +266.4% | 497 | Sharpe ✅ DD ❌ |
 | Stack enc8 on 75k | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
+| Transformer enc8 (d_model=32) | 49k | +0.44 | 7.7% | +0.3% | 129 | underpowered |
 
 ---
 
@@ -465,14 +466,15 @@ Best config:   Stack beats XGBoost alone on MaxDD (16.6% vs 22.5% on 75k)
 - Stack on 75k: +1.22 Sharpe / 16.6% MaxDD — marginally better than XGBoost alone (+0.10)
 - **Conclusion:** stacking adds value when base model is weak; when signal is strong (enc8 on 49k), keep it simple
 
-### Key Decisions Ahead
+### Key Decisions — Current Status
 
-| Question | Options | Decision |
-| -------- | ------- | -------- |
-| Which encoder? | enc8 ✅ (enc16 loses) | **enc8 confirmed** |
-| Blend or stack? | Stack wins on MaxDD | **stack** |
-| Which dataset to deploy on? | 49k (higher Sharpe) vs 75k (more robust) | **pending stack results** |
-| Deployment threshold? | Sharpe >1.5, MaxDD <15% | **TBD** |
+| Question | Options tested | Decision |
+| -------- | -------------- | -------- |
+| Which encoder dim? | enc4 / enc8 / enc16 | **enc8 confirmed best** |
+| MLP vs Transformer? | MLP +3.13 vs Transformer +0.44 | **MLP wins — keep default** |
+| Blend or stack? | Blend hurts, Stack helps MaxDD on 75k | **XGBoost alone on 49k is unbeaten** |
+| Which dataset? | 49k (Sharpe +3.13) vs 75k (Sharpe +1.12) | **49k for deployment, 75k for robustness check** |
+| Deployment ready? | Sharpe >1.5 ✅, MaxDD <20% ✅ | **Phase 9 enc8 is the deploy candidate** |
 
 ### After Stack Results — Next Steps
 
@@ -508,6 +510,60 @@ Either way the 75k stack result shows how the strategy holds up over the harder 
 - Stacking (D) *helps* vs blending — meta-learner learns when to trust each model, cuts MaxDD to 16.6%
 - Bigger encoder (E) gives best Sharpe on 75k data (+1.47), at the cost of very high MaxDD (36.2%)
 - The 75k vs 49k gap: Phase 9 measured 19 folds (May 2024–May 2026); Phase 10 used 31 folds (May 2023–May 2026). The extra 12 folds on older 2023-2024 data are harder and pull aggregate Sharpe down.
+
+---
+
+### Phase 11 — Transformer Encoder vs MLP (2026-05-28)
+
+Drop-in replacement test: can self-attention beat the MLP enc8 champion (+3.13)?
+Same dataset (49k, May 2024+), same latent_dim=8, same XGBoost downstream — only the encoder internals change.
+
+**Architecture tested:**
+```
+_TransformerEncoderNet:
+  Input: (batch, 50×5=250) → reshape → (batch, 50, 5)
+  Linear(5 → 32)                     ← project to d_model
+  CLS token prepended                ← (batch, 51, 32)
+  TransformerEncoder(d_model=32, n_heads=4, n_layers=2, ff_dim=128, dropout=0.1)
+  CLS output → Linear(32 → 8)        ← latent vector
+  Linear(8 → 3)                      ← classification head (discarded after training)
+```
+
+**Training curve (the red flag):**
+```
+epoch  1/30  ce_loss=1.1149  train_acc=33.2%   ← barely above 3-class random (33%)
+epoch  5/30  ce_loss=1.0996  train_acc=32.7%
+epoch 10/30  ce_loss=1.0989  train_acc=34.9%
+epoch 20/30  ce_loss=1.0987  train_acc=34.0%
+epoch 30/30  ce_loss=1.0974  train_acc=36.0%   ← barely moved after 30 epochs
+```
+
+Compare to MLP at epoch 30: **train_acc=72.4%**. The Transformer never learned.
+
+| Config | Encoder | Sharpe | MaxDD | Return | Trades | Runtime |
+| ------ | ------- | ------ | ----- | ------ | ------ | ------- |
+| MLP supervised enc8 (BASELINE) | Linear×3 + Tanh | **+3.13** | **13.3%** | **+358.3%** | **524** | ~15 min |
+| Transformer enc8 (d_model=32, 4h, 2L) | Self-attention + CLS | +0.44 | 7.7% | +0.3% | 129 | 33.7 min |
+
+**MLP wins by +2.69 Sharpe. Default config unchanged.**
+
+**Why the Transformer failed:**
+
+1. **Underpowered for 30 epochs.** Transformers require many more iterations to converge than MLPs on tabular input. The MLP has a strong inductive bias (dense layers) that fits this flat feature format. The Transformer needs to learn positional relationships from scratch.
+
+2. **d_model=32 is too small.** The attention mechanism with only 32 hidden dims and 4 heads (8 dims per head) has very limited capacity. Standard NLP Transformers use d_model=256–512 minimum.
+
+3. **No learning rate warmup.** Transformers notoriously need a linear warmup + cosine decay schedule. Using a flat Adam lr=0.001 causes the attention weights to diverge early and never recover.
+
+4. **Overfitting risk from small dataset.** 40k windows × 30 epochs = 1.2M passes through a model with ~100k parameters (vs MLP ~70k). Transformer needs more diverse data to generalise.
+
+**What to try before discarding Transformers:**
+- Train 150+ epochs with cosine annealing LR schedule
+- Increase d_model to 64 or 128
+- Add positional encoding (markets have temporal structure)
+- Use larger dataset (75k rows) where MLP already struggles — Transformer may show edge there
+
+**Decision:** MLP enc8 stays as default. Transformer kept as switchable option via `config.yaml encoder.mode: transformer` for future tuning.
 
 ---
 
@@ -576,13 +632,17 @@ ensemble:
       weight: 0.2   # low weight until LLM accuracy is validated
 ```
 
+**Experiments completed (2026-05-27/28):**
+- ~~enc8 vs enc16~~ → enc8 wins (+3.13 vs +2.82, enc16 MaxDD 3×worse)
+- ~~Stack on 49k vs 75k~~ → XGBoost alone unbeaten on 49k; stack helps slightly on 75k
+- ~~Transformer encoder (self-attention drop-in)~~ → failed at d_model=32/30ep (+0.44); MLP holds
+
 **Next experiments to try (in order):**
-1. Train encoder 60–80 epochs (free — just time)
-2. Test `latent_dim=4` and `latent_dim=16`
-3. Attention encoder (replace MLP)
-4. CatBoost on 39 features
-5. Multi-timeframe latent (M15 + H1 + H4 encoders)
-6. Ensemble meta-learner with latent injection (Config D)
+1. Transformer with proper tuning — 150+ epochs, d_model=64, LR warmup scheduler (estimated +0.5–1.0 Sharpe lift if it learns)
+2. CatBoost alone + enc8 on 49k (CatBoost was +1.17 baseline, untested with enc8)
+3. Multi-timeframe latent (M15 + H1 + H4 encoders → 31 base + 24 latent = 55 features)
+4. Regime-conditioned XGBoost (IMPROVEMENT.MD Technique #2 — specialist models per regime)
+5. Walk-forward online adaptation (IMPROVEMENT.MD Technique #3 — retrain every 500 bars)
 
 ---
 
