@@ -1,39 +1,21 @@
 """
-Latent Feature Encoder — three training modes.
+Latent Feature Encoder — four training modes.
 
 MODE 1: autoencoder (unsupervised)
     Encoder learns to reconstruct raw OHLCV windows.
-    Latent features capture market structure, but are NOT guaranteed
-    to correlate with future price direction.
 
-MODE 2: supervised (default, recommended)
-    MLP encoder + classification head trained jointly with CrossEntropyLoss
-    on the buy/hold/sell labels. Latent features are forced to encode
-    information that is predictive of next-bar direction, not just
-    reconstruction quality.
-    Current best: Sharpe +3.13 with latent_dim=8 on 49k rows (May 2024+).
+MODE 2: supervised (default — current best +3.13 Sharpe)
+    MLP encoder + direction classification head, CrossEntropyLoss on buy/hold/sell.
 
-MODE 3: transformer (drop-in upgrade to supervised)
-    Self-attention Transformer encoder instead of MLP. Learns which bars
-    within the 50-bar window matter most for the current prediction.
-    Same interface as supervised — drop-in replacement via config.yaml:
-        encoder.mode: transformer
+MODE 3: transformer
+    Self-attention encoder (drop-in for supervised). Needs 150+ epochs + LR warmup.
 
-Usage:
-    # Supervised MLP (current default — best known result +3.13)
-    enc = LatentEncoder(mode="supervised", latent_dim=8)
-    enc.fit(train_df, y_train)
-    latent_df = enc.transform(full_df)
-
-    # Transformer (experiment vs supervised baseline)
-    enc = LatentEncoder(mode="transformer", latent_dim=8)
-    enc.fit(train_df, y_train)
-    latent_df = enc.transform(full_df)
-
-    # Autoencoder (unsupervised, no labels needed)
-    enc = LatentEncoder(mode="autoencoder", latent_dim=16)
-    enc.fit(train_df)
-    latent_df = enc.transform(full_df)
+MODE 4: multitask (EXPERIMENT — may improve over supervised)
+    Same MLP encoder as supervised, but adds a second auxiliary head that
+    simultaneously predicts next-bar normalized volatility (MSE loss).
+    Total loss = L_direction + alpha × L_volatility
+    Forces the encoder to capture both directional AND risk-level information.
+    After training, only the encoder trunk is kept — both heads are discarded.
 
 No-lookahead guarantee:
     Window for bar t = ohlcv rows [t-W, t-1].
@@ -126,6 +108,43 @@ class _SupervisedEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
         return self.encoder(x)
 
 
+class _MultiTaskEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
+    """MLP encoder with TWO heads: direction classification + volatility regression.
+
+    Primary   : direction head (CrossEntropyLoss) — same as _SupervisedEncoderNet
+    Auxiliary : volatility head (MSELoss) — predicts normalized next-bar move size
+
+    Training loss: L_dir + alpha × L_vol
+    The shared encoder receives gradients from both, forcing it to encode
+    features useful for predicting BOTH direction AND risk level.
+    Both heads are discarded after training — only the encoder trunk is kept.
+    """
+
+    def __init__(self, input_dim: int, latent_dim: int, n_classes: int = 3):
+        if not _TORCH_AVAILABLE:
+            raise ImportError("PyTorch not available")
+        super().__init__()
+        self.encoder = nn.Sequential(
+            nn.Linear(input_dim, 256), nn.ReLU(),
+            nn.Linear(256, 128),       nn.ReLU(),
+            nn.Linear(128, latent_dim), nn.Tanh(),
+        )
+        self.dir_head = nn.Linear(latent_dim, n_classes)       # direction logits
+        self.vol_head = nn.Sequential(                          # volatility regression
+            nn.Linear(latent_dim, 16), nn.ReLU(),
+            nn.Linear(16, 1), nn.Softplus(),                   # always positive
+        )
+
+    def forward(self, x: "torch.Tensor"):
+        z        = self.encoder(x)
+        logits   = self.dir_head(z)
+        vol_pred = self.vol_head(z).squeeze(-1)                # (batch,)
+        return logits, vol_pred, z
+
+    def encode(self, x: "torch.Tensor") -> "torch.Tensor":
+        return self.encoder(x)
+
+
 class _TransformerEncoderNet(nn.Module if _TORCH_AVAILABLE else object):
     """Transformer encoder + classification head trained on direction labels.
 
@@ -192,16 +211,18 @@ class LatentEncoder:
 
     Parameters
     ----------
-    mode        : "supervised" (default) | "transformer" | "autoencoder"
-                  supervised  — MLP enc + classification head (current best: Sharpe +3.13)
-                  transformer — Attention enc + classification head (drop-in upgrade to test)
+    mode        : "supervised" (default) | "multitask" | "transformer" | "autoencoder"
+                  supervised  — MLP + direction head (current best: Sharpe +3.13)
+                  multitask   — MLP + direction head + volatility head (EXPERIMENT)
+                  transformer — Attention enc + direction head (needs 150+ epochs + LR warmup)
                   autoencoder — Unsupervised MSE reconstruction (no labels needed)
-    window_size : OHLCV bars per input window (bars t-W … t-1)
-    latent_dim  : size of the latent vector (8 recommended)
-    epochs      : training epochs
-    batch_size  : mini-batch size
-    lr          : Adam learning rate
-    random_state: seed
+    window_size    : OHLCV bars per input window (bars t-W … t-1)
+    latent_dim     : size of the latent vector (8 recommended)
+    epochs         : training epochs
+    batch_size     : mini-batch size
+    lr             : Adam learning rate
+    random_state   : seed
+    multitask_alpha      : weight of volatility loss (L = L_dir + alpha × L_vol)
     transformer_d_model  : Transformer hidden dim (only used when mode="transformer")
     transformer_n_heads  : Transformer attention heads (must divide d_model evenly)
     transformer_n_layers : Transformer encoder layers
@@ -220,12 +241,15 @@ class LatentEncoder:
         batch_size:   int   = 4096,
         lr:           float = 1e-3,
         random_state: int   = 42,
-        transformer_d_model:  int = 32,
-        transformer_n_heads:  int = 4,
-        transformer_n_layers: int = 2,
+        multitask_alpha:      float = 0.3,
+        transformer_d_model:  int   = 32,
+        transformer_n_heads:  int   = 4,
+        transformer_n_layers: int   = 2,
     ):
-        if mode not in ("supervised", "transformer", "autoencoder"):
-            raise ValueError('mode must be "supervised", "transformer", or "autoencoder"')
+        if mode not in ("supervised", "multitask", "transformer", "autoencoder"):
+            raise ValueError(
+                'mode must be "supervised", "multitask", "transformer", or "autoencoder"'
+            )
         self.mode         = mode
         self.window_size  = window_size
         self.latent_dim   = latent_dim
@@ -234,6 +258,7 @@ class LatentEncoder:
         self.lr           = lr
         self.random_state = random_state
 
+        self.multitask_alpha      = multitask_alpha
         self.transformer_d_model  = transformer_d_model
         self.transformer_n_heads  = transformer_n_heads
         self.transformer_n_layers = transformer_n_layers
@@ -258,6 +283,17 @@ class LatentEncoder:
             available = [c for c in ["open", "high", "low", "close"] if c in df.columns]
             self._input_dim = self.window_size * 4
         return df[available].astype(np.float32)
+
+    def _compute_vol_target(self, close: "pd.Series", horizon: int = 4) -> "pd.Series":
+        """Normalized absolute forward return — volatility proxy for multitask training.
+
+        y_vol[t] = |close[t+h] - close[t]| / close[t], divided by expanding mean.
+        Result > 1 means above-average volatility; < 1 means calm.
+        Clipped to [0, 5] to prevent extreme outliers dominating the loss.
+        """
+        abs_ret  = (close.shift(-horizon) - close).abs() / close.clip(lower=1e-8)
+        mean_abs = abs_ret.expanding(min_periods=20).mean().fillna(abs_ret.mean() or 1.0)
+        return (abs_ret / (mean_abs + 1e-8)).clip(upper=5.0).fillna(1.0).astype(np.float32)
 
     def _build_windows(self, ohlcv: np.ndarray) -> np.ndarray:
         """Vectorised sliding windows via stride_tricks. No Python loop."""
@@ -288,23 +324,25 @@ class LatentEncoder:
         y  : direction labels pd.Series of {-1, 0, 1} aligned to df.index.
              Required for mode="supervised", ignored for mode="autoencoder".
         """
-        if self.mode == "supervised" and y is None:
+        if self.mode in ("supervised", "transformer", "multitask") and y is None:
             raise ValueError(
-                'mode="supervised" requires labels y. '
+                f'mode="{self.mode}" requires labels y. '
                 'Pass y=labels_series, or use mode="autoencoder".'
             )
         _require_torch()
         torch.manual_seed(self.random_state)
         np.random.seed(self.random_state)
 
-        ohlcv_df = self._extract_ohlcv(df)
-        ohlcv    = ohlcv_df.values
-        X        = self._build_windows(ohlcv)     # (n-W, W*n_cols)
-        input_dim = X.shape[1]
-        self._input_dim = input_dim
+        ohlcv_df  = self._extract_ohlcv(df)
+        ohlcv     = ohlcv_df.values
+        X         = self._build_windows(ohlcv)
+        self._input_dim = X.shape[1]
 
-        if self.mode in ("supervised", "transformer"):
-            self._fit_supervised(X, ohlcv_df.index, y)
+        if self.mode in ("supervised", "transformer", "multitask"):
+            y_vol = None
+            if self.mode == "multitask":
+                y_vol = self._compute_vol_target(ohlcv_df["close"], horizon=4)
+            self._fit_supervised(X, ohlcv_df.index, y, y_vol=y_vol)
         else:
             self._fit_autoencoder(X)
 
@@ -316,12 +354,12 @@ class LatentEncoder:
         X: np.ndarray,
         ohlcv_index: "pd.Index",
         y: pd.Series,
+        y_vol: Optional["pd.Series"] = None,
     ) -> None:
-        """Train encoder + classification head jointly on direction labels."""
+        """Train encoder + head(s) on direction labels (+ optional volatility for multitask)."""
         W = self.window_size
-        # Bar times for each window: window j → bar at ohlcv_index[W + j]
-        bar_times = ohlcv_index[W:]              # length = n - W = len(X)
-        labels    = y.reindex(bar_times)         # align to window times
+        bar_times = ohlcv_index[W:]
+        labels    = y.reindex(bar_times)
         valid     = labels.notna()
         X_valid   = X[valid.values]
         y_valid   = labels[valid].values.astype(int)
@@ -329,7 +367,18 @@ class LatentEncoder:
             [self._LABEL_MAP[int(l)] for l in y_valid], dtype=np.int64
         )
 
-        if self.mode == "transformer":
+        # Volatility targets for multitask mode
+        tensor_vol = None
+        if self.mode == "multitask" and y_vol is not None:
+            vol_aligned = y_vol.reindex(bar_times)
+            vol_valid   = vol_aligned[valid.values].fillna(1.0).values.astype(np.float32)
+            tensor_vol  = torch.from_numpy(vol_valid)
+
+        if self.mode == "multitask":
+            net = _MultiTaskEncoderNet(self._input_dim, self.latent_dim)
+            print(f"[LatentEncoder] Architecture: MultiTask MLP  "
+                  f"input_dim={self._input_dim}  alpha={self.multitask_alpha}", flush=True)
+        elif self.mode == "transformer":
             n_feats = self._input_dim // self.window_size
             net = _TransformerEncoderNet(
                 window_size = self.window_size,
@@ -372,6 +421,8 @@ class LatentEncoder:
         label_dist = {k: int((y_mapped == v).sum()) for k, v in [('sell',0),('hold',1),('buy',2)]}
         print(f"  Label distribution: {label_dist}", flush=True)
 
+        criterion_vol = nn.MSELoss() if self.mode == "multitask" else None
+
         for epoch in range(1, self.epochs + 1):
             perm        = torch.randperm(n)
             epoch_loss  = 0.0
@@ -380,8 +431,15 @@ class LatentEncoder:
                 idx    = perm[start : start + self.batch_size]
                 bx, by = tensor_X[idx], tensor_y[idx]
                 optimizer.zero_grad()
-                logits, _ = net(bx)
-                loss = criterion(logits, by)
+
+                if self.mode == "multitask":
+                    logits, vol_pred, _ = net(bx)
+                    bvol = tensor_vol[idx]
+                    loss = criterion(logits, by) + self.multitask_alpha * criterion_vol(vol_pred, bvol)
+                else:
+                    logits, _ = net(bx)
+                    loss = criterion(logits, by)
+
                 loss.backward()
                 optimizer.step()
                 epoch_loss += loss.item() * len(bx)
@@ -476,9 +534,10 @@ class LatentEncoder:
                     "latent_dim":   self.latent_dim,
                     "input_dim":    self._input_dim,
                     "epochs":       self.epochs,
-                    "batch_size":   self.batch_size,
-                    "lr":           self.lr,
-                    "random_state": self.random_state,
+                    "batch_size":        self.batch_size,
+                    "lr":                self.lr,
+                    "random_state":      self.random_state,
+                    "multitask_alpha":   self.multitask_alpha,
                     "transformer_d_model":  self.transformer_d_model,
                     "transformer_n_heads":  self.transformer_n_heads,
                     "transformer_n_layers": self.transformer_n_layers,
@@ -502,12 +561,15 @@ class LatentEncoder:
         self.batch_size   = p["batch_size"]
         self.lr           = p["lr"]
         self.random_state = p["random_state"]
+        self.multitask_alpha      = p.get("multitask_alpha",      0.3)
         self.transformer_d_model  = p.get("transformer_d_model",  32)
         self.transformer_n_heads  = p.get("transformer_n_heads",  4)
         self.transformer_n_layers = p.get("transformer_n_layers", 2)
         self._trained_on  = ckpt.get("trained_on")
 
-        if self.mode == "transformer":
+        if self.mode == "multitask":
+            net = _MultiTaskEncoderNet(p["input_dim"], p["latent_dim"])
+        elif self.mode == "transformer":
             n_feats = p["input_dim"] // p["window_size"]
             net = _TransformerEncoderNet(
                 window_size = p["window_size"],

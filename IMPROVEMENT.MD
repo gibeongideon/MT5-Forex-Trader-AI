@@ -126,14 +126,56 @@ class _TransformerEncoderNet(nn.Module):
         return z
 ```
 
-**Implementation steps**
+**Implementation status: DONE (Phase 11) — but needs proper tuning before fair comparison.**
 
-1. Add `_TransformerEncoderNet` to `src/features/latent_encoder.py`
-2. Add `mode="transformer"` option alongside `mode="supervised"` and `mode="autoencoder"`
-3. Run `compare_latent_vs_baseline.py` with `--mode transformer`
-4. Compare Sharpe vs enc8 +3.13 on same 49k dataset
+The architecture is already built (`mode="transformer"` in `src/features/latent_encoder.py`).
+Phase 11 result with d_model=32, 30 epochs: **Sharpe +0.44** (failed — encoder never learned).
+Training curve: acc 33% → 36% over 30 epochs (barely above random).
 
-**Expected outcome:** Sharpe lift of +0.3 to +1.0 on 49k data. Larger lift on 75k data where the MLP currently struggles with regime diversity.
+**Why the first attempt failed:**
+- `d_model=32` is too small (8 dims/head across 4 heads → almost no capacity per head)
+- 30 epochs is far too few — Transformer needs convergence time
+- No LR warmup — flat Adam lr=0.001 causes attention weight instability early in training
+- No positional encoding — bars have temporal order that vanilla attention ignores
+
+**Proper tuning recipe for a fair comparison (FUTURE RESEARCH):**
+
+```yaml
+# config.yaml changes for proper Transformer test
+encoder:
+  mode: transformer
+  epochs: 150          # was 30 — Transformers need 5x more epochs
+  d_model: 64          # was 32 — need more capacity per attention head
+  n_heads: 4           # 16 dims/head (was 8) — more expressive
+  n_layers: 3          # was 2 — deeper attention stack
+  lr: 0.0001           # was 0.001 — 10x lower initial LR for warmup
+```
+
+**LR warmup scheduler (add to `_fit_supervised` in latent_encoder.py):**
+```python
+# Linear warmup for 10% of training, cosine decay after
+scheduler = torch.optim.lr_scheduler.OneCycleLR(
+    optimizer, max_lr=0.001,
+    steps_per_epoch=n_batches, epochs=self.epochs,
+    pct_start=0.1,            # 10% warmup
+    anneal_strategy='cos',
+)
+# Call scheduler.step() after each optimizer.step()
+```
+
+**Positional encoding (add to `_TransformerEncoderNet.__init__`):**
+```python
+# Learnable positional embedding for the 50 bar positions
+self.pos_embed = nn.Parameter(torch.randn(1, window_size + 1, d_model) * 0.02)
+# In forward(), add before transformer: x = x + self.pos_embed
+```
+
+**Expected outcome with proper tuning:** Sharpe +2.5–3.5 (vs +0.44 underpowered).
+**RunPod recommended** — 150 epochs on 40k windows with d_model=64 takes ~2 hours on 16-core CPU.
+On a GPU instance: ~15 minutes.
+
+**Script ready:** `scripts/compare_transformer_vs_mlp.py --run-a` (already built)
+Add `OneCycleLR` scheduler + positional encoding, increase d_model/epochs in config, then run.
 
 ---
 
