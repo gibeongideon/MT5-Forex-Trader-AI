@@ -417,6 +417,26 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | Stack enc8 on 49k | 49k | +2.48 | 35.4% | +266.4% | 497 | Sharpe ✅ DD ❌ |
 | Stack enc8 on 75k | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
 | Transformer enc8 (d_model=32) | 49k | +0.44 | 7.7% | +0.3% | 129 | underpowered |
+| **CatBoost + enc8** | **49k** | **+2.27** | **37.5%** | **+376.8%** | **517** | **Sharpe ✅ DD ❌** |
+
+---
+
+### 49k Dataset — All Challengers Ranked (May 2024 → May 2026)
+
+> Every experiment run on the same 49k dataset with the same enc8 features (39 cols).
+> One winner across all dimensions: XGBoost + enc8.
+
+| Rank | Model | Sharpe | MaxDD | Return | Verdict |
+|------|-------|--------|-------|--------|---------|
+| 🥇 | **XGBoost + enc8** | **+3.13** | **13.3%** | **+358.3%** | **Champion — deploy candidate** |
+| 2 | enc16 XGBoost | +2.82 | 35.1% | +99.4% | Higher Sharpe failed, 3× DD |
+| 3 | Stack XGB+Cat | +2.48 | 35.4% | +266.4% | Stacking hurts when signal is strong |
+| 4 | CatBoost + enc8 | +2.27 | 37.5% | +376.8% | Most return, worst DD |
+| 5 | Transformer enc8 | +0.44 | 7.7% | +0.3% | Never learned (d_model too small) |
+
+**Pattern:** Every challenger either raises MaxDD dramatically (>35%) or collapses Sharpe.
+XGBoost + enc8 is the only config meeting **both** targets (Sharpe >1.5 AND MaxDD <20%) simultaneously.
+The enc8 bottleneck + XGBoost's gradient boosting is the sweet spot for this data.
 
 ---
 
