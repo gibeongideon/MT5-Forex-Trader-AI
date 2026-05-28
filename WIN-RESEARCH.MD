@@ -422,6 +422,9 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
 | Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
 | Multi-task enc8 (dir+vol α=0.3) | 49k | -0.43 | 28.0% | -24.8% | 564 | loses money |
+| Session features (6 new) + enc8 | 49k | +1.33 | 9.2% | +22.0% | 510 | Sharpe ⚠️ DD ✅ |
+| Session + K-Means cluster (k=32) | 49k | +0.85 | 15.0% | +10.9% | 516 | worse than session |
+| Adaptive WF test=14d bi-weekly | 49k | +2.57 | 27.7% | +286.1% | 523 | Sharpe ✅ DD ❌ |
 | M30 enc8 same params (30p/60p) | M30 May24+ | +2.46 | 23.2% | +68.5% | 411 | Sharpe ✅ DD ❌ |
 | M30 enc8 wider stops (40p/80p) | M30 May24+ | +1.63 | 9.8% | +39.9% | 266 | Sharpe ✅ DD ✅ |
 | M5 enc8 time-matched (h=12) | M5 May25+ | +1.06 | 21.6% | +24.8% | 139 | DD ❌ |
@@ -581,6 +584,49 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 - Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
 
 **Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
+### Phase 19 — Session Features + K-Means Candle Clustering (2026-05-28)
+
+Testing two ideas from RANDOM_IDEAS.MD (MY IDEAS section):
+
+**Idea 4 partial — Session/time features:** 6 new features added to `feature_pipeline.py`:
+`hour_sin`, `hour_cos`, `is_london_open`, `is_ny_open`, `is_london_ny_overlap`, `is_asia`
+
+**Idea 2 — K-Means Candle Clustering:** New `CandleTokenizer` class — KMeans(k=32) on
+`[log_return, upper_wick_pct, lower_wick_pct, vol_zscore, atr_norm_range]` per bar.
+Learns 32 bar archetypes (aggressive breakout, doji, hammer, etc.) from training data.
+Adds single `candle_cluster` integer feature (0–31).
+
+Note: Config A and B are identical because `feature_pipeline.py` was modified globally —
+all configs now include session features. Comparison is vs Phase 9 pre-built baseline.
+
+| Config | Features | Sharpe | MaxDD | Return | Trades |
+| ------ | -------- | ------ | ----- | ------ | ------ |
+| Phase 9 pre-built enc8 [CHAMPION] | 39 | +3.13 | 13.3% | +358.3% | 524 |
+| + Session features (retrained fresh) | 45 | +1.33 | 9.2% | +22.0% | 510 |
+| + Session + candle cluster (k=32) | 46 | +0.85 | 15.0% | +10.9% | 516 |
+
+**Both new feature groups hurt Sharpe. Baseline +3.13 holds.**
+
+**Why session features hurt (-1.80 Sharpe):**
+
+The 6 session features change the input distribution to the enc8 encoder. The encoder was implicitly optimised to work with 31 features — retraining it with 37 features produces different latent dims that encode less predictive direction signal. This is the same saturation effect seen in multi-task and enc16: the enc8 is already at maximum capacity for the direction task.
+
+The session features do produce lower MaxDD (9.2% vs 13.3%) — the model becomes more selective (510 vs 524 trades) and more conservative. But the Sharpe drops too far.
+
+**Why candle clustering makes it worse (-0.48 from session alone):**
+
+The 32-cluster integer feature adds noise that XGBoost splits on spuriously. Like the regime router, the cluster labels are unsupervised — they may not align with direction prediction. Splitting training data into 32 archetype-based groups dilutes the directional signal further.
+
+**Key insight from both experiments:** The enc8 + 31-feature combination is already at a local optimum. Adding more features — whether session context, candle shapes, or multi-task objectives — consistently hurts because:
+1. The encoder retrains on a different input distribution, producing weaker latent dims
+2. XGBoost gets more noisy dimensions to split on, reducing its signal-to-noise ratio
+
+**The right way to use session features:** Add them to the original Phase 9 pipeline BEFORE building the pre-built parquet (don't retrain enc8, just add them as extra columns to the existing 39-feature parquet). This would test session features with the SAME enc8 latent dims, not a freshly trained encoder.
+
+**Decision: Revert `feature_pipeline.py` to original 31 features (or keep them off by default for walk-forward reproduction). The pre-built enc8 parquet remains the gold standard.**
 
 ---
 
