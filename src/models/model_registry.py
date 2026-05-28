@@ -275,8 +275,21 @@ def _build_model(model_type: str) -> ModelInterface:
         from src.models.catboost_model import CatBoostModel
         return Ensemble(base_models=[XGBoostModel(), CatBoostModel()],
                         meta_model="lightgbm", n_folds=3, mode="stack")
+    if t in ("regime_router", "regime"):
+        from src.models.regime_router import RegimeRouter
+        try:
+            with open("config.yaml") as _f:
+                import yaml as _yaml
+                _cfg = _yaml.safe_load(_f).get("regime_router", {})
+        except Exception:
+            _cfg = {}
+        return RegimeRouter(
+            n_regimes           = _cfg.get("n_regimes",           4),
+            min_regime_samples  = _cfg.get("min_regime_samples", 200),
+        )
     raise ValueError(
         f"Unknown model type: '{model_type}'. "
         f"Choose from: xgboost, lightgbm, random_forest, catboost, lstm, ensemble, "
-        f"llm_signal, bar_lm, ensemble_xgb_cat, ensemble_xgb_cat_lgb, ensemble_stack"
+        f"llm_signal, bar_lm, ensemble_xgb_cat, ensemble_xgb_cat_lgb, ensemble_stack, "
+        f"regime_router"
     )
