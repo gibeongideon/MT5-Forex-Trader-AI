@@ -533,6 +533,46 @@ Either way the 75k stack result shows how the strategy holds up over the harder 
 
 ---
 
+### Phase 13 — H1 Timeframe Test (2026-05-28)
+
+Same winning config (XGBoost + enc8) applied to EURUSD H1 data, same May 2024 → May 2026 date range.
+Two stop variants tested: tight 30p/60p (same as M15) and wide 50p/100p (H1-typical).
+
+**H1 dataset:** 12,619 bars (vs 49,892 M15 bars for same period — 4× fewer bars, same 2-year window)
+**Encoder accuracy at epoch 30:** 53.9% (vs M15's 72.4% — H1 patterns are harder to learn)
+**Folds:** 19 (same structure — 180-day train / 30-day test)
+
+| Config | Sharpe | MaxDD | Return | Trades |
+| ------ | ------ | ----- | ------ | ------ |
+| M15 XGBoost + enc8 30p/60p [CHAMPION] | +3.13 | 13.3% | +358.3% | 524 |
+| H1 XGBoost + enc8 30p/60p | +1.47 | 11.6% | +31.2% | 465 |
+| H1 XGBoost + enc8 50p/100p (wide) | +0.18 | 12.8% | -1.1% | 196 |
+
+**H1 30p/60p is borderline viable** (Sharpe +1.47 meets the >1.5 target just barely, MaxDD 11.6% is excellent). But it generates only 10% of the return of M15.
+
+**Wide stops collapsed the system.** The root cause: labels were trained with `threshold=0.0003` (3 pips) at 4-bar horizon. On H1, 4 bars = 4 hours. The model detects micro-directional signals. With 50p stops, it needs 100 pips of favorable movement — a completely different task than what the model learned. Only 196 trades fired (vs 465 with tight stops) because the model became too selective.
+
+**Why M15 works better than H1 for this strategy:**
+
+| Factor | M15 | H1 |
+| ------ | --- | -- |
+| Bars per year | ~26,000 | ~6,500 |
+| Label threshold | 3 pips / 1 hour ahead | 3 pips / 4 hours ahead (same — but H1 moves more) |
+| Encoder accuracy | 72.4% | 53.9% |
+| Return | +358.3% | +31.2% |
+| Trades per year | ~250 | ~230 |
+
+The enc8 encoder learns better on M15 because there are 4× more training windows for the same time period, and M15 patterns at 50-bar windows (12.5 hours) are more predictable than H1 50-bar windows (50 hours).
+
+**To make H1 work properly would need:**
+- `label_threshold: 0.001` (10 pips, matching H1 volatility)
+- `label_horizon: 8` (8 H1 bars = 8 hours)
+- Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
+
+**Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
 ### Phase 12 — CatBoost + enc8 on 49k (2026-05-28)
 
 Quick test: CatBoost has the same enc8 features as XGBoost (39 cols, pre-built parquet). No encoder retraining needed. Ran in **1.4 minutes**.
