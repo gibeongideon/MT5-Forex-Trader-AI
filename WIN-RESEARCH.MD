@@ -421,6 +421,7 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | H1 uncalibrated enc8 (30p/60p) | H1 May24+ | +1.47 | 11.6% | +31.2% | 465 | Sharpe ⚠️ DD ✅ |
 | H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
 | Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
+| Multi-task enc8 (dir+vol α=0.3) | 49k | -0.43 | 28.0% | -24.8% | 564 | loses money |
 | M30 enc8 same params (30p/60p) | M30 May24+ | +2.46 | 23.2% | +68.5% | 411 | Sharpe ✅ DD ❌ |
 | M30 enc8 wider stops (40p/80p) | M30 May24+ | +1.63 | 9.8% | +39.9% | 266 | Sharpe ✅ DD ✅ |
 | M5 enc8 time-matched (h=12) | M5 May25+ | +1.06 | 21.6% | +24.8% | 139 | DD ❌ |
@@ -580,6 +581,44 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 - Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
 
 **Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
+### Phase 18 — Multi-task Encoder: Direction + Volatility Heads (2026-05-28)
+
+Added an auxiliary volatility prediction head to the supervised MLP encoder.
+Training loss = L_direction + 0.3 × L_volatility, forcing the shared encoder trunk
+to learn features useful for both predicting direction AND next-bar move size.
+
+Architecture:
+- Encoder trunk: same MLP (250→256→128→8 Tanh) as supervised champion
+- Direction head: Linear(8→3), CrossEntropyLoss (primary)
+- Volatility head: Linear(8→16→1), Softplus + MSELoss (auxiliary)
+- Alpha=0.3: L = L_dir + 0.3 × L_vol
+- Both heads discarded after training — only trunk kept
+
+| Config | Encoder acc (ep30) | Sharpe | MaxDD | Return | Trades |
+| ------ | ------------------ | ------ | ----- | ------ | ------ |
+| Supervised MLP enc8 [CHAMPION] | 72.4% | +3.13 | 13.3% | +358.3% | 524 |
+| Multi-task enc8 alpha=0.3 | **53.0%** | **-0.43** | **28.0%** | **-24.8%** | 564 |
+
+**Multi-task failed — loses money. Supervised MLP stays champion.**
+
+**Root cause — 3 compounding problems:**
+
+1. **Capacity conflict.** With only 8 latent dimensions, there is no room for both direction AND volatility signals. The encoder cannot simultaneously satisfy "encode directional regime" and "encode volatility level" — these are different aspects of market structure that are not always correlated.
+
+2. **Gradient interference.** A high-volatility ranging bar sends conflicting gradient signals: the direction head says "hold" (no trend), but the volatility head says "this bar moves a lot" (high vol). The shared encoder weights receive opposing signals, producing a compromise representation that is good at neither.
+
+3. **Reported loss is misleading.** The ce_loss printed during training includes the combined loss (L_dir + 0.3 × L_vol), not just direction. The epoch 30 ce_loss of 1.26 looks high compared to supervised's 0.63 but they're different quantities. The accuracy drop (72.4% → 53.0%) is the real signal — 19pp worse direction learning.
+
+**What would fix it:**
+- More latent dims (e.g. enc16 for multitask) — separate capacity for each objective
+- Separate encoder trunks per head with shared first layers only
+- Lower alpha (0.1 or 0.05) — reduce vol gradient's influence on the shared trunk
+- But note: enc16 already tested and failed (+2.82 Sharpe, 35.1% MaxDD) even without multitask
+
+**Conclusion:** The 8-dim supervised enc is already saturated for the direction task. Any modification that dilutes the direction gradient degrades performance. The architecture is optimal as-is.
 
 ---
 
