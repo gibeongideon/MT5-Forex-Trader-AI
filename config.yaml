@@ -39,6 +39,14 @@ pipeline:
     lr: 0.001
     # Multitask-specific (only read when mode: multitask)
     multitask_alpha: 0.3       # weight of volatility loss: L = L_dir + alpha * L_vol
+  # ── K-Means Candle Tokenizer ─────────────────────────────────────────────
+  # Adds a single 'candle_cluster' integer feature (0 to n_clusters-1).
+  # Clusters each bar by [log_return, upper_wick, lower_wick, vol_zscore, atr_range].
+  # Set enabled: true to test (compare_new_features.py does this automatically).
+  candle_tokenizer:
+    enabled: false
+    n_clusters: 32
+
     # Transformer-specific (only read when mode: transformer)
     d_model: 32                # attention hidden dim
     n_heads: 4                 # attention heads (must divide d_model evenly)

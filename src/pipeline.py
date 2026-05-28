@@ -37,6 +37,7 @@ import yaml
 from src.evaluation.backtester import BacktestConfig
 from src.features.feature_pipeline import FeaturePipeline
 from src.features.latent_encoder import LatentEncoder
+from src.features.candle_tokenizer import CandleTokenizer
 from src.models.model_registry import _build_model
 from src.core.risk_manager import RiskManager, RiskConfig
 from src.evaluation.walk_forward import WalkForwardConfig, WalkForwardResult, WalkForwardValidator
@@ -68,6 +69,10 @@ class PipelineConfig:
     encoder_epochs:     int   = 30
     encoder_batch:      int   = 4096
     encoder_lr:         float = 1e-3
+    # Candle tokenizer (K-Means per-bar shape clustering)
+    candle_tokenizer_enabled:  bool = False
+    candle_tokenizer_clusters: int  = 32
+
     # Multitask-specific (only used when encoder_mode="multitask")
     encoder_multitask_alpha: float = 0.3
     # Transformer-specific (only used when encoder_mode="transformer")
@@ -133,7 +138,9 @@ class PipelineConfig:
             encoder_epochs     = enc.get("epochs",      30),
             encoder_batch      = enc.get("batch_size",  4096),
             encoder_lr         = enc.get("lr",          1e-3),
-            encoder_multitask_alpha = enc.get("multitask_alpha", 0.3),
+            candle_tokenizer_enabled  = d.get("candle_tokenizer", {}).get("enabled",   False),
+            candle_tokenizer_clusters = d.get("candle_tokenizer", {}).get("n_clusters", 32),
+            encoder_multitask_alpha   = enc.get("multitask_alpha", 0.3),
             encoder_d_model    = enc.get("d_model",     32),
             encoder_n_heads    = enc.get("n_heads",     4),
             encoder_n_layers   = enc.get("n_layers",    2),
@@ -216,6 +223,11 @@ class PredictorPipeline:
                 transformer_n_layers = cfg.encoder_n_layers,
             )
             if cfg.encoder_enabled else None
+        )
+
+        self._ct: Optional[CandleTokenizer] = (
+            CandleTokenizer(n_clusters=cfg.candle_tokenizer_clusters)
+            if cfg.candle_tokenizer_enabled else None
         )
 
         self._model = None
@@ -302,6 +314,18 @@ class PredictorPipeline:
             X_full   = pd.concat(
                 [X_full.loc[shared], latent_full.loc[shared]], axis=1
             )
+            y_full   = y_full.reindex(shared)
+
+        # Candle tokenizer — fitted on train split only
+        if self._ct is not None:
+            print(
+                f"[Pipeline] Fitting CandleTokenizer (k={self._ct.n_clusters})...",
+                flush=True,
+            )
+            self._ct.fit(df_tr)
+            cluster_full = self._ct.transform(df_raw)
+            shared   = X_full.index.intersection(cluster_full.index)
+            X_full   = pd.concat([X_full.loc[shared], cluster_full.loc[shared]], axis=1)
             y_full   = y_full.reindex(shared)
 
         y_full = y_full.dropna()
