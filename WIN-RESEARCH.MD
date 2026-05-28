@@ -418,6 +418,10 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | Stack enc8 on 75k | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
 | Transformer enc8 (d_model=32) | 49k | +0.44 | 7.7% | +0.3% | 129 | underpowered |
 | **CatBoost + enc8** | **49k** | **+2.27** | **37.5%** | **+376.8%** | **517** | **Sharpe ✅ DD ❌** |
+| H1 uncalibrated enc8 (30p/60p) | H1 May24+ | +1.47 | 11.6% | +31.2% | 465 | Sharpe ⚠️ DD ✅ |
+| H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
+| Regime Router (4 specialists) | 49k | 🔄 running | — | — | — | pending |
+| M30 enc8 | M30 May24+ | 🔄 queued | — | — | — | pending |
 
 ---
 
@@ -494,6 +498,9 @@ Best config:   Stack beats XGBoost alone on MaxDD (16.6% vs 22.5% on 75k)
 | MLP vs Transformer? | MLP +3.13 vs Transformer +0.44 | **MLP wins — keep default** |
 | Blend or stack? | Blend hurts, Stack helps MaxDD on 75k | **XGBoost alone on 49k is unbeaten** |
 | Which dataset? | 49k (Sharpe +3.13) vs 75k (Sharpe +1.12) | **49k for deployment, 75k for robustness check** |
+| Which model? | XGBoost +3.13 vs CatBoost +2.27 | **XGBoost wins on Sharpe AND MaxDD** |
+| Which timeframe? | M15 +3.13 vs H1 +1.56 vs M30 pending | **M15 champion — H1 too few signals (69 trades/2yr)** |
+| Regime routing? | 4-specialist RegimeRouter vs XGBoost | **pending (running)** |
 | Deployment ready? | Sharpe >1.5 ✅, MaxDD <20% ✅ | **Phase 9 enc8 is the deploy candidate** |
 
 ### After Stack Results — Next Steps
@@ -570,6 +577,73 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 - Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
 
 **Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
+### Phase 16 — M30 Timeframe Test (2026-05-28) 🔄 QUEUED
+
+Queued to run after Phase 15. Testing XGBoost + enc8 on EURUSD M30 (~25k bars, May 2024+).
+
+Two label configs:
+- Config A: same as M15 (horizon=4 bars=2h, threshold=3pip, SL=30p/60p)
+- Config B: time-matched (horizon=2 bars=1h, threshold=3pip, SL=30p/60p)
+
+Results: **pending**
+
+---
+
+### Phase 15 — Regime-Conditioned Models (2026-05-28) 🔄 RUNNING
+
+Testing `RegimeRouter` — 4 specialist XGBoost models, one per market regime.
+
+Architecture:
+- KMeans(k=4) on [ATR-ratio, ADX/100, (RSI-50)/50] → 4 regime labels
+- Regimes: trending-up / trending-down / ranging / high-volatility
+- Specialist XGBoost trained per regime (min 200 samples, else fallback)
+- LogisticRegression regime classifier routes each bar at inference
+- Fallback: global XGBoost trained on all data
+
+Same 49k enc8 features (39 cols), same walk-forward as M15 champion.
+
+Results: **pending — running now (~2 hours)**
+
+---
+
+### Phase 14 — H1 Calibrated Labels (2026-05-28)
+
+Previous H1 test used M15 labels (3-pip, 4-bar = 1h horizon) — mismatch.
+This run recalibrates for H1 scale: **horizon=8 bars (8h), threshold=10 pips**.
+
+**Encoder accuracy improved:** 57.3% at epoch 30 (vs 53.9% with M15 labels).
+**Label distribution shifted:** hold=42% (vs 20% with M15 labels) — model became much more selective.
+
+| Config | Sharpe | MaxDD | Return | Trades |
+| ------ | ------ | ----- | ------ | ------ |
+| M15 XGBoost+enc8 30p/60p [CHAMPION] | +3.13 | 13.3% | +358.3% | 524 |
+| H1 uncalibrated 30p/60p (from Phase 13) | +1.47 | 11.6% | +31.2% | 465 |
+| H1 cal SL=30p/60p (tight) | +1.41 | 5.1% | +17.1% | 97 |
+| **H1 cal SL=40p/80p (medium)** | **+1.56** | **4.8%** | **+14.4%** | **69** |
+| H1 cal SL=50p/100p (wide) | +1.43 | 3.2% | +16.2% | 59 |
+
+**Best H1 config: SL=40p/TP=80p → Sharpe +1.56, MaxDD 4.8%**
+
+The 40p/80p stops match H1's typical bar range (~1× ATR) and give the model enough room to breathe without getting stopped by noise.
+
+**Calibration helped slightly (+0.09 Sharpe vs uncalibrated) but exposed a bigger problem: too few trades.**
+
+With `threshold=10pip, horizon=8h`:
+- 42% of bars labelled "hold" (vs 20% with M15 labels)
+- Only 69 trades over 2 years = ~3 trades/month
+- Return: +14.4% over 2 years vs M15's +358.3%
+
+The model became very selective (high Sharpe, tiny MaxDD) but doesn't generate enough signals to compound meaningfully. H1 simply can't match M15's 524 trades / +358% return over the same period.
+
+**Why M30 might be the sweet spot between M15 and H1:**
+- M15: 524 trades (lots of compounding, some noise)
+- M30: expected ~200–300 trades (reduced noise, still enough compounding)
+- H1 cal: 69 trades (too selective, not enough opportunities)
+
+**Decision: H1 requires a fundamentally different strategy (wider TP, fewer signals, longer holds) to work well. Not a drop-in swap for M15.**
 
 ---
 
