@@ -420,7 +420,7 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 | **CatBoost + enc8** | **49k** | **+2.27** | **37.5%** | **+376.8%** | **517** | **Sharpe ✅ DD ❌** |
 | H1 uncalibrated enc8 (30p/60p) | H1 May24+ | +1.47 | 11.6% | +31.2% | 465 | Sharpe ⚠️ DD ✅ |
 | H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
-| Regime Router (4 specialists) | 49k | 🔄 running | — | — | — | pending |
+| Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
 | M30 enc8 | M30 May24+ | 🔄 queued | — | — | — | pending |
 
 ---
@@ -500,7 +500,7 @@ Best config:   Stack beats XGBoost alone on MaxDD (16.6% vs 22.5% on 75k)
 | Which dataset? | 49k (Sharpe +3.13) vs 75k (Sharpe +1.12) | **49k for deployment, 75k for robustness check** |
 | Which model? | XGBoost +3.13 vs CatBoost +2.27 | **XGBoost wins on Sharpe AND MaxDD** |
 | Which timeframe? | M15 +3.13 vs H1 +1.56 vs M30 pending | **M15 champion — H1 too few signals (69 trades/2yr)** |
-| Regime routing? | 4-specialist RegimeRouter vs XGBoost | **pending (running)** |
+| Regime routing? | 4-specialist RegimeRouter vs XGBoost | **XGBoost wins — KMeans labels unstable across folds** |
 | Deployment ready? | Sharpe >1.5 ✅, MaxDD <20% ✅ | **Phase 9 enc8 is the deploy candidate** |
 
 ### After Stack Results — Next Steps
@@ -592,20 +592,33 @@ Results: **pending**
 
 ---
 
-### Phase 15 — Regime-Conditioned Models (2026-05-28) 🔄 RUNNING
+### Phase 15 — Regime-Conditioned Models (2026-05-28)
 
 Testing `RegimeRouter` — 4 specialist XGBoost models, one per market regime.
+Same 49k enc8 features (39 cols), same walk-forward as M15 champion. Ran in **84 min**.
 
 Architecture:
 - KMeans(k=4) on [ATR-ratio, ADX/100, (RSI-50)/50] → 4 regime labels
 - Regimes: trending-up / trending-down / ranging / high-volatility
 - Specialist XGBoost trained per regime (min 200 samples, else fallback)
 - LogisticRegression regime classifier routes each bar at inference
-- Fallback: global XGBoost trained on all data
 
-Same 49k enc8 features (39 cols), same walk-forward as M15 champion.
+| Model | Sharpe | MaxDD | Return | Trades |
+| ----- | ------ | ----- | ------ | ------ |
+| XGBoost + enc8 [CHAMPION] | +3.13 | 13.3% | +358.3% | 524 |
+| RegimeRouter (4 specialists) | +1.40 | 34.1% | +110.0% | 504 |
 
-Results: **pending — running now (~2 hours)**
+**RegimeRouter lost on every metric. XGBoost alone wins.**
+
+**Why it failed — two root causes:**
+
+1. **KMeans regime labels are unstable across folds.** The cluster assignments are arbitrary numbers (0–3) that don't map to the same market conditions fold-to-fold. Fold 0's "regime 0" (37% trending-up) becomes a 10% minority in fold 1. The "trending-up specialist" in fold 1 was trained on completely different data than in fold 0.
+
+2. **XGBoost already handles regimes internally.** Its tree splits on ATR/ADX/RSI naturally separate behaviour by volatility and trend strength. Forcing separate models removes cross-regime learning and cuts each specialist's training data to ~25% (12k bars instead of 49k).
+
+**Fix if retrying:** Use a deterministic regime labeller (e.g. ADX threshold rules instead of KMeans) so regime 0 always means the same thing across folds. But the data-splitting penalty remains.
+
+**Decision: Keep `model_type: xgboost`. Regime routing in this form hurts more than it helps.**
 
 ---
 
