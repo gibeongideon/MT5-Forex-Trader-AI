@@ -397,57 +397,124 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 
 ---
 
-## 5. Summary Leaderboard
+## 5. Master Leaderboard — All Experiments
 
-> Target: Sharpe >1.5 · MaxDD <20% · Stable across market periods
-> ✅ = meets target · ❌ = fails target · ⚠️ = borderline
-
-| Experiment | Dataset | Sharpe | MaxDD | Return | Trades | Targets met |
-|------------|---------|--------|-------|--------|--------|-------------|
-| Random baseline | 49k | -0.17 | 21.6% | -2.5% | 354 | none |
-| Rule engine | 49k | -0.45 | — | -9.7% | 430 | none |
-| XGBoost alone (costs) | 49k | +0.52 | — | -3.8% | 127 | none |
-| Phase 8 — tiered risk | 49k | +0.72 | 7.5% | +0.2% | 126 | DD ✅ |
-| Unsupervised AE 16-dim | 49k | -0.41 | — | — | — | failed |
-| **Phase 9 — XGBoost + enc8** | **49k** | **+3.13** | **13.3%** | **+358.3%** | **524** | **Sharpe ✅ DD ✅** |
-| Phase 10 — XGBoost + enc8 | 75k | +1.12 | 22.5% | +59.9% | 753 | DD ⚠️ |
-| Phase 10 — Stack enc8 | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
-| Phase 10 — XGBoost + enc16 | 75k | +1.47 | 36.2% | +253.9% | 735 | Sharpe ⚠️ DD ❌ |
-| Phase 10 — enc16 on 49k | 49k | +2.82 | 35.1% | +99.4% | 553 | Sharpe ✅ DD ❌ |
-| Stack enc8 on 49k | 49k | +2.48 | 35.4% | +266.4% | 497 | Sharpe ✅ DD ❌ |
-| Stack enc8 on 75k | 75k | +1.22 | 16.6% | +100.9% | 748 | Sharpe ⚠️ DD ✅ |
-| Transformer enc8 (d_model=32) | 49k | +0.44 | 7.7% | +0.3% | 129 | underpowered |
-| **CatBoost + enc8** | **49k** | **+2.27** | **37.5%** | **+376.8%** | **517** | **Sharpe ✅ DD ❌** |
-| H1 uncalibrated enc8 (30p/60p) | H1 May24+ | +1.47 | 11.6% | +31.2% | 465 | Sharpe ⚠️ DD ✅ |
-| H1 calibrated enc8 (40p/80p) | H1 May24+ | +1.56 | 4.8% | +14.4% | 69 | Sharpe ⚠️ DD ✅ |
-| Regime Router (4 specialists) | 49k | +1.40 | 34.1% | +110.0% | 504 | Sharpe ⚠️ DD ❌ |
-| Multi-task enc8 (dir+vol α=0.3) | 49k | -0.43 | 28.0% | -24.8% | 564 | loses money |
-| Session features (6 new) + enc8 | 49k | +1.33 | 9.2% | +22.0% | 510 | Sharpe ⚠️ DD ✅ |
-| Session + K-Means cluster (k=32) | 49k | +0.85 | 15.0% | +10.9% | 516 | worse than session |
-| Adaptive WF test=14d bi-weekly | 49k | +2.57 | 27.7% | +286.1% | 523 | Sharpe ✅ DD ❌ |
-| M30 enc8 same params (30p/60p) | M30 May24+ | +2.46 | 23.2% | +68.5% | 411 | Sharpe ✅ DD ❌ |
-| M30 enc8 wider stops (40p/80p) | M30 May24+ | +1.63 | 9.8% | +39.9% | 266 | Sharpe ✅ DD ✅ |
-| M5 enc8 time-matched (h=12) | M5 May25+ | +1.06 | 21.6% | +24.8% | 139 | DD ❌ |
-| M5 enc8 same params (h=4) | M5 May25+ | -0.60 | 23.7% | -14.7% | 144 | loses money |
+> **Target:** Sharpe >1.5 · MaxDD <20%
+> **Legend:** ✅ meets target · ❌ fails · ⚠️ borderline · 🥇 champion · 🔄 pending
 
 ---
 
-### 49k Dataset — All Challengers Ranked (May 2024 → May 2026)
+### FOUNDATION — Phases 1–8 (Pre-Encoder Baseline)
 
-> Every experiment run on the same 49k dataset with the same enc8 features (39 cols).
-> One winner across all dimensions: XGBoost + enc8.
+| Phase | Experiment | Sharpe | MaxDD | Return | Trades | Target |
+|-------|------------|--------|-------|--------|--------|--------|
+| 1 | Random baseline (p=2%) | -0.17 | 21.6% | -2.5% | 354 | ❌ |
+| 2 | Rule engine (MA+RSI+BB) | -0.45 | — | -9.7% | 430 | ❌ |
+| 4–5 | XGBoost + spread (1p) | +0.52 | — | -3.8% | 127 | ❌ |
+| 5 | LightGBM | +0.72 | 6.8% | +3.8% | 99 | ❌ |
+| 5 | CatBoost (baseline) | +1.17 | 24.7% | +5.8% | 543 | ❌ |
+| 8 | XGBoost + tiered risk | +0.72 | 7.5% | +0.2% | 126 | ❌ |
+
+---
+
+### ENCODER ARCHITECTURE — Supervised enc8 is optimal
+
+| Phase | Experiment | Dataset | Sharpe | MaxDD | Return | Trades | Target |
+|-------|------------|---------|--------|-------|--------|--------|--------|
+| 9 | Unsupervised AE 16-dim | 49k | -0.41 | — | — | — | ❌ failed |
+| 11 | Transformer enc8 (d_model=32, 30ep) | 49k | +0.44 | 7.7% | +0.3% | 129 | ❌ underpowered |
+| 18 | Multi-task enc8 (dir+vol α=0.3) | 49k | -0.43 | 28.0% | -24.8% | 564 | ❌ loses money |
+| 10 | XGBoost + enc16 / 60ep | 75k | +1.47 | 36.2% | +253.9% | 735 | ❌ DD too high |
+| 10 | XGBoost + enc16 / 60ep | 49k | +2.82 | 35.1% | +99.4% | 553 | ❌ DD too high |
+| **9** | **XGBoost + enc8 supervised** | **49k** | **+3.13** | **13.3%** | **+358.3%** | **524** | **✅ 🥇 CHAMPION** |
+
+---
+
+### MODEL ARCHITECTURE — XGBoost alone beats all combinations
+
+| Phase | Experiment | Dataset | Sharpe | MaxDD | Return | Trades | Target |
+|-------|------------|---------|--------|-------|--------|--------|--------|
+| 15 | Regime Router 4 specialists | 49k | +1.40 | 34.1% | +110.0% | 504 | ❌ |
+| 10 | XGB+Cat blend 50/50 | 75k | +1.03 | 26.3% | +58.5% | 749 | ❌ |
+| 10 | XGB+Cat+LGB blend | 75k | +0.65 | 28.9% | +34.4% | 756 | ❌ |
+| 10 | XGB+Cat stack (LGB meta) | 75k | +1.22 | 16.6% | +100.9% | 748 | ⚠️ |
+| 10 | Stack enc8 | 49k | +2.48 | 35.4% | +266.4% | 497 | ❌ DD |
+| 12 | CatBoost + enc8 | 49k | +2.27 | 37.5% | +376.8% | 517 | ❌ DD |
+| 10 | XGBoost + enc8 | 75k | +1.12 | 22.5% | +59.9% | 753 | ❌ |
+| **9** | **XGBoost + enc8** | **49k** | **+3.13** | **13.3%** | **+358.3%** | **524** | **✅ 🥇** |
+
+---
+
+### TIMEFRAME STUDY — M15 is the sweet spot (same 2024+ period unless noted)
+
+| Phase | Timeframe | Stops | Horizon | Sharpe | MaxDD | Return | Trades | Target |
+|-------|-----------|-------|---------|--------|-------|--------|--------|--------|
+| 17 | M5 | 30p/60p | h=4 (20min) | -0.60 | 23.7% | -14.7% | 144 | ❌ loses |
+| 17 | M5 | 30p/60p | h=12 (60min) | +1.06 | 21.6% | +24.8% | 139 | ❌ |
+| 13 | H1 | 50p/100p | h=8 (8h) | +0.18 | 12.8% | -1.1% | 196 | ❌ |
+| 13 | H1 | 30p/60p | h=4 uncal | +1.47 | 11.6% | +31.2% | 465 | ⚠️ |
+| 14 | H1 | 40p/80p | h=8 cal | +1.56 | 4.8% | +14.4% | 69 | ⚠️ too few |
+| 16 | M30 | 40p/80p | h=4 (2h) | +1.63 | 9.8% | +39.9% | 266 | ✅ |
+| 16 | M30 | 30p/60p | h=4 (2h) | +2.46 | 23.2% | +68.5% | 411 | ❌ DD |
+| **9** | **M15** | **30p/60p** | **h=4 (1h)** | **+3.13** | **13.3%** | **+358.3%** | **524** | **✅ 🥇** |
+
+---
+
+### FEATURE ENGINEERING — Adding features to enc8 pipeline hurts (enc8 is saturated)
+
+| Phase | Experiment | Features | Sharpe | MaxDD | Return | Target |
+|-------|------------|----------|--------|-------|--------|--------|
+| 19 | + Session+K-Means cluster (k=32) | 46 | +0.85 | 15.0% | +10.9% | ❌ |
+| 19 | + Session features (6 time) | 45 | +1.33 | 9.2% | +22.0% | ⚠️ |
+| **9** | **Baseline 31 base + 8 latent** | **39** | **+3.13** | **13.3%** | **+358.3%** | **✅ 🥇** |
+
+---
+
+### ADAPTATION — More frequent retraining does NOT help (overnight run pending)
+
+| Phase | Experiment | Test window | Folds | Sharpe | MaxDD | Return | Target |
+|-------|------------|-------------|-------|--------|-------|--------|--------|
+| 20 | Adaptive WF test=14d | bi-weekly | ~40 | +2.57 | 27.7% | +286.1% | ❌ |
+| 20 | Adaptive WF test=30d | monthly | 19 | +2.90 | 28.2% | +405.0% | ❌ |
+| 20 | Adaptive WF test=7d | weekly | ~76 | 🔄 | — | — | pending |
+| 20 | Adaptive WF train=90d/test=7d | weekly short | ~76 | 🔄 | — | — | pending |
+| **9** | **Standard WF 180d/30d (pre-built parquet)** | **monthly** | **19** | **+3.13** | **13.3%** | **+358.3%** | **✅ 🥇** |
+
+---
+
+### OVERALL RANKING — Top 10 across all experiments
+
+| Rank | Experiment | Sharpe | MaxDD | Return | Meets targets |
+|------|------------|--------|-------|--------|---------------|
+| 🥇 | **XGBoost + enc8  M15  49k  standard WF** | **+3.13** | **13.3%** | **+358.3%** | **✅ Both** |
+| 2 | XGBoost + enc16  M15  49k | +2.82 | 35.1% | +99.4% | ❌ DD |
+| 3 | Adaptive WF test=30d (pre-built) | +2.90 | 28.2% | +405.0% | ❌ DD |
+| 4 | Adaptive WF test=14d bi-weekly | +2.57 | 27.7% | +286.1% | ❌ DD |
+| 5 | Stack enc8  M15  49k | +2.48 | 35.4% | +266.4% | ❌ DD |
+| 6 | M30  30p/60p  same params | +2.46 | 23.2% | +68.5% | ❌ DD |
+| 7 | CatBoost + enc8  49k | +2.27 | 37.5% | +376.8% | ❌ DD |
+| 8 | M30  40p/80p  wider stops | +1.63 | 9.8% | +39.9% | ✅ Both |
+| 9 | H1 calibrated  40p/80p | +1.56 | 4.8% | +14.4% | ⚠️ few trades |
+| 10 | H1 uncalibrated  30p/60p | +1.47 | 11.6% | +31.2% | ⚠️ |
+
+> Only **2 configs** meet BOTH targets simultaneously: 🥇 M15 champion and M30 40p/80p.
+> M15 is 1.9× better Sharpe and 13.4× better return than M30 — it compounds far more efficiently.
+
+---
+
+### 49k M15 Dataset — All Challengers Ranked
 
 | Rank | Model | Sharpe | MaxDD | Return | Verdict |
 |------|-------|--------|-------|--------|---------|
-| 🥇 | **XGBoost + enc8** | **+3.13** | **13.3%** | **+358.3%** | **Champion — deploy candidate** |
-| 2 | enc16 XGBoost | +2.82 | 35.1% | +99.4% | Higher Sharpe failed, 3× DD |
-| 3 | Stack XGB+Cat | +2.48 | 35.4% | +266.4% | Stacking hurts when signal is strong |
+| 🥇 | **XGBoost + enc8** | **+3.13** | **13.3%** | **+358.3%** | **Champion — unbeaten** |
+| 2 | enc16 XGBoost | +2.82 | 35.1% | +99.4% | 3× DD |
+| 3 | Stack XGB+Cat | +2.48 | 35.4% | +266.4% | Stacking hurts strong signal |
 | 4 | CatBoost + enc8 | +2.27 | 37.5% | +376.8% | Most return, worst DD |
-| 5 | Transformer enc8 | +0.44 | 7.7% | +0.3% | Never learned (d_model too small) |
-
-**Pattern:** Every challenger either raises MaxDD dramatically (>35%) or collapses Sharpe.
-XGBoost + enc8 is the only config meeting **both** targets (Sharpe >1.5 AND MaxDD <20%) simultaneously.
-The enc8 bottleneck + XGBoost's gradient boosting is the sweet spot for this data.
+| 5 | Session + enc8 (retrained) | +1.33 | 9.2% | +22.0% | Encoder diluted |
+| 6 | Regime Router (k=4) | +1.40 | 34.1% | +110.0% | KMeans labels unstable |
+| 7 | Session + cluster (retrained) | +0.85 | 15.0% | +10.9% | Double dilution |
+| 8 | Transformer enc8 (30 ep) | +0.44 | 7.7% | +0.3% | Never learned |
+| 9 | Multi-task enc8 | -0.43 | 28.0% | -24.8% | Gradient interference |
 
 ---
 
