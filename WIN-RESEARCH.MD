@@ -513,6 +513,23 @@ Either way the 75k stack result shows how the strategy holds up over the harder 
 
 ---
 
+### Phase 12 — CatBoost + enc8 on 49k (2026-05-28)
+
+Quick test: CatBoost has the same enc8 features as XGBoost (39 cols, pre-built parquet). No encoder retraining needed. Ran in **1.4 minutes**.
+
+| Model | Sharpe | MaxDD | Return | Trades |
+| ----- | ------ | ----- | ------ | ------ |
+| XGBoost + enc8 [CHAMPION] | **+3.13** | **13.3%** | +358.3% | 524 |
+| CatBoost + enc8 | +2.27 | 37.5% | +376.8% | 517 |
+
+**XGBoost wins. CatBoost made more money (+376.8% vs +358.3%) but at nearly 3× the drawdown (37.5% vs 13.3%).**
+
+CatBoost is more aggressive — fires more confident-looking signals but with higher volatility equity curve. XGBoost's smoother, tighter signal quality is what drives the Sharpe advantage.
+
+**Decision: XGBoost + enc8 default confirmed. config.yaml unchanged.**
+
+---
+
 ### Phase 11 — Transformer Encoder vs MLP (2026-05-28)
 
 Drop-in replacement test: can self-attention beat the MLP enc8 champion (+3.13)?
