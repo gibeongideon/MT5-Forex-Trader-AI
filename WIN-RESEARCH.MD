@@ -476,8 +476,8 @@ Use the trained decoder (autoencoder mode) to generate synthetic market windows 
 |-------|------------|-------------|-------|--------|-------|--------|--------|
 | 20 | Adaptive WF test=14d | bi-weekly | ~40 | +2.57 | 27.7% | +286.1% | ❌ |
 | 20 | Adaptive WF test=30d | monthly | 19 | +2.90 | 28.2% | +405.0% | ❌ |
-| 20 | Adaptive WF test=7d | weekly | ~76 | 🔄 | — | — | pending |
-| 20 | Adaptive WF train=90d/test=7d | weekly short | ~76 | 🔄 | — | — | pending |
+| 20 | Adaptive WF test=7d | weekly | 80 | +2.35 | 28.8% | +330.3% | ❌ DD |
+| 20 | Adaptive WF train=90d/test=7d | weekly short | 93 | +2.59 | 24.4% | +577.9% | ❌ DD |
 | **9** | **Standard WF 180d/30d (pre-built parquet)** | **monthly** | **19** | **+3.13** | **13.3%** | **+358.3%** | **✅ 🥇** |
 
 ---
@@ -651,6 +651,41 @@ The enc8 encoder learns better on M15 because there are 4× more training window
 - Stop calibration: SL=30–40p, TP=60–80p (let signal dictate, not bar range)
 
 **Decision: M15 remains the deployment timeframe. H1 test confirmed M15 is the sweet spot.**
+
+---
+
+### Phase 20 — Walk-Forward Online Adaptation (2026-05-28/29)
+
+Tests whether more frequent model retraining beats the monthly 30-day standard.
+Uses pre-built enc8 parquet (no encoder retraining). Ran overnight.
+
+**Hypothesis:** If EURUSD shifts regime mid-fold, a model retrained last month may fire stale signals.
+Weekly retraining should catch the shift faster.
+
+| Config | Folds | Sharpe | MaxDD | Return | Trades |
+| ------ | ----- | ------ | ----- | ------ | ------ |
+| Standard 180d/30d [CHAMPION reference] | 19 | +3.13 | 13.3% | +358.3% | 524 |
+| 180d/30d (re-run from parquet) | 19 | +2.90 | 28.2% | +405.0% | 495 |
+| 180d/14d bi-weekly | 40 | +2.57 | 27.7% | +286.1% | 523 |
+| 180d/7d weekly | 80 | +2.35 | 28.8% | +330.3% | 554 |
+| 90d/7d short window + weekly | 93 | +2.59 | 24.4% | **+577.9%** | **608** |
+
+**Result: More frequent retraining consistently hurts Sharpe. Hypothesis rejected.**
+
+Every step from monthly → bi-weekly → weekly lowers Sharpe (+2.90 → +2.57 → +2.35).
+All adaptive configs have ~2× higher MaxDD than the champion (24–28% vs 13.3%).
+
+**Why adaptation hurts here:**
+- The 180-day XGBoost already generalizes well across regime changes
+- Shorter test windows produce noisier per-fold estimates that aggregate poorly
+- More folds × noisier estimates = lower overall Sharpe even if individual folds are fine
+
+**One interesting outlier — train=90d/test=7d:**
+Highest return of any config: +577.9%, 608 trades. The shorter 90-day training window makes the model
+more "present-focused" — it adapts faster and fires more signals. But MaxDD 24.4%, Sharpe +2.59.
+High activity doesn't compensate for quality loss.
+
+**Decision: Keep standard 180d/30d walk-forward. Monthly retraining is optimal for this model.**
 
 ---
 
