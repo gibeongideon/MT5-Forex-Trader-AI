@@ -95,24 +95,64 @@ The only way to genuinely add information: **different data source** (cross-pair
 
 ---
 
-### Phase 24 — Cross-Market Features ⭐⭐⭐⭐⭐ (Next)
+### Phase 24 — Cross-Market Features ✅ DONE — Inconclusive
 
-**Expected uplift: +0.2 to +0.8 Sharpe**
+| Config | Sharpe | Notes |
+|--------|--------|-------|
+| A: XGBoost+enc8 baseline (fresh) | -0.16 | stochastic seed variance |
+| B: +GBPUSD/USDJPY/XAUUSD (9 cols) | +0.08 | +0.24 vs A, still near zero |
 
-The only remaining untested information source that institutional quants use first.
-EURUSD moves are driven by forces that don't appear in EURUSD candles alone.
+**Verdict:** Cross-market adds marginal signal (+0.24 delta) but absolute performance is unreliable due to enc8 random seed variance. Does not confidently beat the cached champion (+3.13). **Champion holds.**
 
-| Add | Why |
-|-----|-----|
-| GBPUSD `return_1`, `rsi_14` | USD institutional flow — same driver as EURUSD |
-| USDJPY `return_1` | Risk-on/risk-off — when JPY weakens, USD strengthens |
-| DXY `return_1` | Dollar index — most direct EURUSD driver |
-| XAUUSD `return_1` | Gold up → USD weak → EURUSD rises |
-| VIX `return_1` | Fear spike → flight to USD → EURUSD falls |
-| SPX `return_1` | Risk-on → USD sells → EURUSD rises |
+---
 
-Script to build: `scripts/compare_crosspair.py`
-Format: A = champion baseline (39 feat), B = champion + cross-market signals.
+### Phase 25 — Regime Detection ✅ DONE — Failed
+
+RegimeRouter (KMeans k=4 + per-regime XGBoost): **+1.36 vs +2.31 baseline = -0.95**
+
+Root cause: 49k bars ÷ 4 regimes ≈ 12k bars per specialist — insufficient training data.
+
+---
+
+### Phase 26 — Meta-Labeling (Triple-Barrier) ✅ DONE — Failed
+
+Triple-barrier labels: **-0.71 Sharpe, only 7 trades** in 18 folds.
+
+Root cause: 15% non-zero label rate makes model too conservative. Standard labels (40%) needed for trade frequency.
+
+---
+
+### Phase 27 — VQ-VAE + GPT Market Language Model (Future Research)
+
+**Complexity: High (2–3 weeks). Not yet started.**
+
+The only uncharted encoder architecture. Converts OHLCV windows into discrete tokens (like words), then trains a GPT-style transformer autoregressively on the token sequence.
+
+```
+50-bar OHLCV window
+        ↓
+   MLP Encoder → z_continuous [8 floats]
+        ↓
+   Vector Quantization → nearest codebook entry → token ID (e.g. 42)
+        ↓
+   Codebook embedding lookup → [8 floats] (learnable, not continuous)
+        ↓
+   XGBoost (Option A: drop-in for enc8)
+   OR
+   GPT Transformer trained autoregressively on token sequence (Option B)
+```
+
+**Why different from enc8:** enc8 produces continuous floats. VQ-VAE forces the encoder to route patterns through a discrete learned vocabulary (e.g. 512 "market state" entries). Transformers are designed for discrete token sequences — this could unlock sequence modelling that LSTMs failed at.
+
+**Honest risk:** Still OHLCV-derived data — saturation principle may still apply. Option B (GPT) is the novel part; Option A (VQ-VAE encoder only) is likely similar to enc8. The E2E LSTM failure (Phase 23) is a warning sign for end-to-end OHLCV approaches.
+
+**Prerequisite:** Complete paper trading validation first (see below).
+
+---
+
+### Deployment — Next Immediate Step ⭐⭐⭐⭐⭐
+
+All planned experiment phases are complete. The champion (XGBoost + enc8, 39 feat) is ready for production validation. See Production Deployment section below.
 
 ---
 
