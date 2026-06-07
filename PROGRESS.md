@@ -2,7 +2,7 @@
 
 > **Purpose:** Session handoff document. A new Claude session should read this + `IMPLEMENTATION-PLAN.MD` before doing any work. Do NOT re-explore files that are already described here.
 
-Last updated: 2026-05-25
+Last updated: 2026-06-07
 
 ---
 
@@ -592,3 +592,82 @@ conda run -n envmt5 python scripts/precompute_llm_signals.py --provider claude_a
 Then add `llm_signal` to ensemble `base_models` list and compare walk-forward vs +3.13 champion.
 Hypothesis: LLM uses sequential bar patterns (32-bar token context) — orthogonal to enc8's
 regime fingerprint from OHLCV windows. The only untested complementary signal type remaining.
+
+
+---
+
+## Phase 21 Results — SMC/ICT Signals (2026-06-07)
+
+**Saturation confirmed after 21 experiments. Champion holds.**
+
+| Config | Features | Sharpe | MaxDD | Return | Verdict |
+|--------|----------|--------|-------|--------|---------|
+| A (baseline) | 39 | +2.31 | 8.0% | +43% | reference (fresh enc8 vs +3.13 cached) |
+| B (+OB+FVG+DailyHL) | 47 | +1.42 | 9.9% | +16.3% | worse |
+| C (all 6 SMC types) | 55 | +1.16 | 10.9% | +18.4% | worse |
+
+- All 6 SMC signal types tested: Order Blocks, Fair Value Gaps, Previous Day Levels, Andean Oscillator, SuperTrend, Heiken Ashi
+- All hurt Sharpe. enc8 latent vectors already implicitly capture what SMC patterns describe.
+- Source: `scripts/compare_smc_signals.py`, signals in `src/features/smc_signals.py`
+
+---
+
+## Phase 22 — Production Hardening + Volume Signal Experiment (2026-06-07)
+
+### aiomql Evaluation Decision
+
+Scanned `/trader_reference/aiomql/` (302 files, full async MT5 framework).
+**Decision: borrow 3 patterns only. Do NOT replace BotBase + MT5Connector.**
+
+Reasons: our stack is battle-tested over 21 phases; aiomql has no backtesting,
+no encoder, no custom signal generation; replacing = high risk, zero signal benefit.
+
+Patterns borrowed (ideas, not the library):
+- **PositionTracker** → `PipelineBot._manage_positions()` — breakeven SL move at 1× profit
+- **Sessions** → `BotBase.in_session()` + `config.yaml: trading.session_filter`
+- **Trade recording** → `TradeJournal` wired into `PipelineBot.on_tick()`
+
+### Files Created / Modified
+
+| File | Change |
+|------|--------|
+| `scripts/retrain_champion.py` | NEW — full-data retrain, saves all artifacts |
+| `src/core/mt5_connector.py` | ADD — `modify_position(ticket, sl, tp)` |
+| `src/core/bot_base.py` | ADD — `in_session()` reads session_filter from config |
+| `config.yaml` | ADD — `trading.session_filter` block (disabled by default) |
+| `src/bots/pipeline_bot.py` | ADD — `_manage_positions()`, session check, journal wiring |
+| `src/features/volume_signals.py` | NEW — 3 volume anomaly features |
+| `scripts/compare_volume_signals.py` | NEW — Phase 22-A A/B walk-forward |
+| `deploy/mt5_bot.service` | NEW — systemd service for auto-start |
+
+### Phase 22-A: Volume Signal Experiment (PENDING)
+
+```bash
+conda run -n envmt5 --no-capture-output python scripts/compare_volume_signals.py
+```
+
+Features: `vol_ratio`, `vol_zscore`, `vol_fast_slow` (from `tick_volume` column)
+- Config A: 39 feat (baseline, reuses SMC cache)
+- Config B: 42 feat (+3 volume features)
+
+**Saturation guard:** If volume signals also hurt → accept full saturation, deploy champion.
+If volume signals improve → run Phase 22-B (LLM signals, ~$1.50 API cost).
+
+### Deploy Champion (when ready)
+
+```bash
+# Step 1: Retrain on all data
+conda run -n envmt5 python scripts/retrain_champion.py
+
+# Step 2: Dry-run
+conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run
+
+# Step 3: Paper trading (30 days minimum before live capital)
+conda run -n envmt5 python src/bots/pipeline_bot.py
+
+# Step 4: Systemd service (auto-start on reboot)
+sudo cp deploy/mt5_bot.service /etc/systemd/system/
+sudo systemctl enable mt5_bot
+sudo systemctl start mt5_bot
+journalctl -u mt5_bot -f
+```

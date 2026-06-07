@@ -9,10 +9,19 @@ Safety limits:
   - 5% daily loss limit → bot stops and closes all (from BotBase)
   - min 40% confidence threshold (from pipeline config)
   - magic=20260101 — only manages positions opened by this bot
+  - session_filter in config.yaml — no new entries outside London/NY hours
+
+Position management (per-tick, before signal check):
+  - Breakeven move: once profit >= 1× SL distance, SL moves to entry + 2 pips
+  - Protects profits without premature exit
+
+Trade journal:
+  - Every signal logged to data/live_trades.db (SQLite, survives crashes)
+  - Every order logged on entry, every closed trade logged on exit
 
 Usage:
-  # 1. Train first (if not already done)
-  conda run -n envmt5 python scripts/run_pipeline.py train
+  # 1. Train / retrain first
+  conda run -n envmt5 python scripts/retrain_champion.py
 
   # 2. Run the bot (Ctrl+C to stop cleanly)
   conda run -n envmt5 python src/bots/pipeline_bot.py
@@ -33,6 +42,7 @@ sys.path.insert(0, str(ROOT))
 import pandas as pd
 
 from src.core.bot_base import BotBase
+from src.core.trade_journal import TradeJournal
 from src.pipeline import PredictorPipeline
 
 
@@ -40,6 +50,7 @@ SYMBOL    = "EURUSD"
 TIMEFRAME = "M15"
 PIP_SIZE  = 0.0001
 BARS      = 200       # bars fetched per tick — enough for all indicators + encoder
+BREAKEVEN_BUFFER_PIPS = 2  # SL moved to entry + this many pips at breakeven
 
 
 class PipelineBot(BotBase):
@@ -47,13 +58,14 @@ class PipelineBot(BotBase):
     Live bot that trades EURUSD M15 using PredictorPipeline signals.
 
     Tick logic (every 60 s):
-      1. Fetch 200 M15 bars from MT5
-      2. Skip if this bar was already processed
-      3. Predict: {signal, confidence, P_buy, P_hold, P_sell, sizing}
-      4. HOLD or sizing.skip → do nothing
-      5. BUY signal → close any of OUR sell positions, open 1 buy
-      6. SELL signal → close any of OUR buy positions, open 1 sell
-      7. Already have same-direction position → skip
+      0. _manage_positions() — breakeven SL moves on open positions
+      1. Session filter — skip new entries outside configured hours
+      2. Fetch 200 M15 bars from MT5
+      3. Skip if this bar was already processed
+      4. Predict: {signal, confidence, P_buy, P_hold, P_sell, sizing}
+      5. HOLD or sizing.skip → do nothing
+      6. Close opposite-direction positions opened by this bot
+      7. BUY/SELL signal → open 1 position (up to MAX_POSITIONS cap)
     """
 
     MAX_POSITIONS = 1   # hard cap — one position at a time
@@ -77,8 +89,13 @@ class PipelineBot(BotBase):
         self.sl_pips = float(bt_cfg.get("sl_pips", 30.0))
         self.tp_pips = float(bt_cfg.get("tp_pips", 60.0))
 
+        # Trade journal — logs every signal and order to SQLite
+        self.journal = TradeJournal(db_path=ROOT / "data" / "live_trades.db")
+
         # Track last processed bar to avoid acting on the same bar twice
         self._last_bar: pd.Timestamp | None = None
+        # Track positions we've already moved to breakeven {ticket: True}
+        self._breakeven_done: set[int] = set()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -90,11 +107,16 @@ class PipelineBot(BotBase):
             f"model={self.pipe.cfg.model_type}  "
             f"encoder={'yes (' + self.pipe.cfg.encoder_mode + ')' if self.pipe._enc else 'no'}"
         )
+        sf = self.config.get("trading", {}).get("session_filter", {})
+        session_str = (
+            f"{sf.get('start_utc')}–{sf.get('end_utc')} UTC"
+            if sf.get("enabled") else "24/5 (no filter)"
+        )
         self.log(
             f"Symbol={SYMBOL}  TF={TIMEFRAME}  "
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
             f"threshold={self.pipe.cfg.bt_threshold:.0%}  "
-            f"max_positions={self.MAX_POSITIONS}"
+            f"max_positions={self.MAX_POSITIONS}  session={session_str}"
         )
         positions = self.open_positions(SYMBOL)
         if positions:
@@ -112,12 +134,19 @@ class PipelineBot(BotBase):
     # ── Main tick ─────────────────────────────────────────────────────────────
 
     def on_tick(self) -> None:
-        # ── Fetch bars ───────────────────────────────────────────────────────
+        # ── 0. Manage open positions (breakeven) ─────────────────────────────
+        if not self.dry_run:
+            self._manage_positions()
+
+        # ── 1. Session filter ─────────────────────────────────────────────────
+        if not self.in_session():
+            return   # outside London/NY hours — no new entries
+
+        # ── 2. Fetch bars ─────────────────────────────────────────────────────
         try:
             ohlcv = self.rates(SYMBOL, TIMEFRAME, BARS)
         except Exception as e:
             self.log(f"get_rates error: {e}")
-            # attempt reconnect on IPC/connection errors
             if "IPC" in str(e) or "connection" in str(e).lower():
                 try:
                     self.conn.connect()
@@ -130,13 +159,13 @@ class PipelineBot(BotBase):
             self.log("Insufficient bars — waiting...")
             return
 
-        # ── New bar gate ──────────────────────────────────────────────────────
+        # ── 3. New bar gate ───────────────────────────────────────────────────
         bar_time = ohlcv.index[-1]
         if bar_time == self._last_bar:
             return   # same bar — silent skip
         self._last_bar = bar_time
 
-        # ── Predict ───────────────────────────────────────────────────────────
+        # ── 4. Predict ────────────────────────────────────────────────────────
         try:
             sig = self.pipe.predict(ohlcv)
         except Exception as e:
@@ -155,11 +184,34 @@ class PipelineBot(BotBase):
             f"P_sell={sig['P_sell']:.3f}"
         )
 
-        # ── Skip non-actionable signals ───────────────────────────────────────
+        # Log signal to journal (every bar regardless of action)
+        try:
+            self.journal.record({
+                "bot":          self.name,
+                "symbol":       SYMBOL,
+                "direction":    direction,
+                "entry_time":   str(bar_time),
+                "entry_price":  0.0,
+                "exit_time":    None,
+                "exit_price":   None,
+                "pnl_pips":     0.0,
+                "pnl_dollars":  0.0,
+                "model":        self.pipe.cfg.model_type,
+                "confidence":   confidence,
+                "entry_reason": f"signal:{direction}",
+                "exit_reason":  "pending",
+                "volume":       0.0,
+                "sl_pips":      self.sl_pips,
+                "tp_pips":      self.tp_pips,
+            })
+        except Exception:
+            pass  # journal errors must never interrupt trading
+
+        # ── 5. Skip non-actionable signals ────────────────────────────────────
         if direction == "hold" or sizing["skip"]:
             return
 
-        # ── Position management ───────────────────────────────────────────────
+        # ── 6. Position management ────────────────────────────────────────────
         our_positions = [p for p in self.open_positions(SYMBOL)
                          if p.magic == self.magic]
 
@@ -179,6 +231,7 @@ class PipelineBot(BotBase):
             if not self.dry_run:
                 try:
                     self.conn.close_position(pos)
+                    self._breakeven_done.discard(pos.ticket)
                 except Exception as e:
                     self.log(f"Close error: {e}")
                     return
@@ -190,7 +243,7 @@ class PipelineBot(BotBase):
                 self.log(f"Still at cap ({self.MAX_POSITIONS}) after closing — skip")
                 return
 
-        # ── Size position ─────────────────────────────────────────────────────
+        # ── 7. Size position ──────────────────────────────────────────────────
         lot, eff_sl = self.risk_sized_lot(
             symbol       = SYMBOL,
             confidence   = confidence,
@@ -203,7 +256,7 @@ class PipelineBot(BotBase):
             self.log("Lot size 0 (below min) — skipping")
             return
 
-        # ── Open position ─────────────────────────────────────────────────────
+        # ── 8. Open position ──────────────────────────────────────────────────
         tick = self.conn.get_tick(SYMBOL)
         if tick is None:
             self.log("Cannot get tick — skipping")
@@ -243,9 +296,90 @@ class PipelineBot(BotBase):
                     sl=sl_price, tp=tp_price,
                     comment=f"pipe {confidence:.0%}",
                 )
-            self.log(f"Order done — ticket={result.get('order')}")
+            ticket = result.get("order")
+            self.log(f"Order done — ticket={ticket}")
+
+            # Log filled order to journal
+            try:
+                self.journal.record({
+                    "bot":          self.name,
+                    "symbol":       SYMBOL,
+                    "direction":    direction,
+                    "entry_time":   str(bar_time),
+                    "entry_price":  price,
+                    "exit_time":    None,
+                    "exit_price":   None,
+                    "pnl_pips":     0.0,
+                    "pnl_dollars":  0.0,
+                    "model":        self.pipe.cfg.model_type,
+                    "confidence":   confidence,
+                    "entry_reason": f"signal:{direction}",
+                    "exit_reason":  "open",
+                    "volume":       lot,
+                    "sl_pips":      eff_sl,
+                    "tp_pips":      self.tp_pips,
+                })
+            except Exception:
+                pass
+
         except Exception as e:
             self.log(f"Order error: {e}")
+
+    # ── Position management ───────────────────────────────────────────────────
+
+    def _manage_positions(self) -> None:
+        """
+        Run before signal check each tick.
+        Moves SL to breakeven once profit >= 1× SL distance (breakeven protection).
+        Only fires once per position (tracked in self._breakeven_done).
+        """
+        try:
+            positions = self.open_positions(SYMBOL)
+        except Exception:
+            return
+
+        for pos in positions:
+            if pos.magic != self.magic:
+                continue
+            if pos.ticket in self._breakeven_done:
+                continue
+            if pos.sl == 0.0:
+                continue  # no SL set — skip
+
+            entry   = pos.price_open
+            sl      = pos.sl
+            sl_dist = abs(entry - sl)
+
+            if pos.type == 0:  # BUY
+                current = pos.price_current
+                profit_dist = current - entry
+                if profit_dist >= sl_dist:
+                    new_sl = round(entry + BREAKEVEN_BUFFER_PIPS * PIP_SIZE, 5)
+                    if new_sl > sl:
+                        try:
+                            self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
+                            self._breakeven_done.add(pos.ticket)
+                            self.log(
+                                f"Breakeven: ticket={pos.ticket}  "
+                                f"SL moved {sl:.5f} → {new_sl:.5f}"
+                            )
+                        except Exception as e:
+                            self.log(f"Breakeven modify error: {e}")
+            else:  # SELL
+                current = pos.price_current
+                profit_dist = entry - current
+                if profit_dist >= sl_dist:
+                    new_sl = round(entry - BREAKEVEN_BUFFER_PIPS * PIP_SIZE, 5)
+                    if new_sl < sl:
+                        try:
+                            self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
+                            self._breakeven_done.add(pos.ticket)
+                            self.log(
+                                f"Breakeven: ticket={pos.ticket}  "
+                                f"SL moved {sl:.5f} → {new_sl:.5f}"
+                            )
+                        except Exception as e:
+                            self.log(f"Breakeven modify error: {e}")
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 

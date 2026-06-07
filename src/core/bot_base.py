@@ -6,7 +6,7 @@ Subclass this and implement on_tick() with your strategy logic.
 import signal
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, date
+from datetime import datetime, date, time as dtime
 
 import yaml
 from pathlib import Path
@@ -156,6 +156,26 @@ class BotBase(ABC):
 
         lot = self.conn.calc_lot_size(symbol, sizing.sl_pips, sizing.risk_pct)
         return lot, sizing.sl_pips
+
+    def in_session(self) -> bool:
+        """
+        Return True if the current UTC time is within the configured trading session.
+
+        Reads trading.session_filter from config.yaml:
+            enabled   : bool   — if false, always return True
+            start_utc : "HH:MM" — session open (inclusive)
+            end_utc   : "HH:MM" — session close (exclusive)
+
+        Designed to be called at the top of on_tick() so the bot only enters
+        new trades during the active London/NY trading hours.
+        """
+        sf = self.config.get("trading", {}).get("session_filter", {})
+        if not sf.get("enabled", False):
+            return True
+        now_utc = datetime.utcnow().time()
+        start = dtime.fromisoformat(sf.get("start_utc", "00:00"))
+        end   = dtime.fromisoformat(sf.get("end_utc",   "23:59"))
+        return start <= now_utc < end
 
     def rates(self, symbol: str, timeframe: str, count: int = 200):
         return self.conn.get_rates(symbol, timeframe, count)

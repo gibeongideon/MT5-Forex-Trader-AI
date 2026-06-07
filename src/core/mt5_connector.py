@@ -242,6 +242,21 @@ class MT5Connector:
             positions = [p for p in positions if p.magic == magic]
         return list(positions)
 
+    def modify_position(self, ticket: int, sl: float, tp: float) -> dict:
+        """Modify the SL and/or TP of an open position."""
+        mt5 = self._mt5
+        request = {
+            "action":   mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl":       sl,
+            "tp":       tp,
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            code = result.retcode if result else "None"
+            raise RuntimeError(f"modify_position failed: retcode={code}  ticket={ticket}")
+        return result._asdict()
+
     def calc_lot_size(self, symbol: str, sl_pips: float, risk_pct: float = 0.01) -> float:
         info = self._mt5.symbol_info(symbol)
         account = self._mt5.account_info()

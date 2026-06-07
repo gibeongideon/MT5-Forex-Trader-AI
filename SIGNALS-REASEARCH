@@ -1,0 +1,208 @@
+Plan: Add trader_reference Signals to Champion Pipeline + Document Options A/B
+Context
+The champion is XGBoost + enc8, M15, 31 base + 8 latent = 39 features → +3.13 Sharpe, 13.3% MaxDD, +358% return. Every prior modification (session features, K-Means cluster, multi-task, Transformer, CatBoost, regime router) either hurt Sharpe or raised MaxDD. The hypothesis is that those failed because they were: (a) statistical duplicates of existing features, or (b) added before the encoder causing distribution shift concerns.
+
+The trader_reference folder contains SMC/ICT signals that are structurally different from the current 31 indicators:
+
+Order blocks = where institutional orders were placed (3-bar pattern)
+Fair value gaps = price imbalance gaps that tend to get filled (3-bar gap structure)
+Daily session levels = institutional reference points from the prior day These are categorical/structural signals, not continuous rolling stats — a completely different information type than the 31 current features (which are all rolling averages, volatility, momentum of close price).
+Part 1: Document Deferred Tasks in PROGRESS.md
+Add a new section to /home/rock/Desktop/2026_Projects/MT5/PROGRESS.md (append, never remove existing):
+
+## Deferred Next-Step Options (documented 2026-06-07)
+
+### Option A — Skip to Production (Deploy Champion)
+Retrain XGBoost + enc8 on full 49k dataset (no walk-forward splits), wire into a live
+`PipelineBot` extending `BotBase`, run 30 days paper trading before live capital.
+
+Files needed:
+- `src/pipeline_bot.py` — extends BotBase; calls PredictorPipeline.predict_live() each tick
+- `scripts/retrain_champion.py` — full-data retrain + save all artifacts
+- `config.yaml` additions: mode: paper|live, paper_balance
+
+Prerequisite: enc8 artifacts (encoder.pt + scaler.joblib + xgboost.joblib) saved from
+full-data training run.
+
+### Option B — LLM Integration (Phase 9-A from TODO.md)
+Precompute LLM signals for all 49k bars (~$1.50, ~60 min):
+  `conda run -n envmt5 python scripts/precompute_llm_signals.py --provider claude_api`
+Then add `llm_signal` to ensemble base_models and compare walk-forward vs +3.13 champion.
+Hypothesis: LLM uses sequential bar patterns (32-bar context) — orthogonal to enc8's
+regime fingerprint from OHLCV windows. Only untested complementary signal type.
+Part 2: Implement SMC Signals from trader_reference
+Signals Selected (from trader_reference deep scan)
+Source files:
+
+trader_reference/metatrader5-strategies-master/Indicators/OrderBlock.mq5
+trader_reference/metatrader5-strategies-master/Indicators/DailyHighLow.mq5
+trader_reference/metatrader5-strategies-master/Indicators/AndeanOscillator.mq5
+trader_reference/metatrader5-strategies-master/Indicators/SuperTrend.mq5
+Signal	Priority	New Features	Why Orthogonal
+Order Block (OB)	P1	ob_bull, ob_bear	3-bar institutional pattern — not in any rolling stat
+Fair Value Gap (FVG)	P1	fvg_bull, fvg_bear, fvg_size	Price imbalance detection — structural, not continuous
+Prev Day High/Low	P1	prev_day_high_dist, prev_day_low_dist, prev_day_pos	Session reference levels — D1 info on M15
+Andean Oscillator	P2	andean_bull, andean_bear, andean_signal	Novel Bull/Bear decomp — different from RSI/MACD
+SuperTrend	P2	supertrend_dir, supertrend_dist	Adaptive ATR trend direction (clean 1/-1 signal)
+Heiken Ashi	P3	ha_dir, ha_body_norm	Smoothed candle direction — different from raw OHLC
+Total new features: ~17 → 39 + 17 = 56 total (if all added)
+
+File to Create: src/features/smc_signals.py
+Pure indicator functions following same pattern as src/features/indicators.py. Input: full OHLCV DataFrame. Output: pd.Series per signal. No internal state, no lookahead (all backward-looking patterns).
+
+1. Order Blocks (from OrderBlock.mq5 OB_MODE_DEFAULT)
+Formula (translated from MQL5 to oldest→newest indexing):
+
+Bullish OB at bar t (fired when break-up candle closes):
+  c[t-2] < o[t-2]   # bar t-2 bearish
+  c[t-1] < o[t-1]   # bar t-1 bearish
+  c[t] > o[t]        # bar t bullish (confirmation)
+  c[t-1] < low[t-2]  # t-1 closes below t-2's low
+  c[t] > high[t-1]   # t breaks above t-1's high
+  Zone = [high[t-1], low[t-1]]
+
+Bearish OB at bar t:
+  c[t-2] > o[t-2], c[t-1] > o[t-1], c[t] < o[t]
+  c[t-1] > high[t-2], c[t] < low[t-1]
+  Zone = [high[t-1], low[t-1]]
+Output columns:
+
+ob_bull: 1 if bullish OB formed at this bar, else 0
+ob_bear: 1 if bearish OB formed at this bar, else 0
+2. Fair Value Gaps (from OrderBlock.mq5 OB_MODE_FVG)
+Formula:
+
+Bullish FVG at bar t:
+  c[t-3] < o[t-3], c[t-2] < o[t-2], c[t-1] > o[t-1]
+  c[t-2] < low[t-3], c[t-1] > high[t-2], low[t] > high[t-2]
+  Gap zone = [low[t-2], low[t]]  (unfilled price gap)
+
+Bearish FVG at bar t:
+  c[t-3] > o[t-3], c[t-2] > o[t-2], c[t-1] < o[t-1]
+  c[t-2] > high[t-3], c[t-1] < low[t-2], high[t] < low[t-2]
+  Gap zone = [high[t], high[t-2]]
+Output columns:
+
+fvg_bull: 1 if bullish FVG detected at this bar
+fvg_bear: 1 if bearish FVG detected at this bar
+fvg_size: size of the gap in pips (0 if no FVG)
+3. Previous Day High/Low (from DailyHighLow.mq5)
+# Resample to D1, shift 1 day (previous day), forward-fill to M15
+daily = df["high"].resample("D").max().shift(1)  # prev day high
+prev_high = daily.reindex(df.index, method="ffill")
+prev_low  = df["low"].resample("D").min().shift(1).reindex(df.index, method="ffill")
+prev_mid  = (prev_high + prev_low) / 2
+Output columns:
+
+prev_day_high_dist: (close - prev_day_high) / ATR (normalized distance, + = above)
+prev_day_low_dist: (close - prev_day_low) / ATR
+prev_day_pos: (close - prev_day_low) / (prev_day_high - prev_day_low) (0–1 position)
+4. Andean Oscillator (from AndeanOscillator.mq5, length=50, signal=9)
+alpha = 2.0 / (length + 1)
+# Recursive (vectorized with cumsum trick or loop):
+up1[i] = max(max(c[i], o[i]), up1[i-1] - (up1[i-1] - c[i]) * alpha)
+up2[i] = max(max(c^2, o^2),   up2[i-1] - (up2[i-1] - c[i]^2) * alpha)
+dn1[i] = min(min(c[i], o[i]), dn1[i-1] + (c[i] - dn1[i-1]) * alpha)
+dn2[i] = min(min(c^2, o^2),   dn2[i-1] + (c[i]^2 - dn2[i-1]) * alpha)
+bull[i] = sqrt(dn2[i] - dn1[i]^2)
+bear[i] = sqrt(up2[i] - up1[i]^2)
+signal[i] = EMA(max(bull, bear), signal_length)
+Output columns:
+
+andean_bull: bull momentum component
+andean_bear: bear momentum component
+andean_signal: EMA of max(bull, bear)
+andean_diff: bull - bear (direction strength)
+5. SuperTrend (from SuperTrend.mq5, period=10, multiplier=3)
+middle = (high + low) / 2
+upper = middle + multiplier * ATR(10)
+lower = middle - multiplier * ATR(10)
+# Trend: +1 if close > upper[prev], -1 if close < lower[prev], else carry prev
+Output columns:
+
+supertrend_dir: +1 or -1 (trend direction)
+supertrend_dist: (close - active_band) / ATR (normalized distance from the active band)
+6. Heiken Ashi Direction
+ha_close = (open + high + low + close) / 4
+ha_open[i] = (ha_open[i-1] + ha_close[i-1]) / 2  # recursive
+ha_dir = sign(ha_close - ha_open)  # +1 bullish, -1 bearish
+ha_body = abs(ha_close - ha_open) / ATR  # normalized body size
+Output columns:
+
+ha_dir: +1 or -1
+ha_body_norm: body size normalized by ATR
+Injection Architecture
+CRITICAL DESIGN CHOICE: Add signals via extra_spec in the comparison script — NOT by modifying _DEFAULT_SPEC in feature_pipeline.py. This keeps the champion config untouched until signals are validated.
+
+All 6 signal functions are OHLCV-based → must be added to _OHLCV_FUNS set in feature_pipeline.py line 72 when importing. Use this pattern in the comparison script:
+
+from src.features.smc_signals import (
+    order_block_bull, order_block_bear,
+    fair_value_gap_bull, fair_value_gap_bear, fair_value_gap_size,
+    prev_day_high_dist, prev_day_low_dist, prev_day_pos,
+    andean_bull, andean_bear, andean_signal, andean_diff,
+    supertrend_dir, supertrend_dist,
+    ha_dir, ha_body_norm,
+)
+
+SMC_SPEC = [
+    (("ob_bull", "ob_bear"), order_blocks, {}),
+    (("fvg_bull", "fvg_bear", "fvg_size"), fair_value_gaps, {}),
+    (("prev_day_high_dist", "prev_day_low_dist", "prev_day_pos"), prev_day_levels, {}),
+]
+ANDEAN_SPEC = [
+    (("andean_bull", "andean_bear", "andean_signal", "andean_diff"), andean_oscillator, {"length": 50}),
+]
+TREND_SPEC = [
+    (("supertrend_dir", "supertrend_dist"), supertrend, {"period": 10, "multiplier": 3.0}),
+    (("ha_dir", "ha_body_norm"), heiken_ashi, {}),
+]
+The enc8 encoder takes raw 50-bar OHLCV windows, not the feature matrix — so adding features via extra_spec does NOT affect encoder behavior. Encoder stays frozen.
+
+File to Create: scripts/compare_smc_signals.py
+3-config A/B/C comparison:
+
+Config	Features	Description
+A	39 (baseline)	Champion — 31 base + 8 latent, no new signals
+B	~45	+ SMC signals (OB + FVG + Daily Levels) — P1 signals only
+C	~56	+ SMC + Andean + SuperTrend + HA — all 6 signal types
+Each config:
+
+Same dataset: 49k M15 bars (2024-05-14 → 2026-05-18)
+Same encoder: supervised enc8, 30 epochs
+Same walk-forward: expanding 180d/30d, 19 folds
+Separate cache dirs: wf_cache_smc_baseline, wf_cache_smc_p1, wf_cache_smc_all
+Key addition in compare script: For OHLCV-based extra_spec functions, the _OHLCV_FUNS set must be patched before calling FeaturePipeline so the functions receive the full DataFrame, not just df["close"]:
+
+from src.features import feature_pipeline as fp_module
+fp_module._OHLCV_FUNS |= {order_blocks, fair_value_gaps, prev_day_levels,
+                            andean_oscillator, supertrend, heiken_ashi}
+Files to Create/Modify
+File	Action	Notes
+src/features/smc_signals.py	CREATE	6 signal functions, pure, OHLCV-based
+scripts/compare_smc_signals.py	CREATE	A/B/C walk-forward comparison
+PROGRESS.md	APPEND	Document Option A and Option B
+Do NOT modify:
+
+src/features/feature_pipeline.py — _DEFAULT_SPEC stays at 31 features
+src/features/indicators.py — no changes
+src/pipeline.py — no changes
+config.yaml — no changes
+Verification
+# Run the comparison (~3 hours, 3 × 19 folds)
+conda run -n envmt5 python scripts/compare_smc_signals.py
+
+# Expected output:
+# Config A: +3.13 Sharpe (validates baseline is unchanged)
+# Config B: >= +3.13? (SMC signals add structural info)
+# Config C: >= best of A/B? (more signals = better or worse?)
+
+# If Config B or C beats champion by > +0.05 Sharpe AND MaxDD stays < 20%:
+#   → Promote winning config as new champion
+#   → Update WIN-RESEARCH.MD Phase 21
+# Else:
+#   → Champion holds, document findings, proceed to Option A (deployment)
+Expected Timing
+smc_signals.py implementation: ~2 hours code writing
+Each walk-forward run: ~60 min (same as past experiments)
+Total: ~5 hours end-to-end (can run Config B and C sequentially after A validates)

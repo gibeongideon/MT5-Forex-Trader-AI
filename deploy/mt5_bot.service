@@ -1,0 +1,26 @@
+[Unit]
+Description=MT5 Champion XGBoost Pipeline Bot
+Documentation=https://github.com/gibeongideon/MT5-Forex-Trader-AI
+After=network.target
+
+[Service]
+Type=simple
+User=rock
+WorkingDirectory=/home/rock/Desktop/2026_Projects/MT5
+
+# Activate conda env by using the full Python path
+ExecStart=/home/rock/anaconda3/envs/envmt5/bin/python src/bots/pipeline_bot.py
+
+# Auto-restart on crash (not on clean exit or daily-loss stop)
+Restart=on-failure
+RestartSec=30
+
+# Log output — rotate manually with: logrotate /etc/logrotate.d/mt5_bot
+StandardOutput=append:/home/rock/Desktop/2026_Projects/MT5/logs/bot.log
+StandardError=append:/home/rock/Desktop/2026_Projects/MT5/logs/bot_err.log
+
+# Graceful shutdown timeout
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

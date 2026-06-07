@@ -98,6 +98,14 @@ trading:
   timeframe: "M15"          # M1 M5 M15 M30 H1 H4 D1 W1 MN1
   lot_size: 0.01            # minimum lot, overridden by risk_per_trade if > 0
 
+  # Session filter — restrict NEW entries to London/NY overlap hours (UTC)
+  # Existing positions are never auto-closed; only new signals are suppressed.
+  # Set enabled: false to trade 24/5 (off by default — enable for live trading)
+  session_filter:
+    enabled: false
+    start_utc: "07:00"      # London open
+    end_utc: "20:00"        # NY close
+
 example_bot:
   symbol: "EURUSD"
   timeframe: "M15"
