@@ -463,3 +463,221 @@ Each layer is independent and can be added one at a time. Each one plugs into th
 ---
 
 *All techniques have been validated in academic literature and are known to be in production use at major quantitative firms. Implementation difficulty ranges from 1 day (Technique 3) to 2-3 weeks (Technique 5).*
+
+
+NEW IMPROVEVEMENT TO PLAN JUN  7
+
+Based on your results, you've already discovered something many quantitative traders never reach:
+
+The biggest gains did not come from adding more indicators. They came from adding a new representation of the same data (enc8 latent features).
+
+Your experiments strongly suggest that EURUSD OHLCV is approaching feature saturation. The next improvements are more likely to come from better information, better labels, and better portfolio construction than from adding another RSI-like indicator.
+
+1. Multi-Asset / Cross-Market Features (Highest Probability)
+
+This is the first thing I would do.
+
+Your own Phase 24 idea is exactly where institutional quants would look.
+
+Add:
+
+GBPUSD returns
+USDJPY returns
+EURGBP returns
+DXY
+US 2Y Treasury yield
+Gold (XAUUSD)
+S&P500 futures
+VIX
+
+Instead of:
+
+EURUSD only
+
+Use:
+
+EURUSD
+GBPUSD
+USDJPY
+DXY
+XAUUSD
+SPX
+
+Reason:
+
+The model now sees information that does not exist in EURUSD candles.
+
+Example:
+
+DXY surges
+EURUSD often falls
+
+Gold rallies
+USD weakens
+EURUSD often rises
+
+This is the single most promising next experiment.
+
+Expected uplift:
+
+Sharpe +0.2 to +0.8
+
+if relationships are stable.
+
+2. Regime Detection Before Prediction
+
+Most models fail because markets behave differently in different regimes.
+
+Instead of:
+
+One model for everything
+
+Use:
+
+Regime classifier
+        ↓
+Bullish USD regime
+Range regime
+Volatility spike regime
+News regime
+        ↓
+Dedicated model
+
+Examples:
+
+High ATR regime
+Low ATR regime
+Trending regime
+Mean-reverting regime
+
+Train:
+
+XGBoost Trend Model
+XGBoost Range Model
+
+and switch dynamically.
+
+Many hedge funds use regime-based models because it is easier than finding one universal model.
+
+Expected uplift:
+
+Sharpe +0.3 to +1.0
+3. Better Labels (Often More Powerful Than Better Features)
+
+Most retail ML systems predict:
+
+Up
+Down
+
+Instead predict:
+
+Expected future return
+
+or
+
+Probability TP hits before SL
+
+or
+
+Meta-labeling
+
+Popular approach:
+
+Generate candidate trade
+Second model predicts:
+Should I take this trade?
+
+This idea comes from Marcos López de Prado and is widely used in quantitative finance.
+
+Many strategies improve more from better labeling than from adding features.
+
+Expected uplift:
+
+Sharpe +0.2 to +0.7
+4. Ensemble of Different Information Sources
+
+Right now:
+
+enc8
++
+XGBoost
+
+Try:
+
+XGBoost
+LightGBM
+CatBoost
+LSTM
+
+Then stack:
+
+Final XGBoost
+
+using outputs:
+
+prob_xgb
+prob_lgbm
+prob_cat
+prob_lstm
+
+as features.
+
+Institutional ML often wins by combining mediocre models rather than finding one perfect model.
+
+Example:
+
+XGB sees trees
+LSTM sees sequences
+CatBoost sees interactions
+
+Stacker combines them
+
+Expected uplift:
+
+Sharpe +0.2 to +0.6
+5. Position Sizing Alpha (Most Underrated)
+
+You may already have most of the prediction alpha available.
+
+The next gains may come from:
+
+Same entries
+Better sizing
+
+Instead of:
+
+1 lot
+
+Use:
+
+0.25 lot  -> confidence 0.45
+0.50 lot  -> confidence 0.60
+1.00 lot  -> confidence 0.80
+
+Or:
+
+Kelly fraction
+Volatility targeting
+Risk parity sizing
+
+Many profitable funds generate more performance from risk management than prediction.
+
+Expected uplift:
+
+Sharpe +0.3 to +1.0
+What I would do next (ranked)
+Cross-market features (GBPUSD, DXY, Gold, USDJPY) ⭐⭐⭐⭐⭐
+Regime detection + separate models ⭐⭐⭐⭐⭐
+Meta-labeling / better labels ⭐⭐⭐⭐
+Model stacking (XGB + LSTM + CatBoost) ⭐⭐⭐⭐
+Confidence-based position sizing ⭐⭐⭐⭐
+
+Given your experiment history, I would allocate effort approximately as:
+
+40% Cross-market data
+25% Regime models
+15% Meta-labeling
+10% Model stacking
+10% Risk sizing
+
+I would not spend much more time adding technical indicators or SMC features. Your results already show the encoder has absorbed nearly all useful information available from the EURUSD OHLCV stream itself. The next breakthrough is most likely to come from new information channels, not more transformations of the same candles.

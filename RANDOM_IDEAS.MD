@@ -1122,3 +1122,5 @@ indicator-based trading
 direct regression forecasting.
 
 That is a much more scalable research direction..
+
+FINAL IM

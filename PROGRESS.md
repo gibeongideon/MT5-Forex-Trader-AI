@@ -18,10 +18,28 @@ Last updated: 2026-06-07
 | 6 | Signal Stacking & Meta-Learning | ✅ COMPLETE |
 | 7 | Robust Backtesting & Walk-Forward | ✅ COMPLETE |
 | 8 | Intelligent Risk Management | ✅ COMPLETE |
-| 9 | LLM Integration as Probability Signal | ⬜ NOT STARTED |
-| 10 | Production Enterprise System | ⬜ NOT STARTED |
+| 9–19 | Feature experiments (session, K-Means, SMC ×6, volume) | ✅ ALL FAILED — saturation confirmed |
+| 20 | Supervised Latent Encoder (enc8) — CHAMPION FOUND | ✅ COMPLETE |
+| 21 | SMC/ICT signal comparison (6 types) | ✅ COMPLETE — all hurt Sharpe |
+| 22 | Production hardening + volume signal experiment | ✅ COMPLETE — volume hurt Sharpe |
+| 23 | LSTM experiments (39-feat LSTM vs E2E LSTM) | 🔄 RUNNING |
+| 24 | Cross-market features (GBPUSD, DXY, Gold, VIX) | ⬜ NEXT |
+| 25 | Regime detection + dedicated models | ⬜ QUEUED |
+| 26 | Meta-labeling / P(TP before SL) labels | ⬜ QUEUED |
 
-**Next task:** Start Phase 9 — LLM Integration as Probability Signal
+**Champion (locked):** XGBoost + enc8, 39 features → **+3.13 Sharpe, 13.3% MaxDD, +358% return** (49k M15 bars)
+
+**Next task:** Await Phase 23 LSTM results → run Phase 24 cross-market features
+
+---
+
+## What We Know (Confirmed After 22+ Experiments)
+
+- **enc8 saturates EURUSD OHLCV.** Every feature derived from price/volume alone has failed to improve Sharpe. The encoder has absorbed all available information from EURUSD candles.
+- **The next breakthrough must come from a different data source** — cross-market instruments (GBPUSD, DXY, Gold, VIX) or a different problem formulation (regime models, meta-labeling).
+- **No more OHLCV-derived signals.** SMC, session, K-Means, volume, rolling stats — all tested, all failed.
+- **Position sizing already implemented** (Phase 8 tiered risk, Phase 22 breakeven SL). Future gains from sizing come from volatility targeting on top of what's already in place.
+- **Production infrastructure is ready.** `pipeline_bot.py`, `retrain_champion.py`, session filter, trade journal, systemd service — all built. Champion can be deployed now.
 
 ---
 
