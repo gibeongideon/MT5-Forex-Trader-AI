@@ -561,3 +561,34 @@ python scripts/download_data.py --symbol EURUSD --timeframe M15 --bars 50000
 # Test MT5 connection (requires MT5 running via start_mt5.sh)
 python tests/test_connection.py
 ```
+
+---
+
+## Deferred Next-Step Options (documented 2026-06-07)
+
+After 20 research phases, champion is locked: **XGBoost + enc8, M15 → +3.13 Sharpe, 13.3% MaxDD, +358% return**.
+Two paths forward once current SMC signal research (Phase 21) concludes:
+
+### Option A — Deploy Champion (Production)
+
+Retrain XGBoost + enc8 on the full 49k dataset (no walk-forward splits), wire into a live
+`PipelineBot` extending `BotBase`, run 30 days paper trading before live capital.
+
+Files needed:
+- `src/pipeline_bot.py` — extends BotBase; calls PredictorPipeline.predict_live() each tick
+- `scripts/retrain_champion.py` — full-data retrain + saves encoder.pt, scaler.joblib, xgboost.joblib
+- `config.yaml` additions: `mode: paper|live`, `paper_balance`
+
+Key constraint: 30-day paper mode is mandatory before any live capital (see Phase 10 in TODO.md).
+
+### Option B — LLM Integration (Phase 9-A from TODO.md)
+
+Precompute LLM signals for all 49k bars (~$1.50, ~60 min API cost):
+
+```bash
+conda run -n envmt5 python scripts/precompute_llm_signals.py --provider claude_api
+```
+
+Then add `llm_signal` to ensemble `base_models` list and compare walk-forward vs +3.13 champion.
+Hypothesis: LLM uses sequential bar patterns (32-bar token context) — orthogonal to enc8's
+regime fingerprint from OHLCV windows. The only untested complementary signal type remaining.
