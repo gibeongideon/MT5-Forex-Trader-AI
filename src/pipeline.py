@@ -67,6 +67,7 @@ class PipelineConfig:
     encoder_latent_dim: int   = 8
     encoder_window:     int   = 50              # OHLCV bars per input window
     encoder_epochs:     int   = 30
+    encoder_patience:   int   = 0
     encoder_batch:      int   = 4096
     encoder_lr:         float = 1e-3
     # Candle tokenizer (K-Means per-bar shape clustering)
@@ -136,6 +137,7 @@ class PipelineConfig:
             encoder_latent_dim = enc.get("latent_dim",  8),
             encoder_window     = enc.get("window_size", 50),
             encoder_epochs     = enc.get("epochs",      30),
+            encoder_patience   = enc.get("patience",    0),
             encoder_batch      = enc.get("batch_size",  4096),
             encoder_lr         = enc.get("lr",          1e-3),
             candle_tokenizer_enabled  = d.get("candle_tokenizer", {}).get("enabled",   False),
@@ -211,16 +213,17 @@ class PredictorPipeline:
 
         self._enc: Optional[LatentEncoder] = (
             LatentEncoder(
-                mode                 = cfg.encoder_mode,
-                latent_dim           = cfg.encoder_latent_dim,
-                window_size          = cfg.encoder_window,
-                epochs               = cfg.encoder_epochs,
-                batch_size           = cfg.encoder_batch,
-                lr                   = cfg.encoder_lr,
-                multitask_alpha      = cfg.encoder_multitask_alpha,
-                transformer_d_model  = cfg.encoder_d_model,
-                transformer_n_heads  = cfg.encoder_n_heads,
-                transformer_n_layers = cfg.encoder_n_layers,
+                mode                     = cfg.encoder_mode,
+                latent_dim               = cfg.encoder_latent_dim,
+                window_size              = cfg.encoder_window,
+                epochs                   = cfg.encoder_epochs,
+                batch_size               = cfg.encoder_batch,
+                lr                       = cfg.encoder_lr,
+                early_stopping_patience  = cfg.encoder_patience,
+                multitask_alpha          = cfg.encoder_multitask_alpha,
+                transformer_d_model      = cfg.encoder_d_model,
+                transformer_n_heads      = cfg.encoder_n_heads,
+                transformer_n_layers     = cfg.encoder_n_layers,
             )
             if cfg.encoder_enabled else None
         )

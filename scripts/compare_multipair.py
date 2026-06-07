@@ -36,8 +36,8 @@ from src.pipeline import PredictorPipeline, PipelineConfig
 from src.evaluation.walk_forward import WalkForwardValidator, WalkForwardConfig
 from src.evaluation.backtester import BacktestConfig
 
-# ── Common date range — all pairs start 2024-01-08 ────────────────────────────
-COMMON_START = pd.Timestamp("2024-01-08")
+# ── Same period as champion +2.31 baseline (2024-05-14) ──────────────────────
+COMMON_START = pd.Timestamp("2024-05-14 11:15:00")
 
 # ── Pair-specific configs ─────────────────────────────────────────────────────
 #   pip_size  : price per pip (instrument-specific, never mixed)
@@ -46,16 +46,13 @@ COMMON_START = pd.Timestamp("2024-01-08")
 #
 #   EURUSD/GBPUSD : pip_size=0.0001, sl=30p → $0.003 stop (0.28% at 1.08)
 #   USDJPY        : pip_size=0.01,   sl=30p → 0.30 yen   (0.20% at 148)
-#   XAUUSD        : pip_size=0.01,   sl=300p→ $3.00 stop  (0.15% at 2000)
 PAIRS = [
     dict(symbol="EURUSD", csv="data/EURUSD_M15.csv",
-         pip_size=0.0001, sl=30,  tp=60,  spread=1.0,  commission=0.5),
+         pip_size=0.0001, sl=30, tp=60, spread=1.0, commission=0.5),
     dict(symbol="GBPUSD", csv="data/GBPUSD_M15.csv",
-         pip_size=0.0001, sl=30,  tp=60,  spread=2.0,  commission=0.5),
+         pip_size=0.0001, sl=30, tp=60, spread=2.0, commission=0.5),
     dict(symbol="USDJPY", csv="data/USDJPY_M15.csv",
-         pip_size=0.01,   sl=30,  tp=60,  spread=1.0,  commission=0.5),
-    dict(symbol="XAUUSD", csv="data/XAUUSD_M15.csv",
-         pip_size=0.01,   sl=300, tp=600, spread=30.0, commission=5.0),
+         pip_size=0.01,   sl=30, tp=60, spread=1.0, commission=0.5),
 ]
 
 
@@ -174,9 +171,9 @@ def main() -> None:
     with open(ROOT / "config.yaml") as f:
         full_cfg = yaml.safe_load(f)
 
-    print(f"\nPhase 28 — Multi-Pair Champion Validation")
+    print(f"\nPhase 28 — Multi-Pair Champion Validation (champion period)")
     print(f"Config  : XGBoost + supervised enc8  latent_dim=8  epochs=30  39 features")
-    print(f"Period  : {COMMON_START.date()} → 2026-06-05  (same for all pairs)")
+    print(f"Period  : {COMMON_START.date()} → 2026-06-05  (same period as champion +2.31)")
     print(f"WF      : expanding  180d train / 30d test")
     print(f"\nEach pair's enc8 and XGBoost are trained exclusively on that pair's data.")
     print(f"No data is shared between pairs.\n")

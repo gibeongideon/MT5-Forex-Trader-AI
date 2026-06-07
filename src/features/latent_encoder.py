@@ -241,6 +241,7 @@ class LatentEncoder:
         batch_size:   int   = 4096,
         lr:           float = 1e-3,
         random_state: int   = 42,
+        early_stopping_patience: int = 0,
         multitask_alpha:      float = 0.3,
         transformer_d_model:  int   = 32,
         transformer_n_heads:  int   = 4,
@@ -258,6 +259,7 @@ class LatentEncoder:
         self.lr           = lr
         self.random_state = random_state
 
+        self.early_stopping_patience = early_stopping_patience
         self.multitask_alpha      = multitask_alpha
         self.transformer_d_model  = transformer_d_model
         self.transformer_n_heads  = transformer_n_heads
@@ -423,18 +425,41 @@ class LatentEncoder:
 
         criterion_vol = nn.MSELoss() if self.mode == "multitask" else None
 
+        # Early stopping setup — hold out last 20% of windows (temporal order preserved)
+        patience = self.early_stopping_patience
+        if patience > 0:
+            val_n     = max(1, int(n * 0.2))
+            train_n   = n - val_n
+            tX_tr, tX_val = tensor_X[:train_n], tensor_X[train_n:]
+            ty_tr, ty_val = tensor_y[:train_n], tensor_y[train_n:]
+            if tensor_vol is not None:
+                tv_tr, tv_val = tensor_vol[:train_n], tensor_vol[train_n:]
+            else:
+                tv_tr = tv_val = None
+            best_val_loss  = float("inf")
+            best_epoch     = 0
+            best_state     = None
+            no_improve     = 0
+            print(f"  Early stopping: patience={patience}  "
+                  f"train={train_n:,}  val={val_n:,}", flush=True)
+        else:
+            tX_tr, ty_tr = tensor_X, tensor_y
+            tv_tr        = tensor_vol
+            train_n      = n
+
         for epoch in range(1, self.epochs + 1):
-            perm        = torch.randperm(n)
+            net.train()
+            perm        = torch.randperm(train_n)
             epoch_loss  = 0.0
             correct     = 0
-            for start in range(0, n, self.batch_size):
+            for start in range(0, train_n, self.batch_size):
                 idx    = perm[start : start + self.batch_size]
-                bx, by = tensor_X[idx], tensor_y[idx]
+                bx, by = tX_tr[idx], ty_tr[idx]
                 optimizer.zero_grad()
 
                 if self.mode == "multitask":
                     logits, vol_pred, _ = net(bx)
-                    bvol = tensor_vol[idx]
+                    bvol = tv_tr[idx]
                     loss = criterion(logits, by) + self.multitask_alpha * criterion_vol(vol_pred, bvol)
                 else:
                     logits, _ = net(bx)
@@ -444,14 +469,56 @@ class LatentEncoder:
                 optimizer.step()
                 epoch_loss += loss.item() * len(bx)
                 correct    += (logits.argmax(1) == by).sum().item()
-            avg_loss = epoch_loss / n
-            acc      = correct / n
-            if epoch % 5 == 0 or epoch == 1:
-                print(
-                    f"  epoch {epoch:3d}/{self.epochs}  "
-                    f"ce_loss={avg_loss:.4f}  train_acc={acc:.1%}",
-                    flush=True,
-                )
+
+            avg_loss = epoch_loss / train_n
+            acc      = correct / train_n
+
+            if patience > 0:
+                net.eval()
+                with torch.no_grad():
+                    if self.mode == "multitask":
+                        val_logits, val_vol, _ = net(tX_val)
+                        val_loss = (criterion(val_logits, ty_val)
+                                    + self.multitask_alpha
+                                    * criterion_vol(val_vol, tv_val)).item()
+                    else:
+                        val_logits, _ = net(tX_val)
+                        val_loss = criterion(val_logits, ty_val).item()
+                    val_acc = (val_logits.argmax(1) == ty_val).float().mean().item()
+
+                if epoch % 10 == 0 or epoch == 1:
+                    print(
+                        f"  epoch {epoch:4d}/{self.epochs}  "
+                        f"train_loss={avg_loss:.4f}  train_acc={acc:.1%}  "
+                        f"val_loss={val_loss:.4f}  val_acc={val_acc:.1%}",
+                        flush=True,
+                    )
+
+                if val_loss < best_val_loss - 1e-5:
+                    best_val_loss = val_loss
+                    best_epoch    = epoch
+                    best_state    = {k: v.clone() for k, v in net.state_dict().items()}
+                    no_improve    = 0
+                else:
+                    no_improve += 1
+                    if no_improve >= patience:
+                        print(f"\n  Early stop at epoch {epoch}  "
+                              f"best epoch={best_epoch}  best val_loss={best_val_loss:.4f}",
+                              flush=True)
+                        break
+            else:
+                if epoch % 5 == 0 or epoch == 1:
+                    print(
+                        f"  epoch {epoch:3d}/{self.epochs}  "
+                        f"ce_loss={avg_loss:.4f}  train_acc={acc:.1%}",
+                        flush=True,
+                    )
+
+        # Restore best weights when early stopping was used
+        if patience > 0 and best_state is not None:
+            net.load_state_dict(best_state)
+            print(f"  Restored best weights from epoch {best_epoch}  "
+                  f"val_loss={best_val_loss:.4f}", flush=True)
 
         self._net = net
 
