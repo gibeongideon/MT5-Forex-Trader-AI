@@ -120,20 +120,80 @@ Format: A = champion baseline (39 feat), B = champion + cross-market signals.
 
 **Expected uplift: +0.3 to +1.0 Sharpe**
 
-One universal model trying to trade both trending and ranging markets is the single
-biggest structural weakness. Markets behave differently in different regimes — a model
-trained on everything learns an average that fits nothing well.
+#### Simple version
 
+Right now the champion does this:
 ```
-Regime classifier (ATR percentile / ADX threshold)
-        ↓
-High ATR / trending  →  XGBoost Trend Model  (trained only on trending bars)
-Low ATR / ranging    →  XGBoost Range Model   (trained only on ranging bars)
-Volatility spike     →  Skip (no trade)
+EURUSD bar → XGBoost → "buy / hold / sell"
 ```
+With regime models:
+```
+EURUSD bar → "what market are we in?" → route to the right specialist
+                    ↓
+         Trending up   →  XGBoost Trend Model   → signal
+         Trending down →  XGBoost Trend Model   → signal
+         Ranging       →  XGBoost Range Model   → signal
+         High vol      →  skip / reduce size    → signal
+```
+One doctor for everything → specialist per condition.
 
-`src/models/regime_router.py` already exists as a stub — build on it.
-This is how most hedge funds handle structural non-stationarity.
+#### How it works in detail
+
+**Step 1 — Regime Detection (every bar)**
+
+Three features describe the current market:
+- `ATR ratio` — current ATR vs rolling-100-bar mean. >1 = elevated volatility.
+- `ADX` — trend strength. >25 = trending, <20 = ranging.
+- `RSI` — directional bias. >50 = bullish pressure, <50 = bearish.
+
+KMeans(k=4) clusters all training bars into 4 buckets from those three numbers.
+Each new bar gets classified in real time (microseconds).
+
+**Step 2 — Specialist Training (per walk-forward fold)**
+
+Instead of one XGBoost on all bars, RegimeRouter:
+1. Detects regimes across the training window
+2. Splits data: "trending bars only", "ranging bars only", etc.
+3. Trains a **separate XGBoost on each slice**
+4. If a regime has < 200 bars → no specialist → falls back to the global model
+
+The trending specialist only ever saw trending markets. It learns entry patterns
+that work specifically in momentum. The ranging specialist learns mean-reversion.
+
+**Step 3 — Inference (live trading)**
+
+At each new bar:
+1. Compute ATR ratio, ADX, RSI → classify regime (microseconds)
+2. Route to matching specialist → get `[P_buy, P_hold, P_sell]`
+3. Apply same confidence threshold and risk sizing as before
+
+The trading engine sees no difference — it still receives a probability triple.
+
+**Why this might work**
+
+Current XGBoost trained on everything learned:
+> "On average, when RSI=65 and MACD crosses up, there's a slight buy edge"
+
+That average blends trending markets (where the signal works well) with ranging
+markets (where it fakes out). The specialist sees only the conditions it will be
+deployed in — it learns a sharper, cleaner version of the same signal.
+
+**The risk**
+
+49k bars ÷ 4 regimes ≈ 12k bars per specialist per fold (vs 48k for global model).
+Less data per model. If regime boundaries are drawn wrong, specialists get confused
+training sets and perform worse. The comparison script measures this directly.
+
+**Implementation**
+
+- `src/models/regime_router.py` — fully implemented, implements ModelInterface
+- `scripts/compare_regime.py` — A/B walk-forward: XGBoost vs RegimeRouter, 39 features
+
+Observed regime distribution on 49k M15 bars:
+- Regime 0 (trending-up):   10.2%
+- Regime 1 (trending-down): 37.6%
+- Regime 2 (ranging):       13.6%
+- Regime 3 (high-vol):      38.6%
 
 ---
 
