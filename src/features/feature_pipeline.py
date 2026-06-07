@@ -298,19 +298,6 @@ class FeaturePipeline:
         if "atr_14" in df.columns:
             df["atr_pct"] = df["atr_14"] / close.replace(0, np.nan)
 
-        # Session / time-of-day features
-        # EURUSD session boundaries (UTC): Asia 00-07, London 07-16, NY 12-21
-        if hasattr(df.index, "hour"):
-            hour = df.index.hour
-            # Cyclical encoding — preserves continuity across midnight
-            df["hour_sin"] = np.sin(2 * np.pi * hour / 24)
-            df["hour_cos"] = np.cos(2 * np.pi * hour / 24)
-            # Binary session flags
-            df["is_london_open"]     = ((hour >= 7)  & (hour < 16)).astype(np.float32)
-            df["is_ny_open"]         = ((hour >= 12) & (hour < 21)).astype(np.float32)
-            df["is_london_ny_overlap"] = ((hour >= 12) & (hour < 16)).astype(np.float32)
-            df["is_asia"]            = ((hour >= 0)  & (hour < 7)).astype(np.float32)
-
         return df
 
     def _make_labels(self, close: pd.Series) -> pd.Series:
