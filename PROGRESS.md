@@ -640,18 +640,18 @@ Patterns borrowed (ideas, not the library):
 | `scripts/compare_volume_signals.py` | NEW — Phase 22-A A/B walk-forward |
 | `deploy/mt5_bot.service` | NEW — systemd service for auto-start |
 
-### Phase 22-A: Volume Signal Experiment (PENDING)
+### Phase 22-A: Volume Signal Experiment — COMPLETE (2026-06-07)
 
-```bash
-conda run -n envmt5 --no-capture-output python scripts/compare_volume_signals.py
-```
+| Config                          | Feat | Sharpe | MaxDD  | Return  | Verdict            |
+|---------------------------------|------|--------|--------|---------|--------------------|
+| A (baseline, fresh enc8)        |   39 |  +2.31 |   8.0% |  +43.0% | reference          |
+| B (+vol_ratio/zscore/fast_slow) |   42 |  +1.68 |  10.3% |  +25.2% | **worse (-0.63)**  |
 
-Features: `vol_ratio`, `vol_zscore`, `vol_fast_slow` (from `tick_volume` column)
-- Config A: 39 feat (baseline, reuses SMC cache)
-- Config B: 42 feat (+3 volume features)
+**SATURATION CONFIRMED after 22 experiments.** Volume features hurt Sharpe.
+enc8 latent vectors already capture volume anomaly information.
+Phase 22-B (LLM signals) will NOT be run — saturation guard triggered.
 
-**Saturation guard:** If volume signals also hurt → accept full saturation, deploy champion.
-If volume signals improve → run Phase 22-B (LLM signals, ~$1.50 API cost).
+**Final decision: No more signal experiments. Deploy the champion.**
 
 ### Deploy Champion (when ready)
 

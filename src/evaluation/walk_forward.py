@@ -356,7 +356,7 @@ class WalkForwardValidator:
         key_hash = hashlib.md5(
             json.dumps(key_data, sort_keys=True).encode()
         ).hexdigest()[:10]
-        suffix = ".joblib" if config.model_type != "lstm" else ".pt"
+        suffix = ".pt" if config.model_type in ("lstm", "e2e_lstm", "e2elstm", "bar_lm", "barlm") else ".joblib"
         return Path(config.cache_dir) / f"{config.model_type}_fold{fold}_{key_hash}{suffix}"
 
     def _save_cached(self, model, path: Path, model_type: str) -> None:
