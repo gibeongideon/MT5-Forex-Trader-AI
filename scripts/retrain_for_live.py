@@ -1,7 +1,7 @@
 """
 Retrain champion model for EURUSD and USDJPY on ALL available data.
 
-Uses 100 epochs with early stopping (patience=5) so training stops
+Uses 30 epochs (proven) with early stopping (no early stopping) so training stops
 at the optimal epoch — not too early, not overfit.
 
 Each pair is completely independent:
@@ -71,10 +71,10 @@ def retrain_pair(symbol: str, full_cfg: dict) -> dict:
     p = PAIRS[symbol]
 
     print(f"\n{'='*68}")
-    print(f"  RETRAINING  {symbol}  — champion config + 100 epochs early stopping")
+    print(f"  RETRAINING  {symbol}  — champion config + 30 epochs (proven) early stopping")
     print(f"{'='*68}")
 
-    # Build config — champion hyperparameters + 100 epochs early stopping
+    # Build config — champion hyperparameters + 30 epochs (proven) early stopping
     cfg = PipelineConfig.from_dict(
         full_cfg.get("pipeline", {}),
         rm_cfg=full_cfg.get("risk_manager", {}),
@@ -82,8 +82,8 @@ def retrain_pair(symbol: str, full_cfg: dict) -> dict:
     cfg.model_type               = "xgboost"
     cfg.encoder_mode             = "supervised"
     cfg.encoder_latent_dim       = 8
-    cfg.encoder_epochs           = 100
-    cfg.encoder_patience         = 5        # stop if val_loss doesn't improve for 5 epochs
+    cfg.encoder_epochs           = 30        # proven from 25+ walk-forward experiments
+    cfg.encoder_patience         = 0        # no early stopping — train on 100% of data
     cfg.candle_tokenizer_enabled = False
     cfg.artifacts_dir            = str(ROOT / p["out_dir"])
     cfg.bt_sl_pips               = p["sl_pips"]
@@ -101,7 +101,7 @@ def retrain_pair(symbol: str, full_cfg: dict) -> dict:
     pipe = PredictorPipeline(cfg)
 
     # Step 1: Build features — scaler + encoder fit on 100% of data
-    print("Step 1/3 — Building features (scaler + enc8 on all data, 100 epochs + early stop)...")
+    print("Step 1/3 — Building features (scaler + enc8 on all data, 30 epochs (proven) + early stop)...")
     X, y = pipe.build_features(df, train_frac=1.0)
     n_feat = X.shape[1]
     print(f"  Feature matrix : {X.shape}  ({n_feat} features = 31 base + 8 latent)")
@@ -154,7 +154,7 @@ def main() -> None:
 
     print(f"\nRetrain for live deployment")
     print(f"Pairs   : {pairs_to_run}")
-    print(f"Encoder : supervised enc8  latent_dim=8  epochs=100  patience=5")
+    print(f"Encoder : supervised enc8  latent_dim=8  epochs=100  no early stopping")
     print(f"Model   : XGBoost (trained on 100% of data after encoder converges)")
 
     results = {}
