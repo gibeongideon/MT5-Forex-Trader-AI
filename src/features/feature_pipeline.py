@@ -45,6 +45,7 @@ from src.features.indicators import (
     sma, ema, rsi, macd, bollinger_bands, bollinger_pct_b,
     atr, stochastic, adx,
 )
+from src.features.fractal_labeler import FractalLabeler
 
 
 # ─── Default feature spec ─────────────────────────────────────────────────────
@@ -93,17 +94,27 @@ class FeaturePipeline:
 
     def __init__(
         self,
-        label_horizon:   int   = 4,
-        label_threshold: float = 0.0003,
-        scale:           bool  = True,
-        extra_spec:      list  = None,
+        label_horizon:    int   = 4,
+        label_threshold:  float = 0.0003,
+        scale:            bool  = True,
+        extra_spec:       list  = None,
+        fractal_enabled:  bool  = False,
+        fractal_min_win:  int   = 6,
+        fractal_max_win:  int   = 60,
     ):
-        self.label_horizon   = label_horizon
-        self.label_threshold = label_threshold
-        self.scale           = scale
-        self._spec           = _DEFAULT_SPEC + (extra_spec or [])
+        self.label_horizon    = label_horizon
+        self.label_threshold  = label_threshold
+        self.scale            = scale
+        self._spec            = _DEFAULT_SPEC + (extra_spec or [])
         self._scaler: Optional[StandardScaler] = None
         self._feature_cols: list[str] = []
+        self._fractal_enabled = fractal_enabled
+        if fractal_enabled:
+            self._fractal_labeler = FractalLabeler(
+                min_window=fractal_min_win,
+                max_window=fractal_max_win,
+                corr_threshold=0.0,   # compute correlation for all bars; no label used
+            )
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -297,6 +308,12 @@ class FeaturePipeline:
         # ATR normalised by price (relative volatility)
         if "atr_14" in df.columns:
             df["atr_pct"] = df["atr_14"] / close.replace(0, np.nan)
+
+        # Fractal symmetry score: best Pearson r between left and mirror-right
+        # half of the recent price window. Captures V/inverted-V structures.
+        # Will be shift(1)'d by build() so no lookahead.
+        if self._fractal_enabled:
+            df["fractal_corr"] = self._fractal_labeler.compute_correlations(df)
 
         return df
 

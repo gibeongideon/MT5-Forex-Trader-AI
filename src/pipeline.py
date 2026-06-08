@@ -73,6 +73,10 @@ class PipelineConfig:
     # Candle tokenizer (K-Means per-bar shape clustering)
     candle_tokenizer_enabled:  bool = False
     candle_tokenizer_clusters: int  = 32
+    # Fractal symmetry score feature (READ 7)
+    fractal_enabled:  bool = False
+    fractal_min_win:  int  = 6
+    fractal_max_win:  int  = 60
 
     # Multitask-specific (only used when encoder_mode="multitask")
     encoder_multitask_alpha: float = 0.3
@@ -142,6 +146,9 @@ class PipelineConfig:
             encoder_lr         = enc.get("lr",          1e-3),
             candle_tokenizer_enabled  = d.get("candle_tokenizer", {}).get("enabled",   False),
             candle_tokenizer_clusters = d.get("candle_tokenizer", {}).get("n_clusters", 32),
+            fractal_enabled = feat.get("fractal_enabled", False),
+            fractal_min_win = feat.get("fractal_min_win", 6),
+            fractal_max_win = feat.get("fractal_max_win", 60),
             encoder_multitask_alpha   = enc.get("multitask_alpha", 0.3),
             encoder_d_model    = enc.get("d_model",     32),
             encoder_n_heads    = enc.get("n_heads",     4),
@@ -209,6 +216,9 @@ class PredictorPipeline:
             label_horizon   = cfg.label_horizon,
             label_threshold = cfg.label_threshold,
             scale           = cfg.scale,
+            fractal_enabled = cfg.fractal_enabled,
+            fractal_min_win = cfg.fractal_min_win,
+            fractal_max_win = cfg.fractal_max_win,
         )
 
         self._enc: Optional[LatentEncoder] = (

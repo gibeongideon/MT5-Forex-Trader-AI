@@ -24,6 +24,9 @@ pipeline:
     label_horizon: 4           # bars ahead for direction label
     label_threshold: 0.0003    # min return to count as buy/sell (else hold)
     scale: true                # StandardScaler on base features
+    fractal_enabled: true      # add fractal_corr feature (READ 7 — symmetric Pearson r)
+    fractal_min_win: 6         # smallest even window for symmetry scan
+    fractal_max_win: 60        # largest even window (M15: 60 bars = 15 hours)
 
   # ── Supervised latent encoder ─────────────────────────────────────────────
   # Set enabled: false to fall back to baseline 31-feature XGBoost.

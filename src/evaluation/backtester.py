@@ -56,6 +56,8 @@ class BacktestConfig:
     use_regime_filter: bool = False
     adx_threshold: float = 20.0     # below this ADX → skip signal (ranging market)
     adx_col: str = "adx_14"         # column name in feature DataFrame
+    # Suffix Automaton + Autoencoder proactive lot multiplier (optional)
+    suffix_ae_sizer: Optional[object] = None   # SuffixAESizer instance
 
 
 # ── Result types ───────────────────────────────────────────────────────────────
@@ -258,6 +260,13 @@ class Backtester:
                         eff_sl_pips  = cfg.sl_pips
                         eff_tp_pips  = cfg.tp_pips
                         eff_risk_pct = cfg.risk_pct
+
+                    # SA+AE multiplier — scales risk_pct by pattern familiarity
+                    # and structural integrity (most-recent-first slice up to bar i)
+                    if cfg.suffix_ae_sizer is not None:
+                        hist = prices["close"].iloc[:i + 1].values[::-1].tolist()
+                        sa_mult = cfg.suffix_ae_sizer.compute(hist)
+                        eff_risk_pct = eff_risk_pct * sa_mult
 
                     slippage_pts = self._rng.uniform(0, cfg.max_slippage_pips) * cfg.pip_size
                     spread_pts   = cfg.spread_pips * cfg.pip_size

@@ -42,6 +42,7 @@ sys.path.insert(0, str(ROOT))
 import pandas as pd
 
 from src.core.bot_base import BotBase
+from src.core.suffix_ae_sizer import SuffixAESizer
 from src.core.trade_journal import TradeJournal
 from src.pipeline import PredictorPipeline
 
@@ -109,6 +110,12 @@ class PipelineBot(BotBase):
 
         # Trade journal — logs every signal and order to SQLite
         self.journal = TradeJournal(db_path=ROOT / "data" / "live_trades.db")
+
+        # Suffix Automaton + Autoencoder proactive lot multiplier (history 150 bars
+        # fits inside the 200-bar fetch; algo_mode=1 linear; AE gate on)
+        self._sa_sizer = SuffixAESizer(
+            history_length=150, dna_window=16, algo_mode=1, use_ae=True
+        )
 
         # Track last processed bar to avoid acting on the same bar twice
         self._last_bar: pd.Timestamp | None = None
@@ -273,6 +280,15 @@ class PipelineBot(BotBase):
         if lot <= 0:
             self.log("Lot size 0 (below min) — skipping")
             return
+
+        # Apply Suffix Automaton + Autoencoder structural multiplier.
+        # closes must be most-recent-first so we reverse the DataFrame order.
+        sa_mult = self._sa_sizer.compute(ohlcv["close"].values[::-1].tolist())
+        if sa_mult != 1.0:
+            lot_before = lot
+            lot = round(lot * sa_mult, 2)
+            lot = max(lot, self.conn.symbol_info(self.symbol).volume_min)
+            self.log(f"SA+AE: mult={sa_mult:.4f}  lot {lot_before} → {lot}")
 
         # ── 8. Open position ──────────────────────────────────────────────────
         tick = self.conn.get_tick(self.symbol)
