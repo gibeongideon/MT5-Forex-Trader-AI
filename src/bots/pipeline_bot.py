@@ -46,16 +46,20 @@ from src.core.trade_journal import TradeJournal
 from src.pipeline import PredictorPipeline
 
 
-SYMBOL    = "EURUSD"
+_DEFAULT_SYMBOL    = "EURUSD"
 TIMEFRAME = "M15"
-PIP_SIZE  = 0.0001
+_PIP_SIZES = {
+    "EURUSD": 0.0001, "GBPUSD": 0.0001, "AUDUSD": 0.0001, "NZDUSD": 0.0001,
+    "USDJPY": 0.01,   "USDCHF": 0.0001, "USDCAD": 0.0001,
+    "GBPJPY": 0.01,   "EURJPY": 0.01,   "XAUUSD": 0.01,
+}
 BARS      = 200       # bars fetched per tick — enough for all indicators + encoder
 BREAKEVEN_BUFFER_PIPS = 2  # SL moved to entry + this many pips at breakeven
 
 
 class PipelineBot(BotBase):
     """
-    Live bot that trades EURUSD M15 using PredictorPipeline signals.
+    Live bot that trades any pair using PredictorPipeline signals.
 
     Tick logic (every 60 s):
       0. _manage_positions() — breakeven SL moves on open positions
@@ -70,13 +74,15 @@ class PipelineBot(BotBase):
 
     MAX_POSITIONS = 1   # hard cap — one position at a time
 
-    def __init__(self, dry_run: bool = False):
-        super().__init__(name="PipelineBot", tick_interval=60.0)
+    def __init__(self, dry_run: bool = False, symbol: str = _DEFAULT_SYMBOL,
+                 model_dir: str | None = None):
+        super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
         self.dry_run = dry_run
+        self.symbol  = symbol
 
-        # Load trained pipeline from config artifacts directory
+        # Load trained pipeline — prefer explicit --model-dir, then config default
         self.pipe = PredictorPipeline.from_config()
-        art_dir = (
+        art_dir = model_dir or (
             self.config
             .get("pipeline", {})
             .get("artifacts", {})
@@ -84,10 +90,22 @@ class PipelineBot(BotBase):
         )
         self.pipe.load(art_dir)
 
-        pl_cfg  = self.config.get("pipeline", {})
-        bt_cfg  = pl_cfg.get("backtest", {})
-        self.sl_pips = float(bt_cfg.get("sl_pips", 30.0))
-        self.tp_pips = float(bt_cfg.get("tp_pips", 60.0))
+        # pip size: prefer pair_meta.json saved during retrain, then lookup table
+        import json
+        pair_meta_path = Path(art_dir) / "pair_meta.json"
+        if pair_meta_path.exists():
+            pm = json.loads(pair_meta_path.read_text())
+            self._pip_size = float(pm.get("pip_size", _PIP_SIZES.get(symbol, 0.0001)))
+            self.sl_pips   = float(pm.get("sl_pips", 30.0))
+            self.tp_pips   = float(pm.get("tp_pips", 60.0))
+        else:
+            self._pip_size = _PIP_SIZES.get(symbol, 0.0001)
+
+        if not pair_meta_path.exists():
+            pl_cfg  = self.config.get("pipeline", {})
+            bt_cfg  = pl_cfg.get("backtest", {})
+            self.sl_pips = float(bt_cfg.get("sl_pips", 30.0))
+            self.tp_pips = float(bt_cfg.get("tp_pips", 60.0))
 
         # Trade journal — logs every signal and order to SQLite
         self.journal = TradeJournal(db_path=ROOT / "data" / "live_trades.db")
@@ -113,14 +131,14 @@ class PipelineBot(BotBase):
             if sf.get("enabled") else "24/5 (no filter)"
         )
         self.log(
-            f"Symbol={SYMBOL}  TF={TIMEFRAME}  "
+            f"Symbol={self.symbol}  TF={TIMEFRAME}  "
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
             f"threshold={self.pipe.cfg.bt_threshold:.0%}  "
             f"max_positions={self.MAX_POSITIONS}  session={session_str}"
         )
-        positions = self.open_positions(SYMBOL)
+        positions = self.open_positions(self.symbol)
         if positions:
-            self.log(f"Existing {SYMBOL} positions: {len(positions)}")
+            self.log(f"Existing {self.symbol} positions: {len(positions)}")
             for p in positions:
                 d = "BUY" if p.type == 0 else "SELL"
                 self.log(
@@ -144,7 +162,7 @@ class PipelineBot(BotBase):
 
         # ── 2. Fetch bars ─────────────────────────────────────────────────────
         try:
-            ohlcv = self.rates(SYMBOL, TIMEFRAME, BARS)
+            ohlcv = self.rates(self.symbol, TIMEFRAME, BARS)
         except Exception as e:
             self.log(f"get_rates error: {e}")
             if "IPC" in str(e) or "connection" in str(e).lower():
@@ -188,7 +206,7 @@ class PipelineBot(BotBase):
         try:
             self.journal.record({
                 "bot":          self.name,
-                "symbol":       SYMBOL,
+                "symbol":       self.symbol,
                 "direction":    direction,
                 "entry_time":   str(bar_time),
                 "entry_price":  0.0,
@@ -212,7 +230,7 @@ class PipelineBot(BotBase):
             return
 
         # ── 6. Position management ────────────────────────────────────────────
-        our_positions = [p for p in self.open_positions(SYMBOL)
+        our_positions = [p for p in self.open_positions(self.symbol)
                          if p.magic == self.magic]
 
         for pos in our_positions:
@@ -238,14 +256,14 @@ class PipelineBot(BotBase):
 
         # Re-check count after closes
         if not self.dry_run:
-            remaining = [p for p in self.open_positions(SYMBOL) if p.magic == self.magic]
+            remaining = [p for p in self.open_positions(self.symbol) if p.magic == self.magic]
             if len(remaining) >= self.MAX_POSITIONS:
                 self.log(f"Still at cap ({self.MAX_POSITIONS}) after closing — skip")
                 return
 
         # ── 7. Size position ──────────────────────────────────────────────────
         lot, eff_sl = self.risk_sized_lot(
-            symbol       = SYMBOL,
+            symbol       = self.symbol,
             confidence   = confidence,
             sl_pips      = self.sl_pips,
             tp_pips      = self.tp_pips,
@@ -257,19 +275,19 @@ class PipelineBot(BotBase):
             return
 
         # ── 8. Open position ──────────────────────────────────────────────────
-        tick = self.conn.get_tick(SYMBOL)
+        tick = self.conn.get_tick(self.symbol)
         if tick is None:
             self.log("Cannot get tick — skipping")
             return
 
         if direction == "buy":
             price    = tick.ask
-            sl_price = round(price - eff_sl * PIP_SIZE, 5)
-            tp_price = round(price + self.tp_pips * PIP_SIZE, 5)
+            sl_price = round(price - eff_sl * self._pip_size, 5)
+            tp_price = round(price + self.tp_pips * self._pip_size, 5)
         else:
             price    = tick.bid
-            sl_price = round(price + eff_sl * PIP_SIZE, 5)
-            tp_price = round(price - self.tp_pips * PIP_SIZE, 5)
+            sl_price = round(price + eff_sl * self._pip_size, 5)
+            tp_price = round(price - self.tp_pips * self._pip_size, 5)
 
         self.log(
             f"{'[DRY] ' if self.dry_run else ''}"
@@ -286,13 +304,13 @@ class PipelineBot(BotBase):
         try:
             if direction == "buy":
                 result = self.buy(
-                    SYMBOL, lot,
+                    self.symbol, lot,
                     sl=sl_price, tp=tp_price,
                     comment=f"pipe {confidence:.0%}",
                 )
             else:
                 result = self.sell(
-                    SYMBOL, lot,
+                    self.symbol, lot,
                     sl=sl_price, tp=tp_price,
                     comment=f"pipe {confidence:.0%}",
                 )
@@ -303,7 +321,7 @@ class PipelineBot(BotBase):
             try:
                 self.journal.record({
                     "bot":          self.name,
-                    "symbol":       SYMBOL,
+                    "symbol":       self.symbol,
                     "direction":    direction,
                     "entry_time":   str(bar_time),
                     "entry_price":  price,
@@ -334,7 +352,7 @@ class PipelineBot(BotBase):
         Only fires once per position (tracked in self._breakeven_done).
         """
         try:
-            positions = self.open_positions(SYMBOL)
+            positions = self.open_positions(self.symbol)
         except Exception:
             return
 
@@ -354,7 +372,7 @@ class PipelineBot(BotBase):
                 current = pos.price_current
                 profit_dist = current - entry
                 if profit_dist >= sl_dist:
-                    new_sl = round(entry + BREAKEVEN_BUFFER_PIPS * PIP_SIZE, 5)
+                    new_sl = round(entry + BREAKEVEN_BUFFER_PIPS * self._pip_size, 5)
                     if new_sl > sl:
                         try:
                             self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
@@ -369,7 +387,7 @@ class PipelineBot(BotBase):
                 current = pos.price_current
                 profit_dist = entry - current
                 if profit_dist >= sl_dist:
-                    new_sl = round(entry - BREAKEVEN_BUFFER_PIPS * PIP_SIZE, 5)
+                    new_sl = round(entry - BREAKEVEN_BUFFER_PIPS * self._pip_size, 5)
                     if new_sl < sl:
                         try:
                             self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
@@ -397,12 +415,15 @@ class PipelineBot(BotBase):
 
 def main() -> None:
     p = argparse.ArgumentParser(description="PipelineBot — live MT5 predictor")
-    p.add_argument(
-        "--dry-run", action="store_true",
-        help="Print signals and sizing without sending any orders",
-    )
+    p.add_argument("--dry-run", action="store_true",
+                   help="Print signals and sizing without sending any orders")
+    p.add_argument("--symbol", default=_DEFAULT_SYMBOL,
+                   help="MT5 symbol to trade (default: EURUSD)")
+    p.add_argument("--model-dir", default=None,
+                   help="Path to model artifacts dir (overrides config)")
     args = p.parse_args()
-    PipelineBot(dry_run=args.dry_run).run()
+    PipelineBot(dry_run=args.dry_run, symbol=args.symbol,
+                model_dir=args.model_dir).run()
 
 
 if __name__ == "__main__":
