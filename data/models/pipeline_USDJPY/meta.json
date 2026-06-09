@@ -33,6 +33,7 @@
     "ma_spread_21_50",
     "rsi_momentum",
     "atr_pct",
+    "fractal_corr",
     "latent_0",
     "latent_1",
     "latent_2",
@@ -60,6 +61,9 @@
     "encoder_lr": 0.001,
     "candle_tokenizer_enabled": false,
     "candle_tokenizer_clusters": 32,
+    "fractal_enabled": true,
+    "fractal_min_win": 6,
+    "fractal_max_win": 60,
     "encoder_multitask_alpha": 0.3,
     "encoder_d_model": 32,
     "encoder_n_heads": 4,
@@ -75,7 +79,7 @@
     "bt_balance": 10000.0,
     "bt_risk_pct": 0.01,
     "bt_use_regime": false,
-    "artifacts_dir": "/home/rock/Desktop/2026_Projects/MT5/data/models/pipeline_USDJPY",
+    "artifacts_dir": "data/models/pipeline_USDJPY",
     "rm_tiers": [
       [
         0.75,

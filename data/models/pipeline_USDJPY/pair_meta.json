@@ -5,7 +5,7 @@
   "tp_pips": 60.0,
   "spread": 1.0,
   "n_bars": 60000,
-  "n_features": 39,
+  "n_features": 40,
   "trained_from": "2024-01-08",
   "trained_to": "2026-06-05",
   "trained_sec": 790.2

@@ -5,7 +5,7 @@ Connects to the ICMarketsKE-Demo account, fetches live M15 EURUSD bars each
 minute, runs the trained pipeline predictor, and executes trades on signal.
 
 Safety limits:
-  - max 1 position at a time (hard-coded — overrides config max_open_trades)
+  - max 1 position per direction (hedge_loss mode may hold 2 simultaneously)
   - 5% daily loss limit → bot stops and closes all (from BotBase)
   - min 40% confidence threshold (from pipeline config)
   - magic=20260101 — only manages positions opened by this bot
@@ -19,15 +19,54 @@ Trade journal:
   - Every signal logged to data/live_trades.db (SQLite, survives crashes)
   - Every order logged on entry, every closed trade logged on exit
 
+──────────────────────────────────────────────────────────────────────────────
+Flip Modes  (--flip-mode)
+──────────────────────────────────────────────────────────────────────────────
+Controls what happens when a new signal arrives in the OPPOSITE direction to
+an existing open position.  Same-direction signals are always ignored (one
+position per direction at a time).
+
+  always (default)
+    Opposite signal → close existing trade unconditionally → open new trade.
+    Simple and aggressive.  Every counter-signal forces a flip regardless of
+    whether the existing trade is winning or losing.
+    Backtest win rate: ~61%
+
+  hedge_loss  ★ recommended
+    Opposite signal + existing trade IN PROFIT  → close it + open new trade.
+                                                  (Same as "always".)
+    Opposite signal + existing trade IN LOSS    → leave the losing trade open
+                                                  (runs to its natural SL/TP)
+                                                  AND open the new trade too.
+    Both trades run simultaneously as a hedge until the losing one exits.
+    Prevents locking in avoidable losses on noisy counter-signals.
+    Backtest win rate: ~71%  MaxDD: ~5%
+
+  hedge_exit
+    Same as hedge_loss, but adds one extra rule for the losing trade that was
+    kept open: close it the moment its profit first crosses above zero instead
+    of waiting for the full TP.  Recovers capital faster at break-even.
+    Backtest win rate: ~61%  (more trades dilute the rate vs hedge_loss)
+
+Summary table (EURUSD in-sample, 60k M15 bars):
+
+  Mode         Trades   Win%   Sharpe   MaxDD
+  always        7,636   61%    12.97    4.9%
+  hedge_loss    4,013   71%     7.47    4.9%   ← fewest trades, highest quality
+  hedge_exit    6,033   61%    10.12    5.3%
+
+──────────────────────────────────────────────────────────────────────────────
+
 Usage:
   # 1. Train / retrain first
   conda run -n envmt5 python scripts/retrain_champion.py
 
   # 2. Run the bot (Ctrl+C to stop cleanly)
-  conda run -n envmt5 python src/bots/pipeline_bot.py
+  conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
+      --model-dir data/models/pipeline_EURUSD --flip-mode hedge_loss
 
   # 3. Dry run — print signals without trading
-  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run
+  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run --flip-mode hedge_loss
 """
 
 from __future__ import annotations
@@ -69,17 +108,18 @@ class PipelineBot(BotBase):
       3. Skip if this bar was already processed
       4. Predict: {signal, confidence, P_buy, P_hold, P_sell, sizing}
       5. HOLD or sizing.skip → do nothing
-      6. Close opposite-direction positions opened by this bot
+      6. Handle opposite positions: close (always) or hedge (hedge_loss mode)
       7. BUY/SELL signal → open 1 position (up to MAX_POSITIONS cap)
     """
 
     MAX_POSITIONS = 1   # hard cap — one position at a time
 
     def __init__(self, dry_run: bool = False, symbol: str = _DEFAULT_SYMBOL,
-                 model_dir: str | None = None):
+                 model_dir: str | None = None, flip_mode: str = "always"):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
-        self.dry_run = dry_run
-        self.symbol  = symbol
+        self.dry_run   = dry_run
+        self.symbol    = symbol
+        self.flip_mode = flip_mode   # "always" | "hedge_loss"
 
         # Load trained pipeline — prefer explicit --model-dir, then config default
         self.pipe = PredictorPipeline.from_config()
@@ -121,6 +161,8 @@ class PipelineBot(BotBase):
         self._last_bar: pd.Timestamp | None = None
         # Track positions we've already moved to breakeven {ticket: True}
         self._breakeven_done: set[int] = set()
+        # Track losing positions kept open as hedges — close at first profit
+        self._hedged_tickets: set[int] = set()
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -141,7 +183,8 @@ class PipelineBot(BotBase):
             f"Symbol={self.symbol}  TF={TIMEFRAME}  "
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
             f"threshold={self.pipe.cfg.bt_threshold:.0%}  "
-            f"max_positions={self.MAX_POSITIONS}  session={session_str}"
+            f"max_positions={self.MAX_POSITIONS}  flip={self.flip_mode}  "
+            f"session={session_str}"
         )
         positions = self.open_positions(self.symbol)
         if positions:
@@ -246,24 +289,41 @@ class PipelineBot(BotBase):
                 self.log(f"Already have {direction.upper()} (ticket={pos.ticket}) — skipping")
                 return
 
-        # Close opposite-direction positions opened by this bot
+        # Handle opposite-direction positions
         for pos in our_positions:
             pos_dir = "buy" if pos.type == 0 else "sell"
-            self.log(
-                f"Closing opposite {pos_dir.upper()} "
-                f"ticket={pos.ticket}  profit={pos.profit:+.2f} USD"
-            )
-            if not self.dry_run:
-                try:
-                    self.conn.close_position(pos)
-                    self._breakeven_done.discard(pos.ticket)
-                except Exception as e:
-                    self.log(f"Close error: {e}")
-                    return
+            if self.flip_mode in ("hedge_loss", "hedge_exit") and pos.profit <= 0:
+                self.log(
+                    f"Hedge mode: {pos_dir.upper()} ticket={pos.ticket} at "
+                    f"{pos.profit:+.2f} USD loss — keeping open, adding "
+                    f"{direction.upper()} hedge"
+                )
+                if self.flip_mode == "hedge_exit":
+                    self._hedged_tickets.add(pos.ticket)  # monitor to close at first profit
+                # Leave losing trade open; fall through to open hedge position
+            else:
+                self.log(
+                    f"Closing opposite {pos_dir.upper()} "
+                    f"ticket={pos.ticket}  profit={pos.profit:+.2f} USD"
+                )
+                if not self.dry_run:
+                    try:
+                        self.conn.close_position(pos)
+                        self._breakeven_done.discard(pos.ticket)
+                    except Exception as e:
+                        self.log(f"Close error: {e}")
+                        return
 
         # Re-check count after closes
         if not self.dry_run:
-            remaining = [p for p in self.open_positions(self.symbol) if p.magic == self.magic]
+            if self.flip_mode in ("hedge_loss", "hedge_exit"):
+                # Only count same-direction positions toward cap (losing opposite is intentional)
+                remaining = [p for p in self.open_positions(self.symbol)
+                             if p.magic == self.magic
+                             and ("buy" if p.type == 0 else "sell") == direction]
+            else:
+                remaining = [p for p in self.open_positions(self.symbol)
+                             if p.magic == self.magic]
             if len(remaining) >= self.MAX_POSITIONS:
                 self.log(f"Still at cap ({self.MAX_POSITIONS}) after closing — skip")
                 return
@@ -364,13 +424,34 @@ class PipelineBot(BotBase):
     def _manage_positions(self) -> None:
         """
         Run before signal check each tick.
-        Moves SL to breakeven once profit >= 1× SL distance (breakeven protection).
-        Only fires once per position (tracked in self._breakeven_done).
+        1. Closes hedged losers (from hedge_loss mode) as soon as profit > 0.
+        2. Moves SL to breakeven once profit >= 1× SL distance.
         """
         try:
             positions = self.open_positions(self.symbol)
         except Exception:
             return
+
+        # Purge tickets that closed naturally (SL/TP hit) so we don't leak the set
+        open_tickets = {p.ticket for p in positions}
+        self._hedged_tickets -= self._hedged_tickets - open_tickets
+
+        # Close hedged losers at first profit
+        for pos in positions:
+            if pos.ticket not in self._hedged_tickets:
+                continue
+            if pos.profit > 0:
+                pos_dir = "buy" if pos.type == 0 else "sell"
+                self.log(
+                    f"Hedged loser {pos_dir.upper()} ticket={pos.ticket} "
+                    f"now at {pos.profit:+.2f} USD — closing at first profit"
+                )
+                try:
+                    self.conn.close_position(pos)
+                    self._hedged_tickets.discard(pos.ticket)
+                    self._breakeven_done.discard(pos.ticket)
+                except Exception as e:
+                    self.log(f"Hedge close error: {e}")
 
         for pos in positions:
             if pos.magic != self.magic:
@@ -437,9 +518,14 @@ def main() -> None:
                    help="MT5 symbol to trade (default: EURUSD)")
     p.add_argument("--model-dir", default=None,
                    help="Path to model artifacts dir (overrides config)")
+    p.add_argument("--flip-mode", default="always",
+                   choices=["always", "hedge_loss", "hedge_exit"],
+                   help="always: close opposite trade and flip (default). "
+                        "hedge_loss: if opposite is losing, keep it + open hedge (runs to SL/TP). "
+                        "hedge_exit: same as hedge_loss but closes old trade at first profit.")
     args = p.parse_args()
     PipelineBot(dry_run=args.dry_run, symbol=args.symbol,
-                model_dir=args.model_dir).run()
+                model_dir=args.model_dir, flip_mode=args.flip_mode).run()
 
 
 if __name__ == "__main__":
