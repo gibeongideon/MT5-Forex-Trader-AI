@@ -64,7 +64,7 @@ class BotBase(ABC):
         signal.signal(signal.SIGTERM, self._handle_signal)
 
         print(f"[{self.name}] Starting...")
-        self.conn.connect()
+        self._connect_with_retry()
         self._day_start_balance = self.conn.account_balance()
         self._running = True
 
@@ -204,6 +204,24 @@ class BotBase(ABC):
             self.log(f"Daily loss limit reached ({loss_pct:.1%}). Closing all positions and stopping.")
             self.close_all()
             self.stop()
+
+    def _connect_with_retry(self, max_wait: int = 60) -> None:
+        """Retry bridge connection with backoff — waits for MT5 to start."""
+        delay = 5
+        attempt = 0
+        while True:
+            try:
+                self.conn.connect()
+                return
+            except Exception as e:
+                attempt += 1
+                print(f"[{self.name}] MT5 bridge not ready (attempt {attempt}): {e}")
+                print(f"[{self.name}] Retrying in {delay}s — start MT5 with ./start_mt5.sh")
+                time.sleep(delay)
+                delay = min(delay * 2, max_wait)
+                # Reset cached singleton so next attempt creates a fresh connection
+                import src.core.mt5_connector as _mc
+                _mc._mt5 = None
 
     def _handle_signal(self, signum, frame) -> None:
         print(f"\n[{self.name}] Signal {signum} received, shutting down...")
