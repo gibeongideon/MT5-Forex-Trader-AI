@@ -79,7 +79,7 @@
     "bt_balance": 10000.0,
     "bt_risk_pct": 0.01,
     "bt_use_regime": false,
-    "artifacts_dir": "data/models/pipeline_EURUSD_fractal",
+    "artifacts_dir": "data/models/pipeline_EURUSD",
     "rm_tiers": [
       [
         0.75,

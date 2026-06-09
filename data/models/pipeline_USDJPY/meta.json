@@ -46,7 +46,7 @@
   "split_date": "2026-06-05 23:45:00",
   "cfg": {
     "model_type": "xgboost",
-    "data_path": "data/EURUSD_M15.csv",
+    "data_path": "data/USDJPY_M15.csv",
     "train_frac": 0.8,
     "label_horizon": 4,
     "label_threshold": 0.0003,

@@ -433,6 +433,8 @@ def simulate_mode(
         "calmar":      calmar_ratio(eq),
         "n_managed":   n_managed,
         "balance":     balance,
+        "equity":      eq,          # pd.Series indexed by bar timestamps
+        "trades":      all_trades,  # list[Pos] for per-year breakdown
     }
 
 
