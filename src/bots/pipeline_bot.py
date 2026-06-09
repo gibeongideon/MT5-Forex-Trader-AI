@@ -48,12 +48,58 @@ position per direction at a time).
     of waiting for the full TP.  Recovers capital faster at break-even.
     Backtest win rate: ~61%  (more trades dilute the rate vs hedge_loss)
 
+  trailing_hedge  (--trail-pips N, default 10)
+    Same opening logic as hedge_loss — keep losing trade open, open hedge.
+    Once the losing trade turns profitable, a trailing stop (N pips behind
+    the peak profit) is activated.  The position stays open while the recovery
+    continues; it closes only when profit pulls back N pips from its peak.
+    Captures more of the recovery move than hedge_exit (which exits too early)
+    while still locking in profit before a reversal erases gains.
+    Parameter: --trail-pips (default 10 pips behind peak)
+
 Summary table (EURUSD in-sample, 60k M15 bars):
 
-  Mode         Trades   Win%   Sharpe   MaxDD
-  always        7,636   61%    12.97    4.9%
-  hedge_loss    4,013   71%     7.47    4.9%   ← fewest trades, highest quality
-  hedge_exit    6,033   61%    10.12    5.3%
+  Mode              Trades   Win%   Sharpe   MaxDD
+  always             7,636   61%    12.97    4.9%
+  hedge_loss         4,013   71%     7.47    4.9%   ← fewest trades, highest win rate
+  hedge_exit         6,033   61%    10.12    5.3%
+  trailing_hedge     5,635   69%     9.23    3.2%   ← lowest drawdown
+  lock               TBD — run scripts/backtest_flip_modes.py
+  ratio_hedge        TBD
+  partial_close      TBD
+  zone_recovery      TBD
+
+──────────────────────────────────────────────────────────────────────────────
+Planned modes (not yet implemented — see scripts/backtest_flip_modes.py)
+──────────────────────────────────────────────────────────────────────────────
+
+  lock  (Mode 4 — Classic Net-Zero Hedge)
+    Open equal-size opposite trade to freeze the current floating loss.
+    Monitor combined P&L of both legs each tick.  When their sum >= 0,
+    close both simultaneously for a near-zero net result.
+    State: self._pair_map: dict[int, int]  (original_ticket → hedge_ticket)
+
+  ratio_hedge  (Mode 5 — Asymmetric Lot Hedge)
+    Open a larger opposite position (default 2× lot) so the hedge earns profit
+    faster and can cover the original loss in fewer pips.  When combined P&L
+    of the pair >= 0, close both.
+    State: self._pair_map: dict[int, int]
+    Param: --hedge-ratio FLOAT  (default 2.0)
+
+  partial_close  (Mode 7 — Split-Risk Hedge)
+    Close 50% of the losing position immediately at market (halving the loss
+    exposure), then open a new full-size position in the new direction.
+    The remaining 50% continues as a normal position to its natural SL/TP.
+    State: self._partial_done: set[int]  (tickets already half-closed)
+
+  zone_recovery  (Mode 8 — ZRA / Zone Recovery Algorithm)
+    Multi-layer geometric hedge: original 1× stays open, hedge at 2× opens
+    on opposite signal.  If the 2× hedge starts losing by zone_pips, a 4×
+    counter-layer opens (price-triggered, no new signal needed).  4× → 8×
+    follows the same rule.  All layers close together when combined P&L >= 0.
+    Max 4 layers (blowup protection on trending markets).
+    State: self._zone_tickets, self._zone_lots
+    Param: --zone-pips FLOAT  (pip gap before new layer, default 30)
 
 ──────────────────────────────────────────────────────────────────────────────
 
@@ -63,10 +109,13 @@ Usage:
 
   # 2. Run the bot (Ctrl+C to stop cleanly)
   conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
-      --model-dir data/models/pipeline_EURUSD --flip-mode hedge_loss
+      --model-dir data/models/pipeline_EURUSD --flip-mode trailing_hedge --trail-pips 10
 
   # 3. Dry run — print signals without trading
-  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run --flip-mode hedge_loss
+  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run --flip-mode trailing_hedge
+
+  # 4. Compare all modes
+  conda run -n envmt5 python scripts/backtest_flip_modes.py
 """
 
 from __future__ import annotations
@@ -114,12 +163,19 @@ class PipelineBot(BotBase):
 
     MAX_POSITIONS = 1   # hard cap — one position at a time
 
+    MAX_ZONE_LAYERS = 4
+
     def __init__(self, dry_run: bool = False, symbol: str = _DEFAULT_SYMBOL,
-                 model_dir: str | None = None, flip_mode: str = "always"):
+                 model_dir: str | None = None, flip_mode: str = "always",
+                 trail_pips: float = 10.0, hedge_ratio: float = 2.0,
+                 zone_pips: float = 30.0):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
-        self.dry_run   = dry_run
-        self.symbol    = symbol
-        self.flip_mode = flip_mode   # "always" | "hedge_loss"
+        self.dry_run     = dry_run
+        self.symbol      = symbol
+        self.flip_mode   = flip_mode
+        self.trail_pips  = trail_pips   # trailing_hedge
+        self.hedge_ratio = hedge_ratio  # ratio_hedge: hedge lot multiplier
+        self.zone_pips   = zone_pips    # zone_recovery: pip gap before next layer
 
         # Load trained pipeline — prefer explicit --model-dir, then config default
         self.pipe = PredictorPipeline.from_config()
@@ -157,12 +213,20 @@ class PipelineBot(BotBase):
             history_length=150, dna_window=16, algo_mode=1, use_ae=True
         )
 
-        # Track last processed bar to avoid acting on the same bar twice
         self._last_bar: pd.Timestamp | None = None
-        # Track positions we've already moved to breakeven {ticket: True}
         self._breakeven_done: set[int] = set()
-        # Track losing positions kept open as hedges — close at first profit
+        # hedge_exit
         self._hedged_tickets: set[int] = set()
+        # trailing_hedge: ticket → peak profit pips
+        self._hedged_trail: dict[int, float] = {}
+        # lock / ratio_hedge: orig_ticket → hedge_ticket (and reverse)
+        self._pair_map: dict[int, int] = {}
+        self._pair_rev: dict[int, int] = {}
+        # partial_close: tickets where half-close already executed
+        self._partial_done: set[int] = set()
+        # zone_recovery: open layer tickets + lot size per ticket
+        self._zone_tickets: list[int] = []
+        self._zone_lots: dict[int, float] = {}    # ticket → lot size
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
@@ -179,11 +243,18 @@ class PipelineBot(BotBase):
             f"{sf.get('start_utc')}–{sf.get('end_utc')} UTC"
             if sf.get("enabled") else "24/5 (no filter)"
         )
+        flip_detail = self.flip_mode
+        if self.flip_mode == "trailing_hedge":
+            flip_detail += f"(trail={self.trail_pips:.0f}p)"
+        elif self.flip_mode == "ratio_hedge":
+            flip_detail += f"(r={self.hedge_ratio:.1f}x)"
+        elif self.flip_mode == "zone_recovery":
+            flip_detail += f"(zone={self.zone_pips:.0f}p)"
         self.log(
             f"Symbol={self.symbol}  TF={TIMEFRAME}  "
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
             f"threshold={self.pipe.cfg.bt_threshold:.0%}  "
-            f"max_positions={self.MAX_POSITIONS}  flip={self.flip_mode}  "
+            f"max_positions={self.MAX_POSITIONS}  flip={flip_detail}  "
             f"session={session_str}"
         )
         positions = self.open_positions(self.symbol)
@@ -292,15 +363,72 @@ class PipelineBot(BotBase):
         # Handle opposite-direction positions
         for pos in our_positions:
             pos_dir = "buy" if pos.type == 0 else "sell"
-            if self.flip_mode in ("hedge_loss", "hedge_exit") and pos.profit <= 0:
+            if pos_dir == direction:
+                continue   # same direction — already guarded above
+
+            in_loss = pos.profit <= 0
+
+            if self.flip_mode in ("hedge_loss", "hedge_exit", "trailing_hedge") and in_loss:
                 self.log(
                     f"Hedge mode: {pos_dir.upper()} ticket={pos.ticket} at "
-                    f"{pos.profit:+.2f} USD loss — keeping open, adding "
-                    f"{direction.upper()} hedge"
+                    f"{pos.profit:+.2f} USD — keeping, adding {direction.upper()} hedge"
                 )
                 if self.flip_mode == "hedge_exit":
-                    self._hedged_tickets.add(pos.ticket)  # monitor to close at first profit
-                # Leave losing trade open; fall through to open hedge position
+                    self._hedged_tickets.add(pos.ticket)
+                elif self.flip_mode == "trailing_hedge":
+                    self._hedged_trail.setdefault(pos.ticket, float("-inf"))
+
+            elif self.flip_mode in ("lock", "ratio_hedge") and in_loss:
+                if pos.ticket not in self._pair_map and pos.ticket not in self._pair_rev:
+                    self.log(
+                        f"{'Lock' if self.flip_mode == 'lock' else 'Ratio'} hedge: "
+                        f"{pos_dir.upper()} ticket={pos.ticket} {pos.profit:+.2f} USD — "
+                        f"keeping, opening {direction.upper()} "
+                        f"{'equal' if self.flip_mode == 'lock' else f'{self.hedge_ratio:.1f}×'} hedge"
+                    )
+                    # Hedge ticket will be stored after the position opens (step 8)
+                    self._pair_map[pos.ticket] = -1   # placeholder until step 8
+
+            elif self.flip_mode == "partial_close" and in_loss:
+                if pos.ticket not in self._partial_done and not self.dry_run:
+                    self.log(
+                        f"Partial close: {pos_dir.upper()} ticket={pos.ticket} "
+                        f"{pos.profit:+.2f} USD — closing 50%, keeping rest"
+                    )
+                    try:
+                        self.conn.close_position_partial(pos, volume=pos.volume / 2)
+                        self._partial_done.add(pos.ticket)
+                    except Exception as e:
+                        self.log(f"Partial close error (closing full): {e}")
+                        self.conn.close_position(pos)
+                        self._breakeven_done.discard(pos.ticket)
+
+            elif self.flip_mode == "zone_recovery" and in_loss:
+                if len(self._zone_tickets) < self.MAX_ZONE_LAYERS:
+                    if pos.ticket not in self._zone_lots:
+                        self._zone_tickets.append(pos.ticket)
+                        self._zone_lots[pos.ticket] = pos.volume
+                    self.log(
+                        f"Zone layer {len(self._zone_tickets)}: keeping "
+                        f"{pos_dir.upper()} ticket={pos.ticket}, opening 2× {direction.upper()} layer"
+                    )
+                else:
+                    self.log(f"Zone max layers hit — closing all and flipping clean")
+                    for zt in list(self._zone_tickets):
+                        zp_list = [p for p in self.open_positions(self.symbol)
+                                   if p.magic == self.magic and p.ticket == zt]
+                        for zp in zp_list:
+                            try:
+                                self.conn.close_position(zp)
+                            except Exception as e:
+                                self.log(f"Zone close error: {e}")
+                    self._zone_tickets.clear(); self._zone_lots.clear()
+                    try:
+                        self.conn.close_position(pos)
+                        self._breakeven_done.discard(pos.ticket)
+                    except Exception as e:
+                        self.log(f"Close error: {e}")
+
             else:
                 self.log(
                     f"Closing opposite {pos_dir.upper()} "
@@ -314,10 +442,11 @@ class PipelineBot(BotBase):
                         self.log(f"Close error: {e}")
                         return
 
-        # Re-check count after closes
+        # Re-check count after closes (hedge modes keep opposite open intentionally)
+        HEDGE_MODES = ("hedge_loss", "hedge_exit", "trailing_hedge",
+                       "lock", "ratio_hedge", "partial_close", "zone_recovery")
         if not self.dry_run:
-            if self.flip_mode in ("hedge_loss", "hedge_exit"):
-                # Only count same-direction positions toward cap (losing opposite is intentional)
+            if self.flip_mode in HEDGE_MODES:
                 remaining = [p for p in self.open_positions(self.symbol)
                              if p.magic == self.magic
                              and ("buy" if p.type == 0 else "sell") == direction]
@@ -336,6 +465,19 @@ class PipelineBot(BotBase):
             tp_pips      = self.tp_pips,
             drawdown_pct = self._drawdown_pct(),
         )
+
+        # Determine lot multiplier for this open
+        _pending_orig = next(
+            (orig for orig, hedge in self._pair_map.items() if hedge == -1), None
+        )
+        if _pending_orig is not None:
+            lot_mult = self.hedge_ratio if self.flip_mode == "ratio_hedge" else 1.0
+        elif self.flip_mode == "zone_recovery" and self._zone_tickets:
+            lot_mult = 2.0 ** len(self._zone_tickets)   # 2×, 4×, 8× for layers 2-4
+        else:
+            lot_mult = 1.0
+
+        lot = round(lot * lot_mult, 2)
 
         if lot <= 0:
             self.log("Lot size 0 (below min) — skipping")
@@ -393,6 +535,16 @@ class PipelineBot(BotBase):
             ticket = result.get("order")
             self.log(f"Order done — ticket={ticket}")
 
+            # Link pair (lock / ratio_hedge)
+            if _pending_orig is not None and ticket:
+                self._pair_map[_pending_orig] = ticket
+                self._pair_rev[ticket] = _pending_orig
+
+            # Register zone layer
+            if self.flip_mode == "zone_recovery" and ticket:
+                self._zone_tickets.append(ticket)
+                self._zone_lots[ticket] = lot
+
             # Log filled order to journal
             try:
                 self.journal.record({
@@ -423,18 +575,138 @@ class PipelineBot(BotBase):
 
     def _manage_positions(self) -> None:
         """
-        Run before signal check each tick.
-        1. Closes hedged losers (from hedge_loss mode) as soon as profit > 0.
-        2. Moves SL to breakeven once profit >= 1× SL distance.
+        Per-tick position management (runs before signal check):
+          - trailing_hedge: advance trail stop, close on pull-back
+          - hedge_exit: close tracked loser at first profit tick
+          - lock / ratio_hedge: close pair when combined P&L >= 0
+          - zone_recovery: open next layer when latest zone layer loses zone_pips;
+                           close all when combined P&L >= 0
+          - breakeven: move SL to entry+2p once profit >= 1× SL distance
         """
         try:
             positions = self.open_positions(self.symbol)
         except Exception:
             return
 
-        # Purge tickets that closed naturally (SL/TP hit) so we don't leak the set
+        # Purge stale tickets from all tracking dicts
         open_tickets = {p.ticket for p in positions}
-        self._hedged_tickets -= self._hedged_tickets - open_tickets
+        self._hedged_tickets  -= self._hedged_tickets - open_tickets
+        self._partial_done    -= self._partial_done - open_tickets
+        for t in list(self._hedged_trail):
+            if t not in open_tickets:
+                del self._hedged_trail[t]
+        for t in list(self._pair_map):
+            if t not in open_tickets:
+                self._pair_rev.pop(self._pair_map.pop(t), None)
+        for t in list(self._pair_rev):
+            if t not in open_tickets:
+                self._pair_map.pop(self._pair_rev.pop(t), None)
+        for t in list(self._zone_lots):
+            if t not in open_tickets:
+                if t in self._zone_tickets:
+                    self._zone_tickets.remove(t)
+                del self._zone_lots[t]
+
+        # lock / ratio_hedge: close pair when combined P&L >= 0
+        if self.flip_mode in ("lock", "ratio_hedge"):
+            for orig_t, hedge_t in list(self._pair_map.items()):
+                if hedge_t == -1:
+                    continue   # placeholder — hedge not opened yet
+                orig_p  = next((p for p in positions if p.ticket == orig_t), None)
+                hedge_p = next((p for p in positions if p.ticket == hedge_t), None)
+                if orig_p is None or hedge_p is None:
+                    continue
+                if orig_p.profit + hedge_p.profit >= 0:
+                    pd_str = "buy" if orig_p.type == 0 else "sell"
+                    self.log(
+                        f"Pair exit: {pd_str.upper()} t={orig_t} {orig_p.profit:+.2f} + "
+                        f"hedge t={hedge_t} {hedge_p.profit:+.2f} = combined >= 0"
+                    )
+                    for cp in (orig_p, hedge_p):
+                        try:
+                            self.conn.close_position(cp)
+                            self._breakeven_done.discard(cp.ticket)
+                        except Exception as e:
+                            self.log(f"Pair close error: {e}")
+                    self._pair_rev.pop(hedge_t, None)
+                    del self._pair_map[orig_t]
+
+        # zone_recovery: check combined P&L + price-triggered new layers
+        if self.flip_mode == "zone_recovery" and len(self._zone_tickets) > 1:
+            zone_pos = [p for p in positions if p.ticket in set(self._zone_tickets)]
+            combined = sum(p.profit for p in zone_pos)
+            if combined >= 0:
+                self.log(f"Zone exit: combined P&L {combined:+.2f} >= 0 — closing all layers")
+                for zp in zone_pos:
+                    try:
+                        self.conn.close_position(zp)
+                        self._breakeven_done.discard(zp.ticket)
+                    except Exception as e:
+                        self.log(f"Zone close error: {e}")
+                self._zone_tickets.clear(); self._zone_lots.clear()
+
+        if self.flip_mode == "zone_recovery" and self._zone_tickets:
+            latest_t = self._zone_tickets[-1]
+            latest_p = next((p for p in positions if p.ticket == latest_t), None)
+            if latest_p and len(self._zone_tickets) < self.MAX_ZONE_LAYERS:
+                if latest_p.type == 0:
+                    latest_pips = (latest_p.price_current - latest_p.price_open) / self._pip_size
+                else:
+                    latest_pips = (latest_p.price_open - latest_p.price_current) / self._pip_size
+                if latest_pips <= -self.zone_pips:
+                    new_dir = "sell" if latest_p.type == 0 else "buy"
+                    new_mult = 2.0 ** len(self._zone_tickets)
+                    base_lot = list(self._zone_lots.values())[0] if self._zone_lots else 0.01
+                    new_lot = round(base_lot * new_mult / self._zone_lots.get(self._zone_tickets[0], base_lot), 2)
+                    # just use base * mult relative to layer-1 lot
+                    layer1_lot = self._zone_lots.get(self._zone_tickets[0], base_lot)
+                    new_lot = max(round(layer1_lot * new_mult, 2), 0.01)
+                    self.log(
+                        f"Zone layer {len(self._zone_tickets)+1}: {new_dir.upper()} "
+                        f"lot={new_lot:.2f} (latest layer lost {latest_pips:+.1f}p)"
+                    )
+                    try:
+                        tick = self.conn.get_tick(self.symbol)
+                        if tick:
+                            price = tick.ask if new_dir == "buy" else tick.bid
+                            sl_p  = price - self.sl_pips * self._pip_size if new_dir == "buy" \
+                                    else price + self.sl_pips * self._pip_size
+                            tp_p  = price + self.tp_pips * self._pip_size if new_dir == "buy" \
+                                    else price - self.tp_pips * self._pip_size
+                            if new_dir == "buy":
+                                res = self.buy(self.symbol, new_lot, sl=round(sl_p,5), tp=round(tp_p,5))
+                            else:
+                                res = self.sell(self.symbol, new_lot, sl=round(sl_p,5), tp=round(tp_p,5))
+                            new_ticket = res.get("order")
+                            if new_ticket:
+                                self._zone_tickets.append(new_ticket)
+                                self._zone_lots[new_ticket] = new_lot
+                    except Exception as e:
+                        self.log(f"Zone new layer error: {e}")
+
+        # trailing_hedge: update peak profit and close when trail is hit
+        for pos in positions:
+            if pos.ticket not in self._hedged_trail:
+                continue
+            if pos.direction == 0:  # MT5: 0=buy, 1=sell
+                current_pips = (pos.price_current - pos.price_open) / self._pip_size
+            else:
+                current_pips = (pos.price_open - pos.price_current) / self._pip_size
+            peak = max(self._hedged_trail[pos.ticket], current_pips)
+            self._hedged_trail[pos.ticket] = peak
+            if peak > 0 and current_pips <= peak - self.trail_pips:
+                pos_dir = "buy" if pos.direction == 0 else "sell"
+                self.log(
+                    f"Trail stop: {pos_dir.upper()} ticket={pos.ticket}  "
+                    f"peak={peak:+.1f}p  now={current_pips:+.1f}p  "
+                    f"trail={self.trail_pips}p — closing"
+                )
+                try:
+                    self.conn.close_position(pos)
+                    del self._hedged_trail[pos.ticket]
+                    self._breakeven_done.discard(pos.ticket)
+                except Exception as e:
+                    self.log(f"Trail close error: {e}")
 
         # Close hedged losers at first profit
         for pos in positions:
@@ -519,13 +791,25 @@ def main() -> None:
     p.add_argument("--model-dir", default=None,
                    help="Path to model artifacts dir (overrides config)")
     p.add_argument("--flip-mode", default="always",
-                   choices=["always", "hedge_loss", "hedge_exit"],
-                   help="always: close opposite trade and flip (default). "
-                        "hedge_loss: if opposite is losing, keep it + open hedge (runs to SL/TP). "
-                        "hedge_exit: same as hedge_loss but closes old trade at first profit.")
+                   choices=["always", "hedge_loss", "hedge_exit", "trailing_hedge",
+                            "lock", "ratio_hedge", "partial_close", "zone_recovery"],
+                   help="Flip mode when an opposite signal arrives on an open position.")
+    p.add_argument("--trail-pips", type=float, default=10.0,
+                   help="trailing_hedge: pips behind peak before close (default 10)")
+    p.add_argument("--hedge-ratio", type=float, default=2.0,
+                   help="ratio_hedge: hedge lot multiplier (default 2.0)")
+    p.add_argument("--zone-pips", type=float, default=30.0,
+                   help="zone_recovery: pip gap before new zone layer (default 30)")
     args = p.parse_args()
-    PipelineBot(dry_run=args.dry_run, symbol=args.symbol,
-                model_dir=args.model_dir, flip_mode=args.flip_mode).run()
+    PipelineBot(
+        dry_run     = args.dry_run,
+        symbol      = args.symbol,
+        model_dir   = args.model_dir,
+        flip_mode   = args.flip_mode,
+        trail_pips  = args.trail_pips,
+        hedge_ratio = args.hedge_ratio,
+        zone_pips   = args.zone_pips,
+    ).run()
 
 
 if __name__ == "__main__":
