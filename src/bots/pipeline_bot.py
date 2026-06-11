@@ -121,8 +121,10 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ROOT))
@@ -168,7 +170,8 @@ class PipelineBot(BotBase):
     def __init__(self, dry_run: bool = False, symbol: str = _DEFAULT_SYMBOL,
                  model_dir: str | None = None, flip_mode: str = "always",
                  trail_pips: float = 10.0, hedge_ratio: float = 2.0,
-                 zone_pips: float = 30.0):
+                 zone_pips: float = 30.0,
+                 candle_model_dir: str | None = None):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
         self.dry_run     = dry_run
         self.symbol      = symbol
@@ -213,6 +216,25 @@ class PipelineBot(BotBase):
             history_length=150, dna_window=16, algo_mode=1, use_ae=True
         )
 
+        # candle_predictor: dedicated 1-bar model + ticket tracking
+        self._candle_ticket: Optional[int] = None
+        self.candle_pipe: Optional[PredictorPipeline] = None
+        self._candle_sl_pips: float = 15.0
+        self._candle_tp_pips: float = 20.0
+
+        if flip_mode == "candle_predictor":
+            if candle_model_dir is None:
+                raise ValueError(
+                    "--candle-model-dir is required when --flip-mode candle_predictor"
+                )
+            self.candle_pipe = PredictorPipeline.from_config()
+            self.candle_pipe.load(candle_model_dir)
+            candle_meta = Path(candle_model_dir) / "pair_meta.json"
+            if candle_meta.exists():
+                cm = json.loads(candle_meta.read_text())
+                self._candle_sl_pips = float(cm.get("sl_pips", 15.0))
+                self._candle_tp_pips = float(cm.get("tp_pips", 20.0))
+
         self._last_bar: pd.Timestamp | None = None
         self._breakeven_done: set[int] = set()
         # hedge_exit
@@ -250,6 +272,8 @@ class PipelineBot(BotBase):
             flip_detail += f"(r={self.hedge_ratio:.1f}x)"
         elif self.flip_mode == "zone_recovery":
             flip_detail += f"(zone={self.zone_pips:.0f}p)"
+        elif self.flip_mode == "candle_predictor":
+            flip_detail += f"(SL={self._candle_sl_pips:.0f}p/TP={self._candle_tp_pips:.0f}p force-close=1bar)"
         self.log(
             f"Symbol={self.symbol}  TF={TIMEFRAME}  "
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
@@ -273,6 +297,11 @@ class PipelineBot(BotBase):
     # ── Main tick ─────────────────────────────────────────────────────────────
 
     def on_tick(self) -> None:
+        # ── candle_predictor: completely separate 1-bar logic ─────────────────
+        if self.flip_mode == "candle_predictor":
+            self._on_tick_candle_predictor()
+            return   # never falls through to the standard 8-step logic
+
         # ── 0. Manage open positions (breakeven) ─────────────────────────────
         if not self.dry_run:
             self._manage_positions()
@@ -571,6 +600,143 @@ class PipelineBot(BotBase):
         except Exception as e:
             self.log(f"Order error: {e}")
 
+    # ── Candle predictor ──────────────────────────────────────────────────────
+
+    def _on_tick_candle_predictor(self) -> None:
+        """
+        1-bar trade logic for candle_predictor mode.
+
+        On every new M15 bar:
+          1. Force-close the previous bar's trade (if still open)
+          2. Predict current bar's direction using candle_pipe
+          3. Open a new trade; store ticket in self._candle_ticket
+
+        SL/TP are intra-bar protective stops only (flash crash).
+        Primary exit is always the next bar's open (force-close here).
+        """
+        if not self.in_session():
+            return
+
+        try:
+            ohlcv = self.rates(self.symbol, TIMEFRAME, BARS)
+        except Exception as e:
+            self.log(f"[candle] get_rates error: {e}")
+            return
+
+        if ohlcv is None or len(ohlcv) < 100:
+            self.log("[candle] Insufficient bars — waiting...")
+            return
+
+        bar_time = ohlcv.index[-1]
+        if bar_time == self._last_bar:
+            return
+        self._last_bar = bar_time
+
+        # Step 1: Force-close previous bar's trade
+        if self._candle_ticket is not None and not self.dry_run:
+            our_pos = [p for p in self.open_positions(self.symbol)
+                       if p.magic == self.magic and p.ticket == self._candle_ticket]
+            if our_pos:
+                self.log(
+                    f"[candle] Force-closing bar trade  "
+                    f"ticket={self._candle_ticket}  profit={our_pos[0].profit:+.2f} USD"
+                )
+                try:
+                    self.conn.close_position(our_pos[0])
+                    self._breakeven_done.discard(self._candle_ticket)
+                except Exception as e:
+                    self.log(f"[candle] Force-close error: {e}")
+            else:
+                self.log(
+                    f"[candle] ticket={self._candle_ticket} already closed "
+                    f"(SL/TP hit intra-bar)"
+                )
+            self._candle_ticket = None
+
+        # Step 2: Predict with candle model
+        try:
+            sig = self.candle_pipe.predict(ohlcv)
+        except Exception as e:
+            self.log(f"[candle] predict() error: {e}")
+            return
+
+        direction  = sig["signal"]
+        confidence = sig["confidence"]
+
+        self.log(
+            f"[candle] BAR {bar_time}  {direction.upper():4s}  "
+            f"conf={confidence:.1%}  "
+            f"P_buy={sig['P_buy']:.3f}  "
+            f"P_hold={sig['P_hold']:.3f}  "
+            f"P_sell={sig['P_sell']:.3f}"
+        )
+
+        try:
+            self.journal.record({
+                "bot": self.name, "symbol": self.symbol,
+                "direction": direction, "entry_time": str(bar_time),
+                "entry_price": 0.0, "exit_time": None, "exit_price": None,
+                "pnl_pips": 0.0, "pnl_dollars": 0.0,
+                "model": "candle_predictor", "confidence": confidence,
+                "entry_reason": f"candle:{direction}", "exit_reason": "pending",
+                "volume": 0.0, "sl_pips": self._candle_sl_pips,
+                "tp_pips": self._candle_tp_pips,
+            })
+        except Exception:
+            pass
+
+        # Step 3: Skip hold
+        if direction == "hold":
+            return
+
+        # Step 4: Size and open trade
+        lot, eff_sl = self.risk_sized_lot(
+            symbol       = self.symbol,
+            confidence   = confidence,
+            sl_pips      = self._candle_sl_pips,
+            tp_pips      = self._candle_tp_pips,
+            drawdown_pct = self._drawdown_pct(),
+        )
+        if lot <= 0:
+            self.log("[candle] Lot size 0 — skipping")
+            return
+
+        tick = self.conn.get_tick(self.symbol)
+        if tick is None:
+            self.log("[candle] Cannot get tick — skipping")
+            return
+
+        if direction == "buy":
+            price    = tick.ask
+            sl_price = round(price - eff_sl * self._pip_size, 5)
+            tp_price = round(price + self._candle_tp_pips * self._pip_size, 5)
+        else:
+            price    = tick.bid
+            sl_price = round(price + eff_sl * self._pip_size, 5)
+            tp_price = round(price - self._candle_tp_pips * self._pip_size, 5)
+
+        self.log(
+            f"{'[DRY] ' if self.dry_run else ''}"
+            f"[candle] Opening {direction.upper()}  lot={lot}  price={price:.5f}  "
+            f"SL={eff_sl:.0f}p  TP={self._candle_tp_pips:.0f}p  "
+            f"(force-close next bar)"
+        )
+
+        if self.dry_run:
+            return
+
+        try:
+            if direction == "buy":
+                result = self.buy(self.symbol, lot, sl=sl_price, tp=tp_price,
+                                  comment=f"candle {confidence:.0%}")
+            else:
+                result = self.sell(self.symbol, lot, sl=sl_price, tp=tp_price,
+                                   comment=f"candle {confidence:.0%}")
+            self._candle_ticket = result.get("order")
+            self.log(f"[candle] Order done — ticket={self._candle_ticket}")
+        except Exception as e:
+            self.log(f"[candle] Order error: {e}")
+
     # ── Position management ───────────────────────────────────────────────────
 
     def _manage_positions(self) -> None:
@@ -792,7 +958,8 @@ def main() -> None:
                    help="Path to model artifacts dir (overrides config)")
     p.add_argument("--flip-mode", default="always",
                    choices=["always", "hedge_loss", "hedge_exit", "trailing_hedge",
-                            "lock", "ratio_hedge", "partial_close", "zone_recovery"],
+                            "lock", "ratio_hedge", "partial_close", "zone_recovery",
+                            "candle_predictor"],
                    help="Flip mode when an opposite signal arrives on an open position.")
     p.add_argument("--trail-pips", type=float, default=10.0,
                    help="trailing_hedge: pips behind peak before close (default 10)")
@@ -800,15 +967,18 @@ def main() -> None:
                    help="ratio_hedge: hedge lot multiplier (default 2.0)")
     p.add_argument("--zone-pips", type=float, default=30.0,
                    help="zone_recovery: pip gap before new zone layer (default 30)")
+    p.add_argument("--candle-model-dir", default=None,
+                   help="Path to candle predictor model dir (required with --flip-mode candle_predictor)")
     args = p.parse_args()
     PipelineBot(
-        dry_run     = args.dry_run,
-        symbol      = args.symbol,
-        model_dir   = args.model_dir,
-        flip_mode   = args.flip_mode,
-        trail_pips  = args.trail_pips,
-        hedge_ratio = args.hedge_ratio,
-        zone_pips   = args.zone_pips,
+        dry_run          = args.dry_run,
+        symbol           = args.symbol,
+        model_dir        = args.model_dir,
+        flip_mode        = args.flip_mode,
+        trail_pips       = args.trail_pips,
+        hedge_ratio      = args.hedge_ratio,
+        zone_pips        = args.zone_pips,
+        candle_model_dir = args.candle_model_dir,
     ).run()
 
 
