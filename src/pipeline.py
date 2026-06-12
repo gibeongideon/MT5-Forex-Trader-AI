@@ -99,6 +99,7 @@ class PipelineConfig:
     bt_balance:    float = 10_000.0
     bt_risk_pct:   float = 0.01
     bt_use_regime: bool  = False
+    bt_pip_size:   float = 0.0001   # 0.0001 for EURUSD/GBPUSD, 0.01 for USDJPY
 
     # Artifact storage
     artifacts_dir: str = "data/models/pipeline"
@@ -165,6 +166,7 @@ class PipelineConfig:
             bt_spread      = bt.get("spread_pips",      1.0),
             bt_balance     = bt.get("initial_balance",  10_000.0),
             bt_risk_pct    = bt.get("risk_pct",         0.01),
+            bt_pip_size    = bt.get("pip_size",         0.0001),
             bt_use_regime  = bt.get("use_regime_filter", False),
 
             artifacts_dir = art.get("directory", "data/models/pipeline"),
@@ -406,12 +408,21 @@ class PredictorPipeline:
 
     # ── Live inference ─────────────────────────────────────────────────────────
 
-    def predict(self, df_raw: pd.DataFrame) -> dict:
+    def predict(self, df_raw: pd.DataFrame,
+                candle_signal: dict | None = None) -> dict:
         """
         Single-bar inference from raw OHLCV.
 
         Applies the fitted scaler → encoder → model and returns a signal dict.
         df_raw must contain at least max(indicator_warmup, encoder.window_size) bars.
+
+        Parameters
+        ----------
+        df_raw        : raw OHLCV bars (at least encoder.window_size bars)
+        candle_signal : optional output of a candle model's predict() call.
+                        If provided and the model was trained with candle features,
+                        injects candle_p_buy / candle_p_sell before inference.
+                        Expected keys: "P_buy", "P_sell".
 
         Returns
         -------
@@ -439,6 +450,16 @@ class PredictorPipeline:
             lat_row = latent.iloc[[-1]].copy()
             lat_row.index = X_live.index
             X_live = pd.concat([X_live, lat_row], axis=1)
+
+        # Inject candle probabilities if the model expects them
+        _has_candle_feats = self._feature_cols and "candle_p_buy" in self._feature_cols
+        if _has_candle_feats:
+            if candle_signal is not None:
+                X_live["candle_p_buy"]  = candle_signal.get("P_buy",  0.5)
+                X_live["candle_p_sell"] = candle_signal.get("P_sell", 0.5)
+            else:
+                X_live["candle_p_buy"]  = 0.5
+                X_live["candle_p_sell"] = 0.5
 
         # Align to training feature columns (fill any missing with 0)
         if self._feature_cols:
@@ -642,6 +663,7 @@ class PredictorPipeline:
     def _make_backtest_cfg(self) -> BacktestConfig:
         return BacktestConfig(
             threshold         = self.cfg.bt_threshold,
+            pip_size          = self.cfg.bt_pip_size,
             sl_pips           = self.cfg.bt_sl_pips,
             tp_pips           = self.cfg.bt_tp_pips,
             spread_pips       = self.cfg.bt_spread,

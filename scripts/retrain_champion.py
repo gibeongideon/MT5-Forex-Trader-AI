@@ -90,6 +90,20 @@ def main() -> None:
     X, y = pipe.build_features(df, train_frac=1.0)
     print(f"  Feature matrix: {X.shape}  classes={y.value_counts().to_dict()}\n")
 
+    # Optional: inject OOS candle signal as features
+    symbol_tag = Path(data_path).stem.split("_")[0]  # e.g. "EURUSD" from "EURUSD_M15"
+    candle_feat_path = ROOT / "data" / "features" / f"candle_signal_{symbol_tag}.parquet"
+    if candle_feat_path.exists():
+        print(f"  Injecting OOS candle features from {candle_feat_path.name}...")
+        cf = pd.read_parquet(candle_feat_path)[["candle_p_buy", "candle_p_sell"]]
+        shared = X.index.intersection(cf.index)
+        X = pd.concat([X.loc[shared], cf.loc[shared]], axis=1)
+        y = y.reindex(shared)
+        pipe._feature_cols = list(X.columns)   # keep meta.json in sync with 42-col model
+        print(f"  Candle features injected: {len(shared):,} rows × {X.shape[1]} features\n")
+    else:
+        print(f"  (No candle features — run build_candle_features.py to add them)\n")
+
     # Step 2: Train model on full feature matrix
     print("Step 2/3 — Training XGBoost on full feature matrix...")
     pipe.fit_full(X, y)

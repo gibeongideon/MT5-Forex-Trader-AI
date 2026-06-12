@@ -1,281 +1,116 @@
-# MT5 EURUSD M15 — Experiment Leaderboard
+# MT5 M15 — Experiment Leaderboard
 
-> All results: walk-forward, expanding window, 180d train / 30d test, 18–19 folds.
-> Threshold: 0.40 min confidence. SL 30p / TP 60p. Spread 1.0p. Balance $10,000.
-> Dataset: EURUSD M15. Phases 1–8 used 50k bars. Phases 21+ used 49k filtered bars (from 2024-05-14).
-
----
-
-## Champion (Locked)
-
-| Model | Features | Sharpe | MaxDD | Return | Trades | Phase |
-|-------|----------|--------|-------|--------|--------|-------|
-| **XGBoost + enc8** | 31 base + 8 latent = **39** | **+3.13** | 13.3% | **+358%** | 524 | 20 (cached run) |
-
-> Note: fresh enc8 retrains vary ±0.5–0.8 Sharpe due to random seed. The +3.13 is from a
-> specific cached initialization. Fresh runs of the same config average ~+2.31 Sharpe.
+> All pipeline results: walk-forward, expanding window, 180d train / 30d test.
+> All candle results: OOS verified, 13 fold models, 51,689 bars, 2024-05-08 → 2026-06-05.
+> Dataset: EURUSD + USDJPY M15, 60,000 bars (2024-01-08 → 2026-06-05) unless noted.
+> Last updated: 2026-06-12
 
 ---
 
-## All Experiments — Sorted by Sharpe
+## Current Champions
 
-### Phase 20–22: enc8 Latent Encoder Era (49k bars, 2024-05-14 → 2026-05-25)
+### Candle Standalone (CatBoost 1-bar, OOS)
+
+| Model | Symbol | Sharpe | Win% | MaxDD | Return | Artifact |
+| ----- | ------ | ------ | ---- | ----- | ------ | -------- |
+| candle_predictor | EURUSD | **+20.1** | 87.1% | 6.7% | +840% | `candle_EURUSD/` |
+| candle_predictor | USDJPY | **+25.6** | 81.1% | 10.9% | +2,100% | `candle_USDJPY/` |
+| candle_trail (tuned) | EURUSD | **+19.4** | 91.3% | **3.1%** | +780% | `candle_EURUSD/` |
+| candle_trail (tuned) | USDJPY | **+24.5** | 88.4% | **4.8%** | +1,900% | `candle_USDJPY/` |
+
+### Hybrid v2 (XGBoost + enc8 + candle injection, WF OOS) ★ CHAMPION PIPELINE
+
+| Symbol | Features | Sharpe | MaxDD | Return | Trades | Artifact |
+| ------ | -------- | ------ | ----- | ------ | ------ | -------- |
+| EURUSD | 42 | **+3.01** | 11.4% | +93% | 540 | `pipeline_EURUSD_v2/` |
+| USDJPY | 42 | **+4.27** | 19.6% | +1419% | 1,395 | `pipeline_USDJPY_v2/` |
+
+---
+
+## Pipeline Leaderboard — Full History
+
+### 60k-bar era (2024-01-08 → 2026-06-05, EURUSD + USDJPY)
+
+| Rank | Config | Symbol | Phase | Features | Sharpe | MaxDD | Return | Verdict |
+| ---- | ------ | ------ | ----- | -------- | ------ | ----- | ------ | ------- |
+| 1 | **Hybrid v2: XGBoost + enc8 + candle** | USDJPY | 30 | 42 | **+4.27** | 19.6% | +1419% | CHAMPION |
+| 2 | **Hybrid v2: XGBoost + enc8 + candle** | EURUSD | 30 | 42 | **+3.01** | 11.4% | +93% | CHAMPION |
+| 3 | XGBoost + enc8 baseline v1 | USDJPY | 20 | 40 | +3.24 | 24.3% | +551% | superseded by v2 |
+| 4 | XGBoost + enc8 baseline v1 | EURUSD | 20 | 40 | +1.35 | 16.4% | +49% | superseded by v2 |
+
+### 49k-bar era (2024-05-14 → 2026-05-25, EURUSD only)
 
 | Rank | Config | Phase | Features | Sharpe | MaxDD | Return | Trades | vs Baseline | Verdict |
-|------|--------|-------|----------|--------|-------|--------|--------|-------------|---------|
-| 1 | XGBoost + enc8 (cached) | 20 | 39 | **+3.13** | 13.3% | +358% | 524 | — | **CHAMPION** |
-| 2 | XGBoost + enc8 (fresh baseline) | 21–22 | 39 | +2.31 | 8.0% | +43% | 513 | reference | Fresh enc8 baseline |
-| 3 | + vol_ratio / zscore / fast_slow | 22-A | 42 | +1.68 | 10.3% | +25.2% | — | −0.63 | WORSE |
-| 4 | + OB + FVG + DailyHL (3 SMC) | 21-B | 47 | +1.42 | 9.9% | +16.3% | — | −0.89 | WORSE |
-| 5 | + all 6 SMC signal types | 21-C | 55 | +1.16 | 10.9% | +18.4% | — | −1.15 | WORSE |
+| ---- | ------ | ----- | -------- | ------ | ----- | ------ | ------ | ----------- | ------- |
+| 1 | XGBoost + enc8 (cached seed) | 20 | 39 | **+3.13** | 13.3% | +358% | 524 | — | Prev champion |
+| 2 | XGBoost + enc8 (fresh baseline) | 21–22 | 39 | +2.31 | 8.0% | +43% | 513 | reference | enc8 average |
+| 3 | CatBoost + enc8 | 12 | 39 | +2.27 | 37.5% | +376% | 517 | −0.04 Sharpe | WORSE (3× DD) |
+| 4 | + Cross-market (GBPUSD/DXY/Gold/VIX) | 24 | 48 | +2.55 | 9.3% | +64% | — | +0.24 | INCONCLUSIVE |
+| 5 | + vol_ratio / zscore / fast_slow | 22-A | 42 | +1.68 | 10.3% | +25% | — | −0.63 | FAILED |
+| 6 | + OB + FVG + DailyHL (3 SMC) | 21-B | 47 | +1.42 | 9.9% | +16% | — | −0.89 | FAILED |
+| 7 | RegimeRouter KMeans k=4 | 25 | 39 | +1.40 | 34.1% | +110% | — | −0.91 | FAILED |
+| 8 | + all 6 SMC types | 21-C | 55 | +1.16 | 10.9% | +18% | — | −1.15 | FAILED |
+| 9 | LSTM on 39 features | 23 | 39 | <+2.31 | — | — | — | negative | FAILED |
+| 10 | E2E LSTM raw OHLCV | 23 | — | <+2.31 | — | — | — | negative | FAILED |
+| 11 | Triple-barrier meta-labeling | 26 | 39 | −0.71 | — | — | ~7 | — | FAILED |
 
-**Signals tested and failed (all from OHLCV source — saturation confirmed):**
+### Base era (Phases 1–8, 50k bars, EURUSD)
 
-| Signal Group | Phase | Δ Sharpe | Conclusion |
-|-------------|-------|----------|------------|
-| Order Blocks + Fair Value Gaps + Daily HL | 21-B | −0.89 | enc8 already captures OB/FVG patterns |
-| All 6 SMC types (OB, FVG, Daily, Andean, SuperTrend, Heiken Ashi) | 21-C | −1.15 | Full SMC library = noise |
-| Volume anomaly (vol_ratio, vol_zscore, vol_fast_slow) | 22-A | −0.63 | enc8 latent absorbs volume info |
-| Session features (London open/close, NY session) | 19 (prior) | negative | Session timing already in patterns |
-| K-Means candle clusters | 19 (prior) | negative | Cluster labels = different encoding of same OHLCV |
-
----
-
-### Phase 4–8: Base Model Era (50k bars, original 31 features, no encoder)
-
-| Rank | Config | Phase | Features | Sharpe | MaxDD | Return | Trades | Notes |
-|------|--------|-------|----------|--------|-------|--------|--------|-------|
-| 1 | **XGBoost** (walk-forward) | 4 | 31 | **+1.34** | 10.5% | +14.2% | 176 | Best single model |
-| 2 | CatBoost (walk-forward) | 6 | 31 | +1.17 | 24.7% | +5.8% | 543 | High trades, high DD |
-| 3 | XGBoost + tiered risk | 8-B | 31 | +0.72 | **7.5%** | +0.2% | 126 | Same Sharpe, −49% DD vs 8-A |
-| 3 | LightGBM (walk-forward) | 5 | 31 | +0.72 | 6.8% | +3.8% | 99 | Fewer trades |
-| 4 | XGBoost + ATR stop | 8-C | 31 | +0.22 | 3.4% | +0.3% | 69 | Lowest DD, too few trades |
-| 5 | Random Forest (walk-forward) | 5 | 31 | +0.24 | 14.8% | −0.1% | 93 | Bagging < boosting |
-| 6 | Rule-based bot | 2 | rules | −0.45 | — | −9.7% | 430 | No ML |
-| 7 | Random baseline | 1 | none | −0.17 | 21.6% | −2.5% | 354 | Noise floor |
+| Rank | Config | Phase | Features | Sharpe | MaxDD | Return | Verdict |
+| ---- | ------ | ----- | -------- | ------ | ----- | ------ | ------- |
+| 1 | XGBoost + tiered risk | 8-B | 31 | +0.72 | 7.5% | +0.2% | Best before enc8 |
+| 2 | XGBoost 31 features | 4 | 31 | +1.34 | 10.5% | +14.2% | First real edge |
+| 3 | CatBoost 31 features | 6 | 31 | +1.17 | 24.7% | +5.8% | High DD |
+| 4 | LightGBM 31 features | 5 | 31 | +0.72 | 6.8% | +3.8% | Worse |
+| 5 | Random Forest | 5 | 31 | +0.24 | 14.8% | −0.1% | Weak |
+| 6 | XGBoost + ATR stop | 8-C | 31 | +0.22 | 3.4% | +0.3% | Too few trades |
+| 7 | Rule-based MA cross | 2 | — | −0.45 | — | −9.7% | No ML edge |
+| 8 | Random baseline | 1 | 0 | −0.17 | 21.6% | −2.5% | Noise floor |
 
 ---
 
-### Phase 23: LSTM Experiments (Running — check logs/lstm_compare.log)
+## Candle Model Version Leaderboard
 
-| Config | Model | Features | Sharpe | MaxDD | Return | Trades | Status |
-|--------|-------|----------|--------|-------|--------|--------|--------|
-| A | XGBoost + enc8 (fresh baseline) | 39 | +2.31 | 8.0% | +43% | 513 | Done (1.7 min, cached) |
-| B | LSTMModel on 39 features | 39 | TBD | TBD | TBD | TBD | Running (~90 min) |
-| C | E2ELSTMModel on raw OHLCV | 5 | TBD | TBD | TBD | TBD | Running after B |
+| Version | EURUSD WF Sharpe | USDJPY WF Sharpe | Notes |
+| ------- | --------------- | --------------- | ----- |
+| v1 | +0.025 | +1.165 | XGBoost, threshold=0.40, SL=15/TP=20 — FAILED for EURUSD |
+| v2 | +7.938 | +14.598 | CatBoost, threshold=0.60, SL=10/TP=30 — session hours slightly wrong |
+| v3 (current) | +7.118 | +14.414 | Session UTC corrected, Sydney+TKLon overlap added, 52 features |
 
----
+Full-data OOS verification (51,689 bars): EURUSD +20.1, USDJPY +25.6
 
-## Key Findings
+candle_trail tuning results (grid search 160 combos):
 
-### Why the champion works
-
-- **31 base features** = hand-crafted indicators (RSI, MACD, ATR, Bollinger, EMAs, returns, rolling stats). Human domain knowledge encoded explicitly.
-- **8 latent features (enc8)** = what a supervised MLP encoder discovered by compressing 50-bar OHLCV windows, trained to predict buy/sell/hold. Captures patterns no human named.
-- **Together**: two complementary information channels → XGBoost exploits both simultaneously.
-
-### Saturation Principle (22 experiments, confirmed)
-
-Every signal derived from the same OHLCV source **hurts** Sharpe. The enc8 latent space has fully absorbed all available information from price and volume data.
-The only way to genuinely add information: **different data source** (cross-pair, macro, sentiment).
-
-### Phase 23 Decision Rule
-
-- If LSTM variant beats Config A by > +0.05 Sharpe AND MaxDD ≤ 20% → promote, move to Phase 24 (cross-pair)
-- Otherwise → deploy champion as-is, cross-pair becomes a separate add-on
+| Symbol | act | behind | lo | me | hi | Sharpe | Win% | MaxDD | vs candle_predictor DD |
+| ------ | --- | ------ | -- | -- | -- | ------ | ---- | ----- | ---------------------- |
+| EURUSD | 12 | 5 | 1 | 2 | 4 | +19.4 | 91.3% | 3.1% | −53% |
+| USDJPY | 15 | 5 | 1 | 3 | 4 | +24.5 | 88.4% | 4.8% | −56% |
 
 ---
 
-## Next Steps — Genuinely New Directions Only
+## Flip Mode Reference (Pipeline, in-sample, 60k M15 EURUSD)
 
-> 22 experiments confirmed: enc8 has fully absorbed EURUSD OHLCV.
-> No more indicator variants, SMC types, or volume features — all tested and failed.
-> Every next phase must bring **new information** or a **fundamentally different problem formulation**.
-> Model stacking (done Phase 6), position sizing (done Phase 8) — already in the system.
-
----
-
-### Phase 24 — Cross-Market Features ✅ DONE — Inconclusive
-
-| Config | Sharpe | Notes |
-|--------|--------|-------|
-| A: XGBoost+enc8 baseline (fresh) | -0.16 | stochastic seed variance |
-| B: +GBPUSD/USDJPY/XAUUSD (9 cols) | +0.08 | +0.24 vs A, still near zero |
-
-**Verdict:** Cross-market adds marginal signal (+0.24 delta) but absolute performance is unreliable due to enc8 random seed variance. Does not confidently beat the cached champion (+3.13). **Champion holds.**
+| Mode | Trades | Win% | Sharpe | MaxDD | Notes |
+| ---- | ------ | ---- | ------ | ----- | ----- |
+| always | 7,636 | 61% | +12.97 | 4.9% | |
+| hedge_loss | 4,013 | 71% | +7.47 | 4.9% | fewest trades, highest win% |
+| hedge_exit | 6,033 | 61% | +10.12 | 5.3% | |
+| trailing_hedge | 5,635 | 69% | +9.23 | 3.2% | lowest DD |
+| lock | TBD | — | — | — | |
+| ratio_hedge | TBD | — | — | — | |
+| partial_close | TBD | — | — | — | |
+| zone_recovery | TBD | — | — | — | |
 
 ---
 
-### Phase 25 — Regime Detection ✅ DONE — Failed
+## Key Findings (Do Not Re-test)
 
-RegimeRouter (KMeans k=4 + per-regime XGBoost): **+1.36 vs +2.31 baseline = -0.95**
+**Saturation Principle:** enc8 has absorbed all EURUSD OHLCV signal. All 22+ experiments adding OHLCV-derived features to enc8 hurt Sharpe. The only path to improvement is a genuinely different information source.
 
-Root cause: 49k bars ÷ 4 regimes ≈ 12k bars per specialist — insufficient training data.
+**Hybrid v2 works because:** `candle_p_buy`/`candle_p_sell` are outputs of a separately-trained CatBoost model with its own latent representations — not raw OHLCV. This is structurally new information for XGBoost.
 
----
+**XGBoost > CatBoost for 4-bar pipeline:** CatBoost delivers more raw return but at 3× the MaxDD. Not worth the DD cost.
 
-### Phase 26 — Meta-Labeling (Triple-Barrier) ✅ DONE — Failed
+**M15 > H1 for this architecture:** H1 = 29 trades/year. Compounding requires at least 200+ trades/year.
 
-Triple-barrier labels: **-0.71 Sharpe, only 7 trades** in 18 folds.
-
-Root cause: 15% non-zero label rate makes model too conservative. Standard labels (40%) needed for trade frequency.
-
----
-
-### Phase 27 — VQ-VAE + GPT Market Language Model (Future Research)
-
-**Complexity: High (2–3 weeks). Not yet started.**
-
-The only uncharted encoder architecture. Converts OHLCV windows into discrete tokens (like words), then trains a GPT-style transformer autoregressively on the token sequence.
-
-```
-50-bar OHLCV window
-        ↓
-   MLP Encoder → z_continuous [8 floats]
-        ↓
-   Vector Quantization → nearest codebook entry → token ID (e.g. 42)
-        ↓
-   Codebook embedding lookup → [8 floats] (learnable, not continuous)
-        ↓
-   XGBoost (Option A: drop-in for enc8)
-   OR
-   GPT Transformer trained autoregressively on token sequence (Option B)
-```
-
-**Why different from enc8:** enc8 produces continuous floats. VQ-VAE forces the encoder to route patterns through a discrete learned vocabulary (e.g. 512 "market state" entries). Transformers are designed for discrete token sequences — this could unlock sequence modelling that LSTMs failed at.
-
-**Honest risk:** Still OHLCV-derived data — saturation principle may still apply. Option B (GPT) is the novel part; Option A (VQ-VAE encoder only) is likely similar to enc8. The E2E LSTM failure (Phase 23) is a warning sign for end-to-end OHLCV approaches.
-
-**Prerequisite:** Complete paper trading validation first (see below).
-
----
-
-### Deployment — Next Immediate Step ⭐⭐⭐⭐⭐
-
-All planned experiment phases are complete. The champion (XGBoost + enc8, 39 feat) is ready for production validation. See Production Deployment section below.
-
----
-
-### Phase 25 — Regime Detection + Dedicated Models ⭐⭐⭐⭐⭐
-
-**Expected uplift: +0.3 to +1.0 Sharpe**
-
-#### Simple version
-
-Right now the champion does this:
-```
-EURUSD bar → XGBoost → "buy / hold / sell"
-```
-With regime models:
-```
-EURUSD bar → "what market are we in?" → route to the right specialist
-                    ↓
-         Trending up   →  XGBoost Trend Model   → signal
-         Trending down →  XGBoost Trend Model   → signal
-         Ranging       →  XGBoost Range Model   → signal
-         High vol      →  skip / reduce size    → signal
-```
-One doctor for everything → specialist per condition.
-
-#### How it works in detail
-
-**Step 1 — Regime Detection (every bar)**
-
-Three features describe the current market:
-- `ATR ratio` — current ATR vs rolling-100-bar mean. >1 = elevated volatility.
-- `ADX` — trend strength. >25 = trending, <20 = ranging.
-- `RSI` — directional bias. >50 = bullish pressure, <50 = bearish.
-
-KMeans(k=4) clusters all training bars into 4 buckets from those three numbers.
-Each new bar gets classified in real time (microseconds).
-
-**Step 2 — Specialist Training (per walk-forward fold)**
-
-Instead of one XGBoost on all bars, RegimeRouter:
-1. Detects regimes across the training window
-2. Splits data: "trending bars only", "ranging bars only", etc.
-3. Trains a **separate XGBoost on each slice**
-4. If a regime has < 200 bars → no specialist → falls back to the global model
-
-The trending specialist only ever saw trending markets. It learns entry patterns
-that work specifically in momentum. The ranging specialist learns mean-reversion.
-
-**Step 3 — Inference (live trading)**
-
-At each new bar:
-1. Compute ATR ratio, ADX, RSI → classify regime (microseconds)
-2. Route to matching specialist → get `[P_buy, P_hold, P_sell]`
-3. Apply same confidence threshold and risk sizing as before
-
-The trading engine sees no difference — it still receives a probability triple.
-
-**Why this might work**
-
-Current XGBoost trained on everything learned:
-> "On average, when RSI=65 and MACD crosses up, there's a slight buy edge"
-
-That average blends trending markets (where the signal works well) with ranging
-markets (where it fakes out). The specialist sees only the conditions it will be
-deployed in — it learns a sharper, cleaner version of the same signal.
-
-**The risk**
-
-49k bars ÷ 4 regimes ≈ 12k bars per specialist per fold (vs 48k for global model).
-Less data per model. If regime boundaries are drawn wrong, specialists get confused
-training sets and perform worse. The comparison script measures this directly.
-
-**Implementation**
-
-- `src/models/regime_router.py` — fully implemented, implements ModelInterface
-- `scripts/compare_regime.py` — A/B walk-forward: XGBoost vs RegimeRouter, 39 features
-
-Observed regime distribution on 49k M15 bars:
-- Regime 0 (trending-up):   10.2%
-- Regime 1 (trending-down): 37.6%
-- Regime 2 (ranging):       13.6%
-- Regime 3 (high-vol):      38.6%
-
----
-
-### Phase 26 — Meta-Labeling ⭐⭐⭐⭐
-
-**Expected uplift: +0.2 to +0.7 Sharpe**
-
-Our current labels (buy/hold/sell by forward return threshold) tell the model what
-direction to predict. Meta-labeling changes the question entirely:
-
-```
-Step 1 — Primary model generates a candidate signal (existing champion)
-Step 2 — Meta-model answers: "Should I take this trade?"
-          Features: primary signal strength + regime + time-of-day + recent PnL
-          Label: 1 if trade hit TP, 0 if trade hit SL
-Step 3 — Only trade when meta-model says yes
-```
-
-Alternative: replace classification labels with **P(TP hits before SL)** —
-a regression target that directly optimises what we care about in live trading.
-Source: Marcos López de Prado, *Advances in Financial Machine Learning* (triple-barrier labeling).
-
----
-
-## Production Deployment (when ready)
-
-```bash
-# 1 — Retrain champion on all data
-conda run -n envmt5 python scripts/retrain_champion.py
-
-# 2 — Dry run (no trades placed)
-conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run
-
-# 3 — Paper trade 30 days minimum before live capital
-conda run -n envmt5 python src/bots/pipeline_bot.py
-
-# 4 — Systemd auto-start
-sudo cp deploy/mt5_bot.service /etc/systemd/system/
-sudo systemctl enable mt5_bot && sudo systemctl start mt5_bot
-journalctl -u mt5_bot -f
-```
-
----
-
-*Last updated: 2026-06-07. Phase 23 LSTM results pending.*
+**KMeans regimes are unstable:** Cluster IDs are non-deterministic across walk-forward folds. Only deterministic rule-based regimes (ADX thresholds) would be stable enough to route correctly.

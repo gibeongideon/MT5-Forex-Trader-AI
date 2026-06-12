@@ -1,418 +1,300 @@
 # ARCHITECTURE.MD
+
 ## MT5 Trading Bot — Developer Reference
 
-> This file is the single source of truth for the codebase structure, contracts,
-> and extension points. Read this before adding any new component.
+> Single source of truth for codebase structure, contracts, and extension points.
+> Read this before adding any new component.
+> Last updated: 2026-06-12
 
 ---
 
-## 1. Data Flow (Raw OHLCV → Trade)
+## 1. Three-Tier Model Architecture
 
+The system has three distinct model families, each with different horizons and roles:
+
+```text
+┌──────────────────────────────────────────────────────────────────────────────┐
+│  TIER 1 — CatBoost Candle Predictor (1-bar specialist)                       │
+│                                                                              │
+│  Horizon: 1 M15 bar (~15 minutes)                                            │
+│  Input: 52 features (32 base + 6 session flags + 6 MTF EMA + fractal_corr   │
+│          + 7 more)                                                           │
+│  Window: 50-bar lookback, sliding 120d training window                       │
+│  Output: P_buy, P_hold, P_sell (softmax)                                     │
+│  Threshold: 0.60 min confidence to trade                                     │
+│  Artifacts: data/models/candle_{SYMBOL}/                                     │
+│    ├── scaler.joblib                                                         │
+│    ├── encoder.pt          (supervised enc8 for candle features)             │
+│    ├── model.joblib        (CatBoost)                                        │
+│    ├── meta.json           (feature_cols, threshold, sl_pips, tp_pips)       │
+│    └── pair_meta.json      (version, session params, trail params)           │
+│                                                                              │
+│  Modes: candle_predictor — force-close at 1 bar, SL=10p/TP=30p              │
+│         candle_trail     — trailing SL + confidence-tier hold (1/2/4 bars)  │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  TIER 2 — XGBoost Pipeline v1 (40-feature baseline)                         │
+│                                                                              │
+│  Horizon: 4 M15 bars (~1 hour)                                               │
+│  Input: 32 base features + 8 enc8 latent dims = 40 features                 │
+│  Artifacts: data/models/pipeline_{SYMBOL}/                                   │
+│  Status: Superseded by v2 — kept as fallback only                            │
+├──────────────────────────────────────────────────────────────────────────────┤
+│  TIER 3 — Hybrid v2 (42-feature, XGBoost + enc8 + candle injection) ★       │
+│                                                                              │
+│  Horizon: 4 M15 bars (~1 hour)                                               │
+│  Input: 32 base features + 8 enc8 latent dims + 2 candle probs = 42 feats   │
+│  candle_p_buy, candle_p_sell: OOS predictions from Tier 1 model             │
+│  Artifacts: data/models/pipeline_{SYMBOL}_v2/                                │
+│  Status: CURRENT CHAMPION — use for all new deployments                      │
+└──────────────────────────────────────────────────────────────────────────────┘
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│  DATA SOURCE                                                         │
-│  CSV file (historical)   OR   MT5 live bars via rpyc bridge          │
-└──────────────────────────────────┬──────────────────────────────────┘
-                                   │ OHLCV DataFrame
-                                   ▼
+
+---
+
+## 2. Data Flow (Raw OHLCV → Trade)
+
+```text
+CSV / MT5 live bars (OHLCV DataFrame)
+          │
+          ▼
 ┌─────────────────────────────────────────────────────────────────────┐
 │  LAYER 1 — Feature Engineering          src/features/               │
 │  FeaturePipeline                                                     │
 │  ─────────────────────────────────────────────────────────────────  │
-│  RSI(14)  MACD  BB(20)  ATR(14)  ADX  SMA(9/21/50)  OBV  Stoch    │
+│  RSI(14)  MACD  BB(20)  ATR(14)  ADX  SMA(9/21/50)  EMA(20)        │
+│  OBV  Stoch  fractal_corr  session_flags(6)  MTF_EMA(6)             │
 │  StandardScaler fitted on train portion only (no leakage)           │
-│  → 31-dim feature matrix                                             │
-│                                                                      │
-│  EXTEND: add indicators in src/features/indicators.py               │
-│          add feature columns in src/features/feature_pipeline.py    │
+│  → 32 base features                                                  │
 └──────────────────────────────────┬──────────────────────────────────┘
-                                   │ 31 features
-           ┌───────────────────────┼──────────────────────────────┐
-           │  PLUG-IN A (toggle)   ▼                              │
-           │  ┌──────────────────────────────────────────────┐    │
-           │  │  LAYER 2 — Latent Encoder                    │    │
-           │  │  src/features/latent_encoder.py              │    │
-           │  │  ─────────────────────────────────────────── │    │
-           │  │  50-bar OHLCV window → z-normalise per window│    │
-           │  │  MLP encoder (trained w/ CrossEntropyLoss)   │    │
-           │  │  → 8-dim regime fingerprint (latent_0..7)    │    │
-           │  │                                               │    │
-           │  │  ON/OFF: config.yaml → encoder.enabled       │    │
-           │  │  EXTEND: add new encoder classes here        │    │
-           │  └──────────────────────┬───────────────────────┘    │
-           │                         │ +8 latent dims              │
-           └─────────────────────────┘                             │
-                                   ▼
-                        39-dim feature matrix (31 + 8)
-                                   │
+                                   │ 32 features
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  LAYER 3 — Prediction Model             src/models/                 │
-│  ModelInterface contract (ONE method: predict_proba)                │
+│  LAYER 2 — Supervised Encoder (enc8)    src/models/encoder.py       │
 │  ─────────────────────────────────────────────────────────────────  │
-│  xgboost_model.py      lightgbm_model.py     catboost_model.py     │
-│  lstm_model.py         ensemble.py            llm_signal_model.py  │
-│  bar_lm_model.py                                                    │
-│                                                                      │
-│  → [P_buy, P_hold, P_sell]  (three floats that sum to 1.0)         │
-│                                                                      │
-│  SWAP:   config.yaml → model_type: xgboost | lightgbm | ...        │
-│  EXTEND: add new file in src/models/, implement ModelInterface      │
-│          register in src/models/model_registry.py                  │
-│          add entry in config.yaml → models: section                 │
+│  Input: 50-bar rolling window of 5 OHLCV values = 250 input dims    │
+│  Architecture: MLP, 250→128→64→8, CrossEntropyLoss on 4-bar labels  │
+│  Output: 8 latent dimensions                                         │
+│  Trained on train portion only, same split as FeaturePipeline       │
 └──────────────────────────────────┬──────────────────────────────────┘
-                                   │ probabilities
+                                   │ 40 features (32 base + 8 latent)
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  LAYER 4 — Risk Manager                 src/core/risk_manager.py    │
-│  Confidence tiers → position size and SL/TP                         │
+│  LAYER 3 — Candle Feature Injection     (hybrid v2 only)            │
 │  ─────────────────────────────────────────────────────────────────  │
-│  P ≥ 0.75 → 2.0% risk    P ≥ 0.65 → 1.5% risk                     │
-│  P ≥ 0.55 → 0.75% risk   P ≥ 0.40 → 0.5% risk                     │
-│  Kelly sizing optional    ATR-based dynamic SL optional             │
-│                                                                      │
-│  EXTEND: add tiers in config.yaml → risk_manager.tiers              │
-│          add sizing logic in RiskManager.size_position()            │
+│  Source: data/features/candle_signal_{SYMBOL}.parquet               │
+│          (51,689 OOS predictions, indexed by timestamp)             │
+│  Injected: candle_p_buy, candle_p_sell (two new columns)            │
+│  Fallback: 0.5 (neutral) when no signal available                   │
 └──────────────────────────────────┬──────────────────────────────────┘
-                                   │ signal + sizing dict
+                                   │ 42 features (hybrid v2)
                                    ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│  LAYER 5 — Bot / Execution              src/bots/                   │
-│  BotBase subclass (implements on_tick)                               │
+│  LAYER 4 — XGBoost Classifier           src/models/                 │
 │  ─────────────────────────────────────────────────────────────────  │
-│  pipeline_bot.py     ai_bot.py     rule_bot.py     random_bot.py   │
-│  Every 60s: fetch bars → predict → manage positions                 │
-│  HOLD / skip → nothing   BUY → close sells, open 1 buy             │
-│  magic=20260101 isolation  5% daily loss guard                      │
-│                                                                      │
-│  EXTEND: new strategy → new file in src/bots/, extend BotBase       │
+│  Input: 42-feature vector per bar                                    │
+│  Output: P(buy), P(hold), P(sell) via predict_proba                  │
+│  Threshold: cfg.threshold (default 0.40) to generate signal          │
 └──────────────────────────────────┬──────────────────────────────────┘
-                                   │ orders
+                                   │ signal dict {direction, confidence}
                                    ▼
-                      MT5 Terminal (ICMarketsKE-Demo)
-                      rpyc bridge  localhost:18812
+┌─────────────────────────────────────────────────────────────────────┐
+│  LAYER 5 — Risk Manager                 src/risk/                   │
+│  ─────────────────────────────────────────────────────────────────  │
+│  Tiered position sizing: 0.5% / 1.0% / 2.0% based on confidence     │
+│  SL/TP calculation from cfg.sl_pips / tp_pips + bt_pip_size         │
+│  Flip mode routing: always / hedge_exit / hedge_loss / trailing_hedge│
+│                     candle_predictor / candle_trail / lock / etc.    │
+└──────────────────────────────────┬──────────────────────────────────┘
+                                   │ trade order
+                                   ▼
+MT5 via rpyc bridge (mt5linux)  →  live_trades.db (SQLite journal)
 ```
 
 ---
 
-## 2. Folder Structure
+## 3. Key Files
 
-```
-MT5/
-├── config.yaml                  ← SINGLE config file for everything
-├── .env                         ← secrets (MT5_LOGIN, ANTHROPIC_API_KEY, etc.)
-│
-├── src/
-│   ├── pipeline.py              ← TOP-LEVEL ORCHESTRATOR (kept at root)
-│   │                              PredictorPipeline: build_features → fit → predict
-│   │
-│   ├── core/                    ← FROZEN infrastructure — do not change contracts
-│   │   ├── bot_base.py          ← BotBase ABC: run loop, daily loss guard, helpers
-│   │   ├── mt5_connector.py     ← rpyc bridge wrapper: rates, tick, orders
-│   │   ├── risk_manager.py      ← RiskManager: confidence → lot size / SL
-│   │   ├── trade_journal.py     ← SQLite trade log
-│   │   ├── constants.py
-│   │   ├── exceptions.py
-│   │   └── types.py
-│   │
-│   ├── features/                ← FEATURE ENGINEERING — safe to extend
-│   │   ├── feature_pipeline.py  ← FeaturePipeline: OHLCV → 31 indicators + scaler
-│   │   ├── indicators.py        ← pure functions: sma, ema, rsi, macd, bb, atr ...
-│   │   ├── latent_encoder.py    ← LatentEncoder: OHLCV windows → latent dims
-│   │   └── bar_tokenizer.py     ← BarTokenizer: OHLCV → discrete tokens (for LLM)
-│   │
-│   ├── models/                  ← ML MODELS — add new models here
-│   │   ├── model_interface.py   ← ModelInterface ABC (3 methods: train/predict/save)
-│   │   ├── model_registry.py    ← ModelRegistry: name → ModelInterface singleton
-│   │   ├── ensemble.py          ← Ensemble: stacking meta-learner
-│   │   ├── xgboost_model.py
-│   │   ├── lightgbm_model.py
-│   │   ├── catboost_model.py
-│   │   ├── random_forest_model.py
-│   │   ├── lstm_model.py
-│   │   ├── llm_signal_model.py  ← calls Anthropic API (cloud model example)
-│   │   └── bar_lm_model.py      ← small transformer trained on bar tokens
-│   │
-│   ├── evaluation/              ← BACKTESTING & METRICS
-│   │   ├── backtester.py        ← Backtester: bar-by-bar simulation with costs
-│   │   ├── walk_forward.py      ← WalkForwardValidator: expanding/sliding folds
-│   │   ├── metrics.py           ← sharpe_ratio, max_drawdown, performance_report
-│   │   ├── monte_carlo.py       ← trade-sequence shuffle significance test
-│   │   └── backtest.py          ← simple MA-crossover baseline backtester
-│   │
-│   ├── bots/                    ← RUNNABLE STRATEGIES
-│   │   ├── pipeline_bot.py      ← LIVE BOT: uses PredictorPipeline (CURRENT)
-│   │   ├── ai_bot.py            ← uses Anthropic LLM for signals
-│   │   ├── rule_bot.py          ← MA + RSI + BB rule-based signals
-│   │   ├── random_bot.py        ← random entry baseline
-│   │   ├── llm_bot.py           ← LLM signal model bot
-│   │   └── example_bot.py       ← minimal BotBase template
-│   │
-│   ├── signals/                 ← SIGNAL LOGIC
-│   │   ├── rule_engine.py       ← Rule, SignalCombiner: weighted rule voting
-│   │   └── predictor.py        ← legacy swappable predictor endpoint
-│   │
-│   └── data/
-│       └── schemas.py
-│
-├── scripts/                     ← CLI runners (not importable library code)
-│   ├── run_pipeline.py          ← main runner: backtest | train | predict | features
-│   ├── train_autoencoder.py     ← train LatentEncoder standalone
-│   ├── build_latent_features.py ← merge latent cols into feature parquet
-│   ├── compare_latent_vs_baseline.py  ← A/B Sharpe comparison
-│   └── ...
-│
-└── data/
-    ├── EURUSD_M15.csv           ← RAW DATA (immutable — never modify)
-    ├── features/                ← cached feature matrices (.parquet)
-    └── models/                  ← saved artifacts (.joblib, .pt, .json)
-        └── pipeline/            ← PredictorPipeline artifacts (live bot uses these)
-```
-
-**Root-level shims:** Files at `src/*.py` that mirror subfolder names (e.g. `src/bot_base.py`,
-`src/metrics.py`) are backward-compatibility re-exports. They let existing scripts keep working
-without path changes. New code should always import from the canonical subfolder path.
+| File | Role |
+| ---- | ---- |
+| `src/pipeline.py` | `PredictorPipeline`: build_features / walk_forward / predict / save / load |
+| `src/bots/pipeline_bot.py` | Live bot: all flip modes, hybrid injection, candle standalone |
+| `src/features/feature_pipeline.py` | FeaturePipeline: 32-dim indicator matrix + StandardScaler |
+| `src/features/indicators.py` | Individual indicator functions |
+| `src/models/encoder.py` | LatentEncoder (MLP enc8, supervised) |
+| `scripts/train_candle_model.py` | Train + WF validate CatBoost candle model |
+| `scripts/retrain_champion.py` | Retrain XGBoost champion on all data (auto-injects candle features) |
+| `scripts/build_candle_features.py` | Generate OOS candle signal parquet (13 fold models) |
+| `scripts/compare_candle_features.py` | WF A/B comparison: with vs without candle features |
+| `scripts/backtest_candle_trail.py` | Bar-by-bar candle_trail backtest |
+| `scripts/tune_candle_trail.py` | Grid search for optimal candle_trail params |
+| `scripts/verify_candle_oos.py` | Independent OOS Sharpe verification of candle model |
+| `config.yaml` | Global config (pipeline, risk_manager, bt_pip_size per symbol) |
+| `data/live_trades.db` | SQLite trade journal |
 
 ---
 
-## 3. Key Contracts
+## 4. PipelineConfig Fields (src/pipeline.py)
 
-### 3.1 ModelInterface  `src/models/model_interface.py`
-
-Every prediction model — local or cloud — implements exactly three methods:
+Key fields for multi-symbol support:
 
 ```python
-class MyModel(ModelInterface):
-
-    def train(self, X: pd.DataFrame, y: pd.Series) -> "MyModel":
-        # fit the model; return self
-        ...
-
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        # return shape (N, 3): [[P_buy, P_hold, P_sell], ...]
-        # values must sum to 1.0 per row
-        ...
-
-    def save(self, path: str | Path) -> None: ...
-    def load(self, path: str | Path) -> "MyModel": ...
+@dataclass
+class PipelineConfig:
+    model_type: str = "xgboost"
+    encoder_mode: str = "supervised"
+    encoder_latent_dim: int = 8
+    encoder_epochs: int = 30
+    data_path: str = "data/EURUSD_M15.csv"
+    artifacts_dir: str = "data/models/pipeline"
+    threshold: float = 0.40
+    sl_pips: float = 30.0
+    tp_pips: float = 60.0
+    bt_pip_size: float = 0.0001   # 0.0001 for EURUSD/GBPUSD, 0.01 for USDJPY
+    # ... risk manager fields
 ```
 
-The pipeline, backtester, and bots only ever call `predict_proba()`.
-They are completely unaware of what's behind it.
-
-### 3.2 BotBase  `src/core/bot_base.py`
-
-Every live bot extends BotBase and implements `on_tick()`:
-
-```python
-class MyBot(BotBase):
-
-    def on_start(self) -> None:
-        # called once after MT5 connects
-        ...
-
-    def on_tick(self) -> None:
-        # called every tick_interval seconds (default 60s)
-        # put all strategy logic here
-        ...
-
-    def on_stop(self) -> None:
-        # called on Ctrl+C or daily loss limit
-        ...
-```
-
-BotBase provides: `self.conn` (MT5Connector), `self.log()`, `self.buy()`, `self.sell()`,
-`self.open_positions()`, `self.risk_sized_lot()`, daily loss guard, magic number isolation.
+`bt_pip_size` MUST be set correctly per symbol when running `compare_candle_features.py` or any script that calls `_make_backtest_cfg()`. Wrong value causes SL/TP to be in wrong price units → garbage trade counts and −100% MaxDD.
 
 ---
 
-## 4. Extension Guide — "Where Do I Put It?"
+## 5. Candle Feature Injection (retrain + inference)
 
-| What you want to add | File to create / edit | What to implement |
-|---|---|---|
-| New technical indicator | `src/features/indicators.py` | Add a pure function `def my_ind(df) -> pd.Series` |
-| New feature column | `src/features/feature_pipeline.py` | Call your indicator in `_compute()`, append column |
-| New local ML model | `src/models/my_model.py` | Implement `ModelInterface` (train/predict_proba/save/load) |
-| **Cloud prediction** | `src/models/cloud_model.py` | Implement `ModelInterface`; call remote API in `predict_proba()` |
-| New encoder / representation | `src/features/my_encoder.py` | Fit on train split, `transform()` returns extra columns; wire into `PredictorPipeline.build_features()` |
-| New ensemble member | `src/models/ensemble.py` | Add to `base_models` list in config.yaml |
-| New bot strategy | `src/bots/my_bot.py` | Extend `BotBase`, implement `on_tick()` |
-| New risk tier | `config.yaml` | Edit `risk_manager.tiers` list |
-| New backtest metric | `src/evaluation/metrics.py` | Add pure function, call from `performance_report()` |
-| New data source | `src/core/mt5_connector.py` | Add method (keep same DataFrame index/column format) |
-
-### 4.1 Adding a Cloud Model (step-by-step)
-
-**Step 1** — Create `src/models/cloud_model.py`:
+### During retraining (`scripts/retrain_champion.py`)
 
 ```python
-import requests
-import numpy as np
-import pandas as pd
-from src.models.model_interface import ModelInterface
-
-class CloudModel(ModelInterface):
-    """Calls a remote inference endpoint for [P_buy, P_hold, P_sell]."""
-
-    def __init__(self, endpoint_url: str = "", api_key: str = ""):
-        self.endpoint_url = endpoint_url or os.getenv("CLOUD_ENDPOINT", "")
-        self.api_key      = api_key      or os.getenv("CLOUD_API_KEY", "")
-        self._feature_names: list[str] = []
-
-    def train(self, X: pd.DataFrame, y: pd.Series) -> "CloudModel":
-        self._feature_names = list(X.columns)
-        return self  # training happens in the cloud
-
-    def predict_proba(self, X: pd.DataFrame) -> np.ndarray:
-        payload = {"features": X.values.tolist(),
-                   "columns":  list(X.columns)}
-        resp = requests.post(
-            self.endpoint_url,
-            json=payload,
-            headers={"Authorization": f"Bearer {self.api_key}"},
-            timeout=5,
-        )
-        resp.raise_for_status()
-        return np.array(resp.json()["probabilities"])  # shape (N, 3)
-
-    def save(self, path) -> None:
-        import json, pathlib
-        pathlib.Path(path).write_text(
-            json.dumps({"endpoint": self.endpoint_url,
-                        "feature_names": self._feature_names}))
-
-    def load(self, path) -> "CloudModel":
-        import json, pathlib
-        d = json.loads(pathlib.Path(path).read_text())
-        self.endpoint_url  = d.get("endpoint", self.endpoint_url)
-        self._feature_names = d.get("feature_names", [])
-        return self
+# After build_features() returns X (40 cols), before fit_full():
+candle_feat_path = ROOT / "data" / "features" / f"candle_signal_{symbol}.parquet"
+if candle_feat_path.exists():
+    cf = pd.read_parquet(candle_feat_path)[["candle_p_buy", "candle_p_sell"]]
+    shared = X.index.intersection(cf.index)
+    X = pd.concat([X.loc[shared], cf.loc[shared]], axis=1)
+    y = y.reindex(shared)
+    pipe._feature_cols = list(X.columns)   # CRITICAL: sync meta.json to 42 cols
 ```
 
-**Step 2** — Register in `config.yaml`:
+If `_feature_cols` is not updated after injection, `meta.json` records 40 features but the model was trained on 42. At inference, `predict()` silently drops candle columns. Always update `_feature_cols` after injection.
 
-```yaml
-active_model: cloud_model        # ← swap here; no code change
-
-models:
-  cloud_model:
-    type: cloud_model
-    path: data/models/cloud_model.json
-```
-
-**Step 3** — Add one line in `src/models/model_registry.py` `_build()` method:
+### During inference (`src/pipeline.py :: predict()`)
 
 ```python
-"cloud_model": lambda cfg: CloudModel(),
+def predict(self, df_raw: pd.DataFrame,
+            candle_signal: dict | None = None) -> dict:
+    ...
+    _has_candle_feats = self._feature_cols and "candle_p_buy" in self._feature_cols
+    if _has_candle_feats:
+        if candle_signal is not None:
+            X_live["candle_p_buy"]  = candle_signal.get("P_buy",  0.5)
+            X_live["candle_p_sell"] = candle_signal.get("P_sell", 0.5)
+        else:
+            X_live["candle_p_buy"]  = 0.5   # neutral fallback
+            X_live["candle_p_sell"] = 0.5
 ```
 
-**Step 4** — Set env vars in `.env`:
+Old v1 models (pipeline_EURUSD/ without candle cols in `_feature_cols`) work unchanged — the `_has_candle_feats` guard prevents injection.
 
-```
-CLOUD_ENDPOINT=https://my-api.example.com/predict
-CLOUD_API_KEY=sk-...
-```
-
-**Tip:** Put the cloud model inside the Ensemble (`config.yaml → ensemble.base_models`)
-to blend it with local XGBoost — reduces single-point-of-failure risk if the endpoint
-is slow or down.
-
-### 4.2 Adding a New Encoder
-
-Template — copy from `src/features/latent_encoder.py`:
+### In the live bot (`src/bots/pipeline_bot.py :: on_tick()`)
 
 ```python
-class MyEncoder:
-    def fit(self, df: pd.DataFrame, y=None) -> "MyEncoder": ...
-    def transform(self, df: pd.DataFrame) -> pd.DataFrame:
-        # Returns DataFrame with extra columns (e.g. regime_0, regime_1, ...)
-        # Same index as input — no row dropping
-        ...
-    def save(self, path: str) -> None: ...
-    def load(self, path: str) -> "MyEncoder": ...
+# Step 4 — standard pipeline path
+candle_sig = None
+if self._candle_feature_inject and self.candle_pipe is not None:
+    try:
+        candle_sig = self.candle_pipe.predict(ohlcv)
+    except Exception:
+        pass
+sig = self.pipe.predict(ohlcv, candle_signal=candle_sig)
 ```
 
-Wire it in `src/pipeline.py` `build_features()` alongside `LatentEncoder`.
+`_candle_feature_inject` is True only when `--candle-feature-dir` is passed and flip_mode is NOT `candle_predictor` or `candle_trail` (those modes use the candle model for trading decisions directly, not feature injection).
 
 ---
 
-## 5. Config Reference  `config.yaml`
+## 6. Adding a New Feature
 
-```
-pipeline:
-  model_type:        xgboost | lightgbm | catboost | ensemble  ← swap model
-  data_path:         path to raw CSV
-  train_frac:        0.8  (80% train / 20% test for scalers + encoder)
+1. Add indicator function to `src/features/indicators.py`
+2. Add column to `src/features/feature_pipeline.py::build()` — append after existing columns
+3. Update `_FEATURE_NAMES` list if it exists in that file
+4. Delete WF cache: `rm -rf data/models/wf_cache_*`
+5. Run comparison: `scripts/compare_candle_features.py --symbol EURUSD`
+6. If improvement confirmed, retrain champion: `scripts/retrain_champion.py`
 
-  encoder:
-    enabled:         true | false   ← toggle latent encoder
-    mode:            supervised | autoencoder
-    latent_dim:      8              ← size of regime fingerprint
-    window_size:     50             ← OHLCV bars per window
-    epochs:          30
-
-  walk_forward:
-    window_type:     expanding | sliding
-    train_days:      180
-    test_days:       30
-
-  backtest:
-    threshold:       0.40           ← min confidence to open trade
-    sl_pips:         30.0
-    tp_pips:         60.0
-
-  artifacts:
-    directory:       data/models/pipeline   ← live bot loads from here
-
-risk_manager:
-  tiers:             [[0.75, 0.02], [0.65, 0.015], ...]   ← confidence→risk%
-  use_kelly:         false
-  use_atr_stop:      false
-
-active_model:        xgboost   ← used by standalone ModelRegistry (non-pipeline)
-```
+Do NOT add features derived from OHLCV alone — the Saturation Principle (22 confirmed experiments) shows enc8 has absorbed all OHLCV signal. Only features from genuinely different sources (model outputs, external data, deterministic regime rules) can improve enc8.
 
 ---
 
-## 6. Key Commands
+## 7. Walk-Forward Setup
+
+```text
+Expanding window — each fold extends training by 1 test period:
+
+Fold 1:  |──180d train──|──30d test──|
+Fold 2:  |────210d train────|──30d test──|
+Fold 3:  |───────240d train───────|──30d test──|
+...
+Fold 13: |──────────────────540d train──────────────────|──30d test──|
+
+13 folds total on 60,000 M15 bars (~2.4 years of data)
+```
+
+WF OOS concatenation: each fold's OOS predictions are concatenated chronologically. No bar appears in both train and test across the entire run. Final Sharpe/MaxDD is computed on the full concatenated OOS series.
+
+---
+
+## 8. OOS Candle Signal Generation (build_candle_features.py)
+
+The candle parquets in `data/features/` are generated from the 13 WF fold models stored in `data/models/wf_cache_candle2_{SYMBOL}/`. Each fold model predicts only its OOS window. This ensures no lookahead — a bar's candle probability is always predicted by a model that never trained on that bar.
+
+Regenerate after any candle model retrain:
 
 ```bash
-# Train the full pipeline (encoder + model) and save artifacts
-conda run -n envmt5 python scripts/run_pipeline.py train
+conda run -n envmt5 python scripts/build_candle_features.py
+```
 
-# Walk-forward backtest (evaluate without saving)
-conda run -n envmt5 python scripts/run_pipeline.py backtest
+Then retrain the hybrid v2 champion (picks up the new parquet automatically):
 
-# Single live prediction on latest bars from CSV
-conda run -n envmt5 python scripts/run_pipeline.py predict
-
-# Run live bot — dry run (no orders)
-/home/rock/anaconda3/envs/envmt5/bin/python -u src/bots/pipeline_bot.py --dry-run
-
-# Run live bot — real orders
-/home/rock/anaconda3/envs/envmt5/bin/python -u src/bots/pipeline_bot.py
-
-# Monitor live bot log
-tail -f /tmp/pipeline_bot.log
-
-# Train the latent encoder standalone
-conda run -n envmt5 python scripts/train_autoencoder.py --mode supervised --epochs 30
-
-# A/B comparison: baseline vs. supervised latent encoder
-conda run -n envmt5 python scripts/compare_latent_vs_baseline.py
+```bash
+conda run -n envmt5 python scripts/retrain_champion.py \
+    --data data/EURUSD_M15.csv --out data/models/pipeline_EURUSD_v2
 ```
 
 ---
 
-## 7. Rules — Never Break These
+## 9. Flip Modes Reference
 
-| Rule | Why |
-|---|---|
-| `src/core/bot_base.py` and `src/core/mt5_connector.py` are FROZEN | All bots depend on their contracts; changes ripple everywhere |
-| `ModelInterface` contract is FROZEN | Every model, backtest, walk-forward, and bot depends on `predict_proba(X) → (N,3)` |
-| `data/EURUSD_M15.csv` is READ-ONLY | Immutable raw data; all derived files go in `data/features/` or `data/models/` |
-| No lookahead in features or encoder | Window for bar `t` = rows `[t-W, t-1]`; first W-1 bars get zeros |
-| Scaler + encoder fit on TRAIN portion only | Prevents leakage; `pipeline.build_features()` enforces the split |
-| New models go in `src/models/` | Keeps the contract discoverable; registry auto-picks them up |
-| New bots go in `src/bots/` | All share the same BotBase safety guards (loss limit, magic number) |
-| Config changes in `config.yaml` only | No hard-coded values in source files |
+| Mode | Description | Uses candle? |
+| ---- | ----------- | ------------ |
+| `always` | Open every signal, no exit filter | No |
+| `hedge_exit` | Hedge losing trade then exit both at signal flip | No |
+| `hedge_loss` | Hedge only when trade is at loss | No |
+| `trailing_hedge` | Hedge with trailing SL on the hedge leg | No |
+| `candle_predictor` | 1-bar CatBoost, force-close after 1 bar, SL/TP | Tier 1 only |
+| `candle_trail` | 1-bar CatBoost + trailing SL + conf-tier hold | Tier 1 only |
+| `lock` | Lock in profit at fixed threshold | No |
+| `ratio_hedge` | Variable ratio hedge sizing | No |
+| `partial_close` | Close partial position at profit targets | No |
+| `zone_recovery` | Zone-based recovery grid | No |
+
+For hybrid v2, use any non-candle flip mode and pass `--candle-feature-dir`. The candle model runs as a feature source, not a trade manager.
+
+---
+
+## 10. Config.yaml Structure
+
+```yaml
+pipeline:
+  model_type: xgboost
+  encoder_mode: supervised
+  encoder_latent_dim: 8
+  encoder_epochs: 30
+  threshold: 0.40
+  sl_pips: 30.0
+  tp_pips: 60.0
+  data_path: data/EURUSD_M15.csv
+  artifacts_dir: data/models/pipeline
+  backtest:
+    pip_size: 0.0001     # bt_pip_size — MUST match symbol (USDJPY = 0.01)
+
+risk_manager:
+  max_risk_pct: 0.02
+  min_risk_pct: 0.005
+```

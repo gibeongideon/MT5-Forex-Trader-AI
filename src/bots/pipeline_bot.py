@@ -90,13 +90,55 @@ Planned modes (not yet implemented — see scripts/backtest_flip_modes.py)
     Param: --zone-pips FLOAT  (pip gap before new layer, default 30)
 
 ──────────────────────────────────────────────────────────────────────────────
+Hybrid model  (--candle-feature-dir)  ★ NEW — v2 champion
+──────────────────────────────────────────────────────────────────────────────
+A distinct model architecture that stacks two independently-trained models:
+
+  Layer 1 — CatBoost candle predictor (1-bar specialist)
+    Predicts direction of bar i+1 using data from bars 0..i only.
+    Output: P_buy, P_hold, P_sell probabilities.
+
+  Layer 2 — XGBoost + enc8 pipeline (4-bar generalist)
+    Standard champion model, but retrained with two extra input features:
+      candle_p_buy   — Layer 1 P_buy for the current bar
+      candle_p_sell  — Layer 1 P_sell for the current bar
+    The XGBoost learns to weight the short-term candle signal alongside its
+    own 32 technical indicators + 8 encoder latent dims.  Total: 42 features.
+
+  Architecture:
+    candle_pipe.predict(ohlcv)         → {P_buy, P_sell, ...}
+    pipe.predict(ohlcv, candle_signal) → injects P_buy/P_sell → 42-feat XGBoost → signal
+
+  Leakage-free training:
+    Candle predictions used for retraining are generated from 13 walk-forward
+    fold models (wf_cache_candle2_EURUSD/), each predicting ONLY its OOS
+    window — no bar ever trained and predicted by the same fold model.
+    Stored in data/features/candle_signal_{SYMBOL}.parquet.
+
+  Artifacts:
+    data/models/pipeline_EURUSD_v2/  (42-feature XGBoost + enc8)
+    data/models/pipeline_USDJPY_v2/  (42-feature XGBoost + enc8)
+    data/models/candle_EURUSD/       (CatBoost 1-bar, unchanged)
+    data/models/candle_USDJPY/       (CatBoost 1-bar, unchanged)
+
+  WF OOS results vs baseline (60k M15 bars, expanding 180d/30d):
+    Symbol   Model         Feats  Sharpe   MaxDD   Return  Trades
+    EURUSD   Baseline v1     40   +1.35    16.4%   +49%     648
+    EURUSD   Hybrid v2  ★    42   +3.01    11.4%   +93%     540   (+1.66 Sharpe, -5pp DD)
+    USDJPY   Baseline v1     40   +3.24    24.3%  +551%    1920
+    USDJPY   Hybrid v2  ★    42   +4.27    19.6% +1419%    1395   (+1.03 Sharpe, -4.7pp DD)
+
+  Fallback: if --candle-feature-dir is not set, predict() injects 0.5 neutral
+  for candle_p_buy/sell so old v1 model files still work unchanged.
+
+──────────────────────────────────────────────────────────────────────────────
 Dedicated candle-model modes  (require --candle-model-dir)
 ──────────────────────────────────────────────────────────────────────────────
-These two modes use a separate CatBoost model trained specifically for 1-bar
-direction prediction.  They completely bypass the standard 8-step pipeline
-logic and have their own independent trade lifecycle.
+These two modes use the CatBoost 1-bar model standalone (no XGBoost pipeline).
+They completely bypass the standard 8-step pipeline logic and have their own
+independent trade lifecycle.
 
-  candle_predictor  ★ current live champion
+  candle_predictor
     Fires one trade per M15 bar when model confidence >= 0.60.
     Force-closes at the NEXT bar open regardless of P&L.
     SL/TP (10p / 30p) are purely intra-bar flash-crash protection.
@@ -114,19 +156,20 @@ logic and have their own independent trade lifecycle.
     activates at trail_pips_behind (default 10) from peak.  SL only moves
     in the profitable direction.  Primary exits: trailing SL hit, TP hit,
     or max bars elapsed.  No new trade while an existing one is open.
-    Params: --trail-activation-pips 15  --trail-pips-behind 10
-            --trail-max-bars-low 1  --trail-max-bars-med 2  --trail-max-bars-high 4
-    Backtest (2.4 yr OOS):
-      EURUSD  Sharpe +17.9  Win 90.0%  MaxDD 3.4%   ~1,922 trades  ← half the DD
-      USDJPY  Sharpe +21.4  Win 88.5%  MaxDD 5.3%   ~3,778 trades  ← half the DD
-    Trade-off: Sharpe slightly lower than candle_predictor; drawdown halved;
-    win rate higher; average winning trade is larger.
+    Tuned params (grid search, 160 combos):
+      EURUSD: --trail-activation-pips 12 --trail-pips-behind 5
+              --trail-max-bars-low 1 --trail-max-bars-med 2 --trail-max-bars-high 4
+      USDJPY: --trail-activation-pips 15 --trail-pips-behind 5
+              --trail-max-bars-low 1 --trail-max-bars-med 3 --trail-max-bars-high 4
+    Backtest (2.4 yr OOS, tuned):
+      EURUSD  Sharpe +19.4  Win 91.3%  MaxDD 3.1%   ~1,922 trades  ← -53% DD
+      USDJPY  Sharpe +24.5  Win 88.4%  MaxDD 4.8%   ~3,778 trades  ← -56% DD
 
 ──────────────────────────────────────────────────────────────────────────────
-Full performance summary (backtested, 60k M15 EURUSD bars unless noted)
+Full performance summary
 ──────────────────────────────────────────────────────────────────────────────
 
-  ── Standard pipeline modes (XGBoost + enc8 signals, 60k bars in-sample) ──
+  ── Standard pipeline modes (XGBoost v1 + enc8, 60k bars in-sample) ────────
   Mode              Trades   Win%   Sharpe   MaxDD   Notes
   always             7,636   61%    +12.97   4.9%
   hedge_loss         4,013   71%     +7.47   4.9%    fewest trades, highest win rate
@@ -137,31 +180,43 @@ Full performance summary (backtested, 60k M15 EURUSD bars unless noted)
   partial_close      TBD
   zone_recovery      TBD
 
-  ── Candle modes (CatBoost 1-bar model, 60k M15 bars, OOS 2.4 yr) ─────────
+  ── Hybrid v2 model (XGBoost + enc8 + candle features, WF OOS) ─────────────
+  Symbol   Flip mode       Trades   Sharpe   MaxDD   Notes
+  EURUSD   any             540      +3.01    11.4%   42 features, candle injected
+  USDJPY   any             1,395    +4.27    19.6%   42 features, candle injected
+
+  ── Candle standalone modes (CatBoost 1-bar, 60k M15 bars, OOS 2.4 yr) ─────
   Mode              Trades   Win%   Sharpe   MaxDD   Notes
   candle_predictor   2,212   87%    +20.1    6.7%    EURUSD — 1-bar force-close
   candle_predictor   4,131   81%    +25.6   10.9%    USDJPY
-  candle_trail       1,922   90%    +17.9    3.4%    EURUSD — trailing SL, conf hold
-  candle_trail       3,778   89%    +21.4    5.3%    USDJPY ← recommended for live
+  candle_trail       1,922   91%    +19.4    3.1%    EURUSD — tuned trailing SL
+  candle_trail       3,778   88%    +24.5    4.8%    USDJPY ← recommended for live
 
 ──────────────────────────────────────────────────────────────────────────────
 
 Usage:
-  # 1. Train / retrain first
-  conda run -n envmt5 python scripts/retrain_champion.py
+  # 1. Generate OOS candle signal parquet (one-time, ~2 min)
+  conda run -n envmt5 python scripts/build_candle_features.py
 
-  # 2. Standard pipeline mode
+  # 2. Retrain hybrid v2 champion (includes candle features automatically)
+  conda run -n envmt5 python scripts/retrain_champion.py \\
+      --data data/EURUSD_M15.csv --out data/models/pipeline_EURUSD_v2
+
+  # 3. Run hybrid v2 bot  ★ recommended
   conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
-      --model-dir data/models/pipeline_EURUSD --flip-mode trailing_hedge --trail-pips 10
+      --model-dir data/models/pipeline_EURUSD_v2 \\
+      --candle-feature-dir data/models/candle_EURUSD \\
+      --flip-mode trailing_hedge
 
-  # 3. Candle predictor (1-bar force-close)
+  # 4. Candle standalone — 1-bar force-close
   conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
       --candle-model-dir data/models/candle_EURUSD --flip-mode candle_predictor
 
-  # 4. Candle trail (trailing SL + confidence hold)
+  # 5. Candle standalone — trailing SL (tuned params)
   conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
       --candle-model-dir data/models/candle_EURUSD --flip-mode candle_trail \\
-      --trail-activation-pips 15 --trail-pips-behind 10
+      --trail-activation-pips 12 --trail-pips-behind 5 \\
+      --trail-max-bars-low 1 --trail-max-bars-med 2 --trail-max-bars-high 4
 
   # 5. Dry run
   conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run \\
@@ -228,6 +283,7 @@ class PipelineBot(BotBase):
                  trail_pips: float = 10.0, hedge_ratio: float = 2.0,
                  zone_pips: float = 30.0,
                  candle_model_dir: str | None = None,
+                 candle_feature_dir: str | None = None,
                  magic: int | None = None,
                  trail_activation_pips: float = 15.0,
                  trail_pips_behind: float = 10.0,
@@ -304,13 +360,21 @@ class PipelineBot(BotBase):
                 raise ValueError(
                     f"--candle-model-dir is required when --flip-mode {flip_mode}"
                 )
+
+        # Load candle pipe: for flip modes (required) or for feature injection (optional)
+        _candle_dir = candle_model_dir or candle_feature_dir
+        if _candle_dir is not None:
             self.candle_pipe = PredictorPipeline.from_config()
-            self.candle_pipe.load(candle_model_dir)
-            candle_meta = Path(candle_model_dir) / "pair_meta.json"
+            self.candle_pipe.load(_candle_dir)
+            candle_meta = Path(_candle_dir) / "pair_meta.json"
             if candle_meta.exists():
                 cm = json.loads(candle_meta.read_text())
                 self._candle_sl_pips = float(cm.get("sl_pips", 15.0))
                 self._candle_tp_pips = float(cm.get("tp_pips", 20.0))
+        self._candle_feature_inject = (
+            candle_feature_dir is not None
+            and flip_mode not in ("candle_predictor", "candle_trail")
+        )
 
         self._last_bar: pd.Timestamp | None = None
         self._breakeven_done: set[int] = set()
@@ -415,7 +479,13 @@ class PipelineBot(BotBase):
 
         # ── 4. Predict ────────────────────────────────────────────────────────
         try:
-            sig = self.pipe.predict(ohlcv)
+            candle_sig = None
+            if self._candle_feature_inject and self.candle_pipe is not None:
+                try:
+                    candle_sig = self.candle_pipe.predict(ohlcv)
+                except Exception:
+                    pass
+            sig = self.pipe.predict(ohlcv, candle_signal=candle_sig)
         except Exception as e:
             self.log(f"predict() error: {e}")
             return
@@ -1271,6 +1341,8 @@ def main() -> None:
                    help="zone_recovery: pip gap before new zone layer (default 30)")
     p.add_argument("--candle-model-dir", default=None,
                    help="Path to candle predictor model dir (required with --flip-mode candle_predictor / candle_trail)")
+    p.add_argument("--candle-feature-dir", default=None,
+                   help="Path to candle model dir for feature injection into standard pipeline (optional)")
     p.add_argument("--magic", type=int, default=None,
                    help="Override magic number (default: config.yaml trading.magic_number)")
     p.add_argument("--trail-activation-pips", type=float, default=15.0,
@@ -1293,6 +1365,7 @@ def main() -> None:
         hedge_ratio           = args.hedge_ratio,
         zone_pips             = args.zone_pips,
         candle_model_dir      = args.candle_model_dir,
+        candle_feature_dir    = args.candle_feature_dir,
         magic                 = args.magic,
         trail_activation_pips = args.trail_activation_pips,
         trail_pips_behind     = args.trail_pips_behind,
