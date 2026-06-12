@@ -44,10 +44,12 @@ def _add_extra_features(df_raw: pd.DataFrame, X: pd.DataFrame) -> pd.DataFrame:
     idx = X.index
     hour = idx.hour
     extra = pd.DataFrame(index=idx)
-    extra["session_london"]  = ((hour >= 7)  & (hour < 17)).astype(float)
-    extra["session_ny"]      = ((hour >= 13) & (hour < 21)).astype(float)
-    extra["session_tokyo"]   = ((hour >= 0)  & (hour < 8)).astype(float)
-    extra["session_overlap"] = ((hour >= 13) & (hour < 17)).astype(float)
+    extra["session_sydney"]  = ((hour >= 22) | (hour < 7)).astype(float)
+    extra["session_tokyo"]   = ((hour >= 0)  & (hour < 9)).astype(float)
+    extra["session_london"]  = ((hour >= 8)  & (hour < 17)).astype(float)
+    extra["session_ny"]      = ((hour >= 13) & (hour < 22)).astype(float)
+    extra["session_tok_lon"] = ((hour >= 8)  & (hour < 9)).astype(float)
+    extra["session_lon_ny"]  = ((hour >= 13) & (hour < 17)).astype(float)
     extra["hour_sin"]        = np.sin(2 * np.pi * hour / 24)
     extra["hour_cos"]        = np.cos(2 * np.pi * hour / 24)
 

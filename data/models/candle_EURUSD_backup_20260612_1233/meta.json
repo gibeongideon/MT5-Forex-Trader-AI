@@ -42,12 +42,10 @@
     "latent_5",
     "latent_6",
     "latent_7",
-    "session_sydney",
-    "session_tokyo",
     "session_london",
     "session_ny",
-    "session_tok_lon",
-    "session_lon_ny",
+    "session_tokyo",
+    "session_overlap",
     "hour_sin",
     "hour_cos",
     "ema_1h_ratio",
@@ -58,7 +56,7 @@
   "split_date": "2026-06-05 23:45:00",
   "cfg": {
     "model_type": "catboost",
-    "data_path": "data/USDJPY_M15.csv",
+    "data_path": "data/EURUSD_M15.csv",
     "train_frac": 0.8,
     "label_horizon": 1,
     "label_threshold": 0.0005,
@@ -91,7 +89,7 @@
     "bt_balance": 10000.0,
     "bt_risk_pct": 0.01,
     "bt_use_regime": false,
-    "artifacts_dir": "data/models/candle_USDJPY",
+    "artifacts_dir": "data/models/candle_EURUSD",
     "rm_tiers": [
       [
         0.75,

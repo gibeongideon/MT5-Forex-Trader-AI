@@ -81,10 +81,12 @@ def _add_extra_features(df_raw: pd.DataFrame, X: pd.DataFrame) -> pd.DataFrame:
     # ── Session flags (UTC hours) ──────────────────────────────────────────────
     hour = idx.hour
     extra = pd.DataFrame(index=idx)
-    extra["session_london"]  = ((hour >= 7)  & (hour < 17)).astype(float)
-    extra["session_ny"]      = ((hour >= 13) & (hour < 21)).astype(float)
-    extra["session_tokyo"]   = ((hour >= 0)  & (hour < 8)).astype(float)
-    extra["session_overlap"] = ((hour >= 13) & (hour < 17)).astype(float)  # London+NY
+    extra["session_sydney"]  = ((hour >= 22) | (hour < 7)).astype(float)   # UTC 22–07 (EAT 01–10)
+    extra["session_tokyo"]   = ((hour >= 0)  & (hour < 9)).astype(float)   # UTC 00–09 (EAT 03–12)
+    extra["session_london"]  = ((hour >= 8)  & (hour < 17)).astype(float)  # UTC 08–17 (EAT 11–20)
+    extra["session_ny"]      = ((hour >= 13) & (hour < 22)).astype(float)  # UTC 13–22 (EAT 16–01)
+    extra["session_tok_lon"] = ((hour >= 8)  & (hour < 9)).astype(float)   # UTC 08–09 (EAT 11–12) overlap
+    extra["session_lon_ny"]  = ((hour >= 13) & (hour < 17)).astype(float)  # UTC 13–17 (EAT 16–20) ★
     extra["hour_sin"]        = np.sin(2 * np.pi * hour / 24)
     extra["hour_cos"]        = np.cos(2 * np.pi * hour / 24)
 
@@ -182,7 +184,7 @@ def run_symbol(
 
     print(f"  Feature matrix: {X.shape[0]:,} rows × {X.shape[1]} features")
     print(f"  Labels: buy={(y== 1).sum():,}  hold={(y==0).sum():,}  sell={(y==-1).sum():,}")
-    print(f"  Extra features: session flags (6) + MTF EMAs (4) = 10 added")
+    print(f"  Extra features: session flags (8) + MTF EMAs (4) = 12 added  [v3: Sydney+TokyoLondon added]")
     print(f"  Feature build: {time.time()-t0:.1f}s")
 
     # ── Phase 2: walk-forward ──────────────────────────────────────────────────
@@ -286,9 +288,10 @@ def run_symbol(
             label_horizon   = LABEL_HORIZON,
             label_threshold = LABEL_THRESHOLD,
             mode            = "candle_predictor",
-            version         = 2,
-            extra_features  = ["session_london", "session_ny", "session_tokyo",
-                               "session_overlap", "hour_sin", "hour_cos",
+            version         = 3,
+            extra_features  = ["session_sydney", "session_tokyo", "session_london",
+                               "session_ny", "session_tok_lon", "session_lon_ny",
+                               "hour_sin", "hour_cos",
                                "ema_1h_ratio", "ema_1h_slope",
                                "ema_4h_ratio", "ema_4h_slope"],
         )
