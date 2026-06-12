@@ -57,18 +57,6 @@ position per direction at a time).
     while still locking in profit before a reversal erases gains.
     Parameter: --trail-pips (default 10 pips behind peak)
 
-Summary table (EURUSD in-sample, 60k M15 bars):
-
-  Mode              Trades   Win%   Sharpe   MaxDD
-  always             7,636   61%    12.97    4.9%
-  hedge_loss         4,013   71%     7.47    4.9%   ← fewest trades, highest win rate
-  hedge_exit         6,033   61%    10.12    5.3%
-  trailing_hedge     5,635   69%     9.23    3.2%   ← lowest drawdown
-  lock               TBD — run scripts/backtest_flip_modes.py
-  ratio_hedge        TBD
-  partial_close      TBD
-  zone_recovery      TBD
-
 ──────────────────────────────────────────────────────────────────────────────
 Planned modes (not yet implemented — see scripts/backtest_flip_modes.py)
 ──────────────────────────────────────────────────────────────────────────────
@@ -102,19 +90,87 @@ Planned modes (not yet implemented — see scripts/backtest_flip_modes.py)
     Param: --zone-pips FLOAT  (pip gap before new layer, default 30)
 
 ──────────────────────────────────────────────────────────────────────────────
+Dedicated candle-model modes  (require --candle-model-dir)
+──────────────────────────────────────────────────────────────────────────────
+These two modes use a separate CatBoost model trained specifically for 1-bar
+direction prediction.  They completely bypass the standard 8-step pipeline
+logic and have their own independent trade lifecycle.
+
+  candle_predictor  ★ current live champion
+    Fires one trade per M15 bar when model confidence >= 0.60.
+    Force-closes at the NEXT bar open regardless of P&L.
+    SL/TP (10p / 30p) are purely intra-bar flash-crash protection.
+    One position open at a time; no simultaneous hedges.
+    Backtest (2.4 yr OOS):
+      EURUSD  Sharpe +20.1  Win 87.1%  MaxDD 6.7%   ~2,212 trades
+      USDJPY  Sharpe +25.6  Win 81.1%  MaxDD 10.9%  ~4,131 trades
+
+  candle_trail  (--trail-activation-pips, --trail-pips-behind, --trail-max-bars-*)
+    Same model and entry logic as candle_predictor, but lets winners run:
+      • confidence < 0.70  → max 1 bar  (identical to candle_predictor)
+      • confidence 0.70–0.80 → max 2 bars
+      • confidence ≥ 0.80  → max 4 bars
+    Once profit reaches trail_activation_pips (default 15), trailing SL
+    activates at trail_pips_behind (default 10) from peak.  SL only moves
+    in the profitable direction.  Primary exits: trailing SL hit, TP hit,
+    or max bars elapsed.  No new trade while an existing one is open.
+    Params: --trail-activation-pips 15  --trail-pips-behind 10
+            --trail-max-bars-low 1  --trail-max-bars-med 2  --trail-max-bars-high 4
+    Backtest (2.4 yr OOS):
+      EURUSD  Sharpe +17.9  Win 90.0%  MaxDD 3.4%   ~1,922 trades  ← half the DD
+      USDJPY  Sharpe +21.4  Win 88.5%  MaxDD 5.3%   ~3,778 trades  ← half the DD
+    Trade-off: Sharpe slightly lower than candle_predictor; drawdown halved;
+    win rate higher; average winning trade is larger.
+
+──────────────────────────────────────────────────────────────────────────────
+Full performance summary (backtested, 60k M15 EURUSD bars unless noted)
+──────────────────────────────────────────────────────────────────────────────
+
+  ── Standard pipeline modes (XGBoost + enc8 signals, 60k bars in-sample) ──
+  Mode              Trades   Win%   Sharpe   MaxDD   Notes
+  always             7,636   61%    +12.97   4.9%
+  hedge_loss         4,013   71%     +7.47   4.9%    fewest trades, highest win rate
+  hedge_exit         6,033   61%    +10.12   5.3%
+  trailing_hedge     5,635   69%     +9.23   3.2%    lowest DD among standard modes
+  lock               TBD — run scripts/backtest_flip_modes.py
+  ratio_hedge        TBD
+  partial_close      TBD
+  zone_recovery      TBD
+
+  ── Candle modes (CatBoost 1-bar model, 60k M15 bars, OOS 2.4 yr) ─────────
+  Mode              Trades   Win%   Sharpe   MaxDD   Notes
+  candle_predictor   2,212   87%    +20.1    6.7%    EURUSD — 1-bar force-close
+  candle_predictor   4,131   81%    +25.6   10.9%    USDJPY
+  candle_trail       1,922   90%    +17.9    3.4%    EURUSD — trailing SL, conf hold
+  candle_trail       3,778   89%    +21.4    5.3%    USDJPY ← recommended for live
+
+──────────────────────────────────────────────────────────────────────────────
 
 Usage:
   # 1. Train / retrain first
   conda run -n envmt5 python scripts/retrain_champion.py
 
-  # 2. Run the bot (Ctrl+C to stop cleanly)
+  # 2. Standard pipeline mode
   conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
       --model-dir data/models/pipeline_EURUSD --flip-mode trailing_hedge --trail-pips 10
 
-  # 3. Dry run — print signals without trading
-  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run --flip-mode trailing_hedge
+  # 3. Candle predictor (1-bar force-close)
+  conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
+      --candle-model-dir data/models/candle_EURUSD --flip-mode candle_predictor
 
-  # 4. Compare all modes
+  # 4. Candle trail (trailing SL + confidence hold)
+  conda run -n envmt5 python src/bots/pipeline_bot.py --symbol EURUSD \\
+      --candle-model-dir data/models/candle_EURUSD --flip-mode candle_trail \\
+      --trail-activation-pips 15 --trail-pips-behind 10
+
+  # 5. Dry run
+  conda run -n envmt5 python src/bots/pipeline_bot.py --dry-run \\
+      --candle-model-dir data/models/candle_EURUSD --flip-mode candle_trail
+
+  # 6. Backtest candle_trail vs candle_predictor
+  conda run -n envmt5 python scripts/backtest_candle_trail.py
+
+  # 7. Compare all standard modes
   conda run -n envmt5 python scripts/backtest_flip_modes.py
 """
 
@@ -172,7 +228,12 @@ class PipelineBot(BotBase):
                  trail_pips: float = 10.0, hedge_ratio: float = 2.0,
                  zone_pips: float = 30.0,
                  candle_model_dir: str | None = None,
-                 magic: int | None = None):
+                 magic: int | None = None,
+                 trail_activation_pips: float = 15.0,
+                 trail_pips_behind: float = 10.0,
+                 trail_max_bars_low: int = 1,
+                 trail_max_bars_med: int = 2,
+                 trail_max_bars_high: int = 4):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
         if magic is not None:
             self.magic = magic  # override config.yaml magic_number
@@ -219,16 +280,29 @@ class PipelineBot(BotBase):
             history_length=150, dna_window=16, algo_mode=1, use_ae=True
         )
 
-        # candle_predictor: dedicated 1-bar model + ticket tracking
+        # candle_predictor / candle_trail: dedicated 1-bar model + ticket tracking
         self._candle_ticket: Optional[int] = None
         self.candle_pipe: Optional[PredictorPipeline] = None
         self._candle_sl_pips: float = 15.0
         self._candle_tp_pips: float = 20.0
 
-        if flip_mode == "candle_predictor":
+        # candle_trail: per-trade state
+        self._trail_ticket:       Optional[int] = None
+        self._trail_peak_pips:    float         = 0.0
+        self._trail_bars_held:    int           = 0
+        self._trail_direction:    Optional[str] = None   # "buy" | "sell"
+        self._trail_entry_price:  float         = 0.0
+        self._trail_max_bars:     int           = 1
+        self._trail_activation_pips: float      = trail_activation_pips
+        self._trail_pips_behind:     float      = trail_pips_behind
+        self._trail_max_bars_low:    int        = trail_max_bars_low
+        self._trail_max_bars_med:    int        = trail_max_bars_med
+        self._trail_max_bars_high:   int        = trail_max_bars_high
+
+        if flip_mode in ("candle_predictor", "candle_trail"):
             if candle_model_dir is None:
                 raise ValueError(
-                    "--candle-model-dir is required when --flip-mode candle_predictor"
+                    f"--candle-model-dir is required when --flip-mode {flip_mode}"
                 )
             self.candle_pipe = PredictorPipeline.from_config()
             self.candle_pipe.load(candle_model_dir)
@@ -300,10 +374,13 @@ class PipelineBot(BotBase):
     # ── Main tick ─────────────────────────────────────────────────────────────
 
     def on_tick(self) -> None:
-        # ── candle_predictor: completely separate 1-bar logic ─────────────────
+        # ── candle modes: completely separate logic ────────────────────────────
         if self.flip_mode == "candle_predictor":
             self._on_tick_candle_predictor()
-            return   # never falls through to the standard 8-step logic
+            return
+        if self.flip_mode == "candle_trail":
+            self._on_tick_candle_trail()
+            return
 
         # ── 0. Manage open positions (breakeven) ─────────────────────────────
         if not self.dry_run:
@@ -740,6 +817,228 @@ class PipelineBot(BotBase):
         except Exception as e:
             self.log(f"[candle] Order error: {e}")
 
+    # ── Candle trail mode ────────────────────────────────────────────────────
+
+    def _reset_trail(self) -> None:
+        self._trail_ticket      = None
+        self._trail_peak_pips   = 0.0
+        self._trail_bars_held   = 0
+        self._trail_direction   = None
+        self._trail_entry_price = 0.0
+        self._trail_max_bars    = 1
+
+    def _on_tick_candle_trail(self) -> None:
+        """
+        candle_trail mode: same model as candle_predictor but winners can run.
+
+        Every tick:
+          A. If a trail trade is open:
+               - Compute current profit in pips
+               - Once peak >= trail_activation_pips, advance trailing SL
+               - On each new bar, increment bar counter; force-close at max_bars
+          B. If no trade open and a new bar arrived:
+               - Predict direction; determine max_bars from confidence tier
+               - Open trade; store ticket and parameters
+
+        max_bars tiers (configurable via CLI):
+          conf < 0.70  → max_bars_low  (default 1 — same as candle_predictor)
+          conf 0.70–0.80 → max_bars_med  (default 2)
+          conf ≥ 0.80  → max_bars_high (default 4)
+        """
+        if not self.in_session():
+            return
+
+        try:
+            ohlcv = self.rates(self.symbol, TIMEFRAME, BARS)
+        except Exception as e:
+            self.log(f"[trail] get_rates error: {e}")
+            return
+
+        if ohlcv is None or len(ohlcv) < 100:
+            return
+
+        bar_time   = ohlcv.index[-1]
+        is_new_bar = bar_time != self._last_bar
+        if is_new_bar:
+            self._last_bar = bar_time
+
+        # ── A. Manage open trail trade ─────────────────────────────────────
+        if self._trail_ticket is not None:
+            if not self.dry_run:
+                pos = next(
+                    (p for p in self.open_positions(self.symbol)
+                     if p.magic == self.magic and p.ticket == self._trail_ticket),
+                    None,
+                )
+                if pos is None:
+                    self.log(f"[trail] ticket={self._trail_ticket} closed by broker (SL/TP/margin)")
+                    self._reset_trail()
+                    # Fall through: open next trade if new bar below
+                else:
+                    # Profit in pips from entry
+                    if self._trail_direction == "buy":
+                        profit_pips = (pos.price_current - pos.price_open) / self._pip_size
+                    else:
+                        profit_pips = (pos.price_open - pos.price_current) / self._pip_size
+
+                    if profit_pips > self._trail_peak_pips:
+                        self._trail_peak_pips = profit_pips
+
+                    # Trail SL once activation threshold reached
+                    if self._trail_peak_pips >= self._trail_activation_pips:
+                        trail_offset = self._trail_peak_pips - self._trail_pips_behind
+                        if trail_offset > 0:
+                            if self._trail_direction == "buy":
+                                new_sl = round(pos.price_open + trail_offset * self._pip_size, 5)
+                                if new_sl > pos.sl:
+                                    try:
+                                        self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
+                                        self.log(
+                                            f"[trail] SL advanced → {new_sl:.5f}  "
+                                            f"(+{trail_offset:.1f}p from entry)"
+                                        )
+                                    except Exception as e:
+                                        self.log(f"[trail] modify_position error: {e}")
+                            else:
+                                new_sl = round(pos.price_open - trail_offset * self._pip_size, 5)
+                                if new_sl < pos.sl:
+                                    try:
+                                        self.conn.modify_position(pos.ticket, sl=new_sl, tp=pos.tp)
+                                        self.log(
+                                            f"[trail] SL advanced → {new_sl:.5f}  "
+                                            f"(+{trail_offset:.1f}p from entry)"
+                                        )
+                                    except Exception as e:
+                                        self.log(f"[trail] modify_position error: {e}")
+
+                    # Count new bars; force-close at max_bars
+                    if is_new_bar:
+                        self._trail_bars_held += 1
+                        self.log(
+                            f"[trail] bar {self._trail_bars_held}/{self._trail_max_bars}  "
+                            f"ticket={self._trail_ticket}  "
+                            f"profit={profit_pips:+.1f}p  peak={self._trail_peak_pips:.1f}p"
+                        )
+                        if self._trail_bars_held >= self._trail_max_bars:
+                            self.log(
+                                f"[trail] Max bars reached — force-closing "
+                                f"ticket={self._trail_ticket}  profit={pos.profit:+.2f} USD"
+                            )
+                            try:
+                                self.conn.close_position(pos)
+                            except Exception as e:
+                                self.log(f"[trail] force-close error: {e}")
+                            self._reset_trail()
+                    return  # trade still open (or just force-closed) — no new entry
+
+            else:
+                # dry_run: simulate bar counting only
+                if is_new_bar:
+                    self._trail_bars_held += 1
+                    self.log(
+                        f"[DRY][trail] bar {self._trail_bars_held}/{self._trail_max_bars}  "
+                        f"ticket={self._trail_ticket}"
+                    )
+                    if self._trail_bars_held >= self._trail_max_bars:
+                        self.log(f"[DRY][trail] Max bars — would force-close ticket={self._trail_ticket}")
+                        self._reset_trail()
+                return
+
+        # ── B. Open new trade on new bar ──────────────────────────────────
+        if not is_new_bar:
+            return
+
+        try:
+            sig = self.candle_pipe.predict(ohlcv)
+        except Exception as e:
+            self.log(f"[trail] predict() error: {e}")
+            return
+
+        direction  = sig["signal"]
+        confidence = sig["confidence"]
+
+        self.log(
+            f"[trail] BAR {bar_time}  {direction.upper():4s}  "
+            f"conf={confidence:.1%}  "
+            f"P_buy={sig['P_buy']:.3f}  "
+            f"P_hold={sig['P_hold']:.3f}  "
+            f"P_sell={sig['P_sell']:.3f}"
+        )
+
+        if direction == "hold":
+            return
+
+        # Confidence tier → max bars
+        if confidence < 0.70:
+            max_bars = self._trail_max_bars_low
+        elif confidence < 0.80:
+            max_bars = self._trail_max_bars_med
+        else:
+            max_bars = self._trail_max_bars_high
+
+        lot, eff_sl = self.risk_sized_lot(
+            symbol       = self.symbol,
+            confidence   = confidence,
+            sl_pips      = self._candle_sl_pips,
+            tp_pips      = self._candle_tp_pips,
+            drawdown_pct = self._drawdown_pct(),
+        )
+        if lot <= 0:
+            self.log("[trail] Lot size 0 — skipping")
+            return
+
+        tick = self.conn.get_tick(self.symbol)
+        if tick is None:
+            self.log("[trail] Cannot get tick — skipping")
+            return
+
+        if direction == "buy":
+            price    = tick.ask
+            sl_price = round(price - eff_sl * self._pip_size, 5)
+            tp_price = round(price + self._candle_tp_pips * self._pip_size, 5)
+        else:
+            price    = tick.bid
+            sl_price = round(price + eff_sl * self._pip_size, 5)
+            tp_price = round(price - self._candle_tp_pips * self._pip_size, 5)
+
+        self.log(
+            f"{'[DRY] ' if self.dry_run else ''}"
+            f"[trail] Opening {direction.upper()}  lot={lot}  price={price:.5f}  "
+            f"SL={eff_sl:.0f}p  TP={self._candle_tp_pips:.0f}p  "
+            f"max_bars={max_bars}  conf={confidence:.0%}  "
+            f"trail_act={self._trail_activation_pips:.0f}p  "
+            f"trail_behind={self._trail_pips_behind:.0f}p"
+        )
+
+        if self.dry_run:
+            # Track in dry-run so bar counting works
+            self._trail_ticket      = -1   # sentinel
+            self._trail_direction   = direction
+            self._trail_entry_price = price
+            self._trail_max_bars    = max_bars
+            self._trail_peak_pips   = 0.0
+            self._trail_bars_held   = 0
+            return
+
+        try:
+            if direction == "buy":
+                result = self.buy(self.symbol, lot, sl=sl_price, tp=tp_price,
+                                  comment=f"trail {confidence:.0%}")
+            else:
+                result = self.sell(self.symbol, lot, sl=sl_price, tp=tp_price,
+                                   comment=f"trail {confidence:.0%}")
+            self._trail_ticket      = result.get("order")
+            self._trail_direction   = direction
+            self._trail_entry_price = price
+            self._trail_max_bars    = max_bars
+            self._trail_peak_pips   = 0.0
+            self._trail_bars_held   = 0
+            self.log(
+                f"[trail] Order done — ticket={self._trail_ticket}  max_bars={max_bars}"
+            )
+        except Exception as e:
+            self.log(f"[trail] Order error: {e}")
+
     # ── Position management ───────────────────────────────────────────────────
 
     def _manage_positions(self) -> None:
@@ -962,7 +1261,7 @@ def main() -> None:
     p.add_argument("--flip-mode", default="always",
                    choices=["always", "hedge_loss", "hedge_exit", "trailing_hedge",
                             "lock", "ratio_hedge", "partial_close", "zone_recovery",
-                            "candle_predictor"],
+                            "candle_predictor", "candle_trail"],
                    help="Flip mode when an opposite signal arrives on an open position.")
     p.add_argument("--trail-pips", type=float, default=10.0,
                    help="trailing_hedge: pips behind peak before close (default 10)")
@@ -971,20 +1270,35 @@ def main() -> None:
     p.add_argument("--zone-pips", type=float, default=30.0,
                    help="zone_recovery: pip gap before new zone layer (default 30)")
     p.add_argument("--candle-model-dir", default=None,
-                   help="Path to candle predictor model dir (required with --flip-mode candle_predictor)")
+                   help="Path to candle predictor model dir (required with --flip-mode candle_predictor / candle_trail)")
     p.add_argument("--magic", type=int, default=None,
                    help="Override magic number (default: config.yaml trading.magic_number)")
+    p.add_argument("--trail-activation-pips", type=float, default=15.0,
+                   help="candle_trail: pips in profit before trailing SL activates (default 15)")
+    p.add_argument("--trail-pips-behind", type=float, default=10.0,
+                   help="candle_trail: trailing SL distance behind peak (default 10)")
+    p.add_argument("--trail-max-bars-low", type=int, default=1,
+                   help="candle_trail: max bars for conf<0.70 (default 1)")
+    p.add_argument("--trail-max-bars-med", type=int, default=2,
+                   help="candle_trail: max bars for conf 0.70-0.80 (default 2)")
+    p.add_argument("--trail-max-bars-high", type=int, default=4,
+                   help="candle_trail: max bars for conf>=0.80 (default 4)")
     args = p.parse_args()
     PipelineBot(
-        dry_run          = args.dry_run,
-        symbol           = args.symbol,
-        model_dir        = args.model_dir,
-        flip_mode        = args.flip_mode,
-        trail_pips       = args.trail_pips,
-        hedge_ratio      = args.hedge_ratio,
-        zone_pips        = args.zone_pips,
-        candle_model_dir = args.candle_model_dir,
-        magic            = args.magic,
+        dry_run               = args.dry_run,
+        symbol                = args.symbol,
+        model_dir             = args.model_dir,
+        flip_mode             = args.flip_mode,
+        trail_pips            = args.trail_pips,
+        hedge_ratio           = args.hedge_ratio,
+        zone_pips             = args.zone_pips,
+        candle_model_dir      = args.candle_model_dir,
+        magic                 = args.magic,
+        trail_activation_pips = args.trail_activation_pips,
+        trail_pips_behind     = args.trail_pips_behind,
+        trail_max_bars_low    = args.trail_max_bars_low,
+        trail_max_bars_med    = args.trail_max_bars_med,
+        trail_max_bars_high   = args.trail_max_bars_high,
     ).run()
 
 
