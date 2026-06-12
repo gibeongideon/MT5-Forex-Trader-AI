@@ -171,8 +171,11 @@ class PipelineBot(BotBase):
                  model_dir: str | None = None, flip_mode: str = "always",
                  trail_pips: float = 10.0, hedge_ratio: float = 2.0,
                  zone_pips: float = 30.0,
-                 candle_model_dir: str | None = None):
+                 candle_model_dir: str | None = None,
+                 magic: int | None = None):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
+        if magic is not None:
+            self.magic = magic  # override config.yaml magic_number
         self.dry_run     = dry_run
         self.symbol      = symbol
         self.flip_mode   = flip_mode
@@ -969,6 +972,8 @@ def main() -> None:
                    help="zone_recovery: pip gap before new zone layer (default 30)")
     p.add_argument("--candle-model-dir", default=None,
                    help="Path to candle predictor model dir (required with --flip-mode candle_predictor)")
+    p.add_argument("--magic", type=int, default=None,
+                   help="Override magic number (default: config.yaml trading.magic_number)")
     args = p.parse_args()
     PipelineBot(
         dry_run          = args.dry_run,
@@ -979,6 +984,7 @@ def main() -> None:
         hedge_ratio      = args.hedge_ratio,
         zone_pips        = args.zone_pips,
         candle_model_dir = args.candle_model_dir,
+        magic            = args.magic,
     ).run()
 
 

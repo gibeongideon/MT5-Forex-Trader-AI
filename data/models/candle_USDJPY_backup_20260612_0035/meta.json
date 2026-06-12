@@ -41,17 +41,7 @@
     "latent_4",
     "latent_5",
     "latent_6",
-    "latent_7",
-    "session_london",
-    "session_ny",
-    "session_tokyo",
-    "session_overlap",
-    "hour_sin",
-    "hour_cos",
-    "ema_1h_ratio",
-    "ema_1h_slope",
-    "ema_4h_ratio",
-    "ema_4h_slope"
+    "latent_7"
   ],
   "split_date": "2026-06-05 23:45:00",
   "cfg": {
