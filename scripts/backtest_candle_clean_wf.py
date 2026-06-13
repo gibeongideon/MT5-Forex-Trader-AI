@@ -36,8 +36,14 @@ sys.path.insert(0, str(ROOT))
 warnings.filterwarnings("ignore")
 
 from src.pipeline import PredictorPipeline, PipelineConfig
-from scripts.train_candle_model import _add_extra_features, SYMBOL_CFG
+from scripts.train_candle_model import SYMBOL_CFG
+from scripts.audit_live_champions import add_extra_features as _add_extra_fixed
 from src.models.catboost_model import CatBoostModel
+
+
+def _add_extra_features(df_raw, X):
+    """Leak-free extras: fixed MTF EMAs (no resample lookahead)."""
+    return _add_extra_fixed(df_raw, X, fix_lookahead=True)
 
 # ── Config (mirrors original train_candle_model.py) ───────────────────────────
 

@@ -176,6 +176,113 @@ def triple_barrier_labels_fast(
     return pd.Series(labels, index=close.index, dtype=int)
 
 
+def side_barrier_meta_label(
+    high:     pd.Series,
+    low:      pd.Series,
+    close:    pd.Series,
+    side:     pd.Series,        # +1 long / -1 short / NaN (no primary signal)
+    atr:      pd.Series,        # RAW ATR in price units (e.g. indicators.atr) — NOT scaled
+    tp_mult:  float = 1.5,
+    sl_mult:  float = 1.5,
+    horizon:  int   = 16,
+    pip_size: float = 0.0001,
+) -> pd.DataFrame:
+    """
+    Side-conditioned triple-barrier labels for META-LABELING.
+
+    Unlike `triple_barrier_labels_fast` (which evaluates BOTH long and short and
+    collapses to 0 unless exactly one wins — the cause of Phase-26 15% sparsity),
+    this evaluates ONLY the side the primary model chose. The output is the binary
+    answer to "did THIS trade hit TP before SL within `horizon` bars?".
+
+    For each bar t where `side[t]` is +1/-1:
+      entry   = close[t]                      (enter at signal-bar close)
+      tp_dist = tp_mult * atr[t]              (ATR-scaled, in price units)
+      sl_dist = sl_mult * atr[t]
+      LONG  : TP = entry + tp_dist, SL = entry - sl_dist
+      SHORT : TP = entry - tp_dist, SL = entry + sl_dist
+    Scan bars t+1 … t+horizon using intrabar high/low (conservative: if both TP and
+    SL fall inside the same bar's range, the SL is assumed hit first).
+      - TP hit first              → meta_y = 1, resolved = True
+      - SL hit first              → meta_y = 0, resolved = True
+      - neither within horizon    → meta_y = 0, resolved = False (time barrier);
+                                     pips = force-close at close[t+horizon]
+
+    Returns a DataFrame indexed like `close`, with rows only for bars where the
+    primary fired (others dropped). Columns:
+      side      : +1/-1 (the primary's side)
+      meta_y    : {0,1}  (1 = TP-before-SL win)
+      resolved  : bool   (False = time-barrier force-close)
+      pips      : gross realized pips (costs applied by the backtester, not here)
+      sl_pips   : sl_dist / pip_size  (per-trade risk distance, for R-unit sizing)
+    """
+    h = high.to_numpy(np.float64)
+    l = low.to_numpy(np.float64)
+    c = close.to_numpy(np.float64)
+    s = side.to_numpy(np.float64)
+    a = atr.to_numpy(np.float64)
+    n = len(c)
+    idx = close.index
+
+    out_idx, out_side, out_y, out_res, out_pips, out_slp = [], [], [], [], [], []
+
+    for i in range(n - 1):
+        si = s[i]
+        if not (si == 1.0 or si == -1.0):
+            continue
+        atr_i = a[i]
+        if not np.isfinite(atr_i) or atr_i <= 0:
+            continue
+
+        entry   = c[i]
+        tp_dist = tp_mult * atr_i
+        sl_dist = sl_mult * atr_i
+        end     = min(i + 1 + horizon, n)
+
+        if si == 1.0:                      # LONG
+            tp_lvl, sl_lvl = entry + tp_dist, entry - sl_dist
+        else:                              # SHORT
+            tp_lvl, sl_lvl = entry - tp_dist, entry + sl_dist
+
+        meta_y, resolved, pips = 0, False, None
+        for j in range(i + 1, end):
+            hj, lj = h[j], l[j]
+            if si == 1.0:
+                hit_sl = lj <= sl_lvl
+                hit_tp = hj >= tp_lvl
+            else:
+                hit_sl = hj >= sl_lvl
+                hit_tp = lj <= tp_lvl
+            if hit_sl:                     # conservative: SL checked first
+                meta_y, resolved = 0, True
+                pips = -sl_dist / pip_size
+                break
+            if hit_tp:
+                meta_y, resolved = 1, True
+                pips = tp_dist / pip_size
+                break
+        if pips is None:                   # time barrier → force-close
+            c_end = c[end - 1]
+            pips  = si * (c_end - entry) / pip_size
+            meta_y, resolved = (1 if pips > 0 else 0), False
+            # NOTE: time-barrier wins are NOT counted as meta_y=1 for TRAINING by
+            # default below; we expose resolved so the caller can choose. Here we
+            # set meta_y by realized sign so `pips` and `meta_y` stay consistent.
+
+        out_idx.append(idx[i])
+        out_side.append(int(si))
+        out_y.append(int(meta_y))
+        out_res.append(resolved)
+        out_pips.append(float(pips))
+        out_slp.append(float(sl_dist / pip_size))
+
+    return pd.DataFrame(
+        {"side": out_side, "meta_y": out_y, "resolved": out_res,
+         "pips": out_pips, "sl_pips": out_slp},
+        index=pd.Index(out_idx, name=close.index.name),
+    )
+
+
 def label_stats(y: pd.Series, name: str = "Labels") -> None:
     """Print label distribution."""
     total = len(y)
