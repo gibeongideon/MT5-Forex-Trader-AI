@@ -84,6 +84,11 @@ class PipelineConfig:
     encoder_d_model:    int   = 32
     encoder_n_heads:    int   = 4
     encoder_n_layers:   int   = 2
+    # Forecast-specific (only used when encoder_mode="forecast")
+    encoder_forecast_horizons: int = 8
+    # Contrastive-specific (only used when encoder_mode="contrastive")
+    encoder_contrastive_temp:  float = 0.1
+    encoder_proj_dim:          int   = 32
 
     # Walk-forward
     wf_window_type: str          = "expanding"  # expanding | sliding
@@ -154,6 +159,9 @@ class PipelineConfig:
             encoder_d_model    = enc.get("d_model",     32),
             encoder_n_heads    = enc.get("n_heads",     4),
             encoder_n_layers   = enc.get("n_layers",    2),
+            encoder_forecast_horizons = enc.get("forecast_horizons", 8),
+            encoder_contrastive_temp  = enc.get("contrastive_temp",  0.1),
+            encoder_proj_dim          = enc.get("proj_dim",          32),
 
             wf_window_type = wf.get("window_type", "expanding"),
             wf_train_days  = wf.get("train_days",  180),
@@ -236,6 +244,9 @@ class PredictorPipeline:
                 transformer_d_model      = cfg.encoder_d_model,
                 transformer_n_heads      = cfg.encoder_n_heads,
                 transformer_n_layers     = cfg.encoder_n_layers,
+                forecast_horizons        = cfg.encoder_forecast_horizons,
+                contrastive_temp         = cfg.encoder_contrastive_temp,
+                contrastive_proj_dim     = cfg.encoder_proj_dim,
             )
             if cfg.encoder_enabled else None
         )
@@ -274,6 +285,7 @@ class PredictorPipeline:
         self,
         df_raw:     pd.DataFrame,
         train_frac: float = None,
+        pretrained_state_dict: dict = None,
     ) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Build the full feature matrix (base indicators + optional latent dims).
@@ -311,16 +323,18 @@ class PredictorPipeline:
 
         # Latent encoder — trained on train only
         if self._enc is not None:
+            _needs_labels = ("supervised", "transformer", "multitask")
             y_for_enc = (
                 y_full.reindex(df_tr.index)
-                if self._enc.mode in ("supervised", "transformer", "multitask") else None
+                if self._enc.mode in _needs_labels else None
             )
             print(
                 f"[Pipeline] Training {self._enc.mode} encoder "
                 f"(latent_dim={self._enc.latent_dim})...",
                 flush=True,
             )
-            self._enc.fit(df_tr, y=y_for_enc)
+            self._enc.fit(df_tr, y=y_for_enc,
+                          pretrained_state_dict=pretrained_state_dict)
 
             latent_full = self._enc.transform(df_raw)      # (n_rows, latent_dim)
 
