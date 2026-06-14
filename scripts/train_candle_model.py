@@ -63,6 +63,20 @@ SYMBOL_CFG = {
         sl_pips   = 10.0,
         tp_pips   = 30.0,
     ),
+    "GBPUSD": dict(
+        data_path = "data/GBPUSD_M15.csv",
+        model_dir = "data/models/candle_GBPUSD",
+        pip_size  = 0.0001,
+        sl_pips   = 10.0,
+        tp_pips   = 30.0,
+    ),
+    "XAUUSD": dict(
+        data_path = "data/XAUUSD_M15.csv",
+        model_dir = "data/models/candle_XAUUSD",
+        pip_size  = 0.1,    # gold: 1 pip = 0.1 price (matches download_dukascopy)
+        sl_pips   = 100.0,  # gold moves are larger; ATR-scaled barriers used in meta harness
+        tp_pips   = 200.0,
+    ),
 }
 
 
