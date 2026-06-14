@@ -160,10 +160,10 @@ def _trades_from(side_test, p_win, label_df, meta_threshold):
 
 # ── Per-symbol walk-forward ──────────────────────────────────────────────────────
 
-def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None):
+def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_path=None):
     cfg_s    = SYMBOL_CFG[symbol]
     pip_size = cfg_s["pip_size"]
-    df_raw   = _load_raw(cfg_s["data_path"])
+    df_raw   = _load_raw(data_path or cfg_s["data_path"])
     folds    = _get_expanding_folds(df_raw.index, MIN_TRAIN_DAYS, STEP_DAYS,
                                     TEST_DAYS, max_folds=max_folds)
 
@@ -309,6 +309,7 @@ def main():
     ap.add_argument("--tp-mult", type=float, default=None, help="override TP ATR multiple")
     ap.add_argument("--sl-mult", type=float, default=None, help="override SL ATR multiple")
     ap.add_argument("--horizon", type=int, default=None, help="override barrier horizon (bars)")
+    ap.add_argument("--data", default=None, help="override data CSV path (e.g. deep history)")
     args = ap.parse_args()
 
     # allow barrier-geometry overrides (for asymmetric-barrier experiments)
@@ -330,7 +331,8 @@ def main():
     allr = []
     for sym in symbols:
         allr += run_symbol(sym, args.primary, thresholds,
-                           gate_a=(args.gate == "A"), max_folds=args.folds)
+                           gate_a=(args.gate == "A"), max_folds=args.folds,
+                           data_path=args.data)
 
     print(f"\n{'='*74}\n  SUMMARY  (primary={args.primary})")
     print(f"  {'Symbol':>8} {'Thr':>5} {'Sharpe':>8} {'Win%':>6} {'Trades':>7} {'MaxDD':>7} {'Worst':>7}")
