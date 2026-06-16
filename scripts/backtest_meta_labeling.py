@@ -54,6 +54,7 @@ from scripts.audit_live_champions import add_extra_features  # fix_lookahead-awa
 from scripts.backtest_champion_baseline import (
     TemporalCalibratedXGBoost, _get_expanding_folds, _load_raw,
 )
+from scripts.session_analysis import session_mask, SESSION_DEFS
 
 # ── Config ─────────────────────────────────────────────────────────────────────
 MIN_TRAIN_DAYS  = 180
@@ -138,10 +139,10 @@ def _equity_stats(trades):
     return dd, ret
 
 
-def _trades_from(side_test, p_win, label_df, meta_threshold):
+def _trades_from(side_test, p_win, label_df, meta_threshold, spread_at=None):
     """Build trade list from test-window signals filtered by meta P(win) threshold.
     label_df (from side_barrier_meta_label on the full fold) supplies matched-exit
-    pips + sl_pips. Applies spread+commission, converts to R-units."""
+    pips + sl_pips. Applies REAL per-bar spread (if given) + commission, → R-units."""
     trades = []
     for ts in side_test.index:
         if ts not in label_df.index:      # primary didn't fire / no atr
@@ -149,7 +150,8 @@ def _trades_from(side_test, p_win, label_df, meta_threshold):
         if p_win.get(ts, 0.0) < meta_threshold:
             continue
         row = label_df.loc[ts]
-        net_pips = row["pips"] - SPREAD_PIPS - COMM_PIPS
+        spr = float(spread_at.get(ts, SPREAD_PIPS)) if spread_at is not None else SPREAD_PIPS
+        net_pips = row["pips"] - spr - COMM_PIPS
         sl_pips  = row["sl_pips"]
         if sl_pips <= 0:
             continue
@@ -158,30 +160,70 @@ def _trades_from(side_test, p_win, label_df, meta_threshold):
     return trades
 
 
+def _bootstrap_sharpe_ci(trades, n_boot=1000):
+    """Bootstrap 95% CI on annualized R-Sharpe (resample trades with replacement)."""
+    if len(trades) < 20:
+        return (float("nan"), float("nan"))
+    R = np.array([t["R"] for t in trades])
+    span = (trades[-1]["ts"] - trades[0]["ts"]).total_seconds() / 86400
+    tpy = len(trades) / span * 365.25 if span > 0 else len(trades)
+    rng = np.random.default_rng(42)
+    sh = []
+    for _ in range(n_boot):
+        s = rng.choice(R, size=len(R), replace=True)
+        sd = s.std(ddof=1)
+        if sd > 1e-12:
+            sh.append(s.mean() / sd * np.sqrt(tpy))
+    if not sh:
+        return (float("nan"), float("nan"))
+    return (float(np.percentile(sh, 2.5)), float(np.percentile(sh, 97.5)))
+
+
 # ── Per-symbol walk-forward ──────────────────────────────────────────────────────
 
-def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_path=None):
+def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_path=None,
+               hour_gate=None, gate_mode="trade", min_meta_rows=150):
     cfg_s    = SYMBOL_CFG[symbol]
     pip_size = cfg_s["pip_size"]
     df_raw   = _load_raw(data_path or cfg_s["data_path"])
     folds    = _get_expanding_folds(df_raw.index, MIN_TRAIN_DAYS, STEP_DAYS,
                                     TEST_DAYS, max_folds=max_folds)
+    # real per-bar spread (pips) if present & non-zero, else flat fallback
+    has_spread = ("spread" in df_raw.columns) and (df_raw["spread"].abs().sum() > 0)
+    spread_ser = df_raw["spread"] if has_spread else None
+
+    gate_str = ""
+    if hour_gate is not None:
+        ho, hc, mid = hour_gate
+        gate_str = f"  |  HOUR-GATE {ho:02d}-{hc:02d}UTC ({gate_mode})"
 
     print(f"\n{'='*74}")
     print(f"  META-LABELING WF — {symbol}  |  primary={primary}"
-          f"{'  [GATE A: no meta filter]' if gate_a else ''}")
+          f"{'  [GATE A: no meta filter]' if gate_a else ''}{gate_str}")
     print(f"  {len(df_raw):,} bars  ({df_raw.index[0].date()} → {df_raw.index[-1].date()})")
     print(f"  expanding {MIN_TRAIN_DAYS}d/{STEP_DAYS}d  |  {len(folds)} folds  |  "
           f"barriers tp={TP_MULT}*ATR sl={SL_MULT}*ATR h={BARRIER_HORIZON}")
-    print(f"  leak-free: encoder OFF, MTF lookahead FIXED, raw ATR, purged splits")
+    print(f"  leak-free: encoder OFF, MTF lookahead FIXED, raw ATR, purged splits  |  "
+          f"spread={'REAL per-bar' if has_spread else 'flat 1.0p'}")
     print(f"{'='*74}\n")
 
     cfg = PipelineConfig(label_horizon=LABEL_HORIZON, label_threshold=LABEL_THRESHOLD,
                          encoder_enabled=False)
-    bar_td = pd.Timedelta(minutes=15)
+    # auto-detect bar size (so H1/H4 work, not just M15) — used for purge window
+    _gaps = df_raw.index.to_series().diff().dropna()
+    bar_td = _gaps.median() if len(_gaps) else pd.Timedelta(minutes=15)
+
+    def _gate(side_ser):
+        """Set side=NaN outside the UTC hour window."""
+        if hour_gate is None:
+            return side_ser
+        ho, hc, mid = hour_gate
+        hrs = pd.Series(side_ser.index.hour, index=side_ser.index)
+        return side_ser.where(session_mask(hrs, ho, hc, mid), np.nan)
 
     # cache per-fold test predictions so threshold sweep is instant
     fold_cache = []
+    skipped = 0
     t0 = time.time()
 
     for fi, tr_start, tr_end, te_end in folds:
@@ -212,6 +254,11 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
             y_A = y_A.loc[X_A.index]
             side_full = _primary_xgb_side(X_A, y_A, X_full)
 
+        # HOUR-GATE: train-mode gates everywhere (meta trains+trades in-window);
+        # trade-mode leaves side_full for all-hours meta-training and gates test only.
+        if gate_mode == "train":
+            side_full = _gate(side_full)
+
         # barrier labels over the whole fold (used for both meta-train and exits)
         # align side to the full price index (feature matrix drops indicator-warmup bars)
         side_aligned = side_full.reindex(df_full.index)
@@ -225,8 +272,10 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
         B_mask = (label_full.index >= mid) & (label_full.index < purge_cut)
         lab_B  = label_full[B_mask]
 
-        test_mask = (side_full.index >= tr_end) & (side_full.index < te_end)
-        side_te   = side_full[test_mask].dropna()
+        # in trade-mode, gate ONLY the test signals (meta still trained all-hours)
+        side_trade = side_full if (gate_mode == "train" or hour_gate is None) else _gate(side_full)
+        test_mask  = (side_trade.index >= tr_end) & (side_trade.index < te_end)
+        side_te    = side_trade[test_mask].dropna()
 
         if gate_a:
             # Gate A: NO meta model — trade every primary signal (matched exit only)
@@ -238,8 +287,9 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
                   f"meta_train(B)={len(lab_B)}  test_signals={n_fire}", flush=True)
             continue
 
-        if len(lab_B) < 150 or lab_B["meta_y"].nunique() < 2:
+        if len(lab_B) < min_meta_rows or lab_B["meta_y"].nunique() < 2:
             print(f"  fold {fi:>2}: too few meta-train rows ({len(lab_B)}) — skip")
+            skipped += 1
             continue
 
         # meta features = engineered + side
@@ -265,7 +315,9 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
               f"test_signals={len(side_te)}  p_win[{p_win.min():.2f},{p_win.max():.2f}]",
               flush=True)
 
-    print(f"\n  Folds processed in {(time.time()-t0)/60:.1f} min.\n")
+    n_valid = len(fold_cache)
+    print(f"\n  Folds processed in {(time.time()-t0)/60:.1f} min.  "
+          f"valid folds={n_valid}  skipped(sparse)={skipped}\n")
 
     # ── evaluate threshold(s) against cached predictions ──
     sweep = thresholds if not gate_a else [0.0]
@@ -273,7 +325,7 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
     for thr in sweep:
         all_trades, fold_sharpes = [], []
         for fi, tr_end, te_end, side_te, p_win, lab_te in fold_cache:
-            tr = _trades_from(side_te, p_win, lab_te, thr)
+            tr = _trades_from(side_te, p_win, lab_te, thr, spread_at=spread_ser)
             all_trades += tr
             if len(tr) >= 10:
                 fold_sharpes.append(_sharpe_R(tr))
@@ -284,17 +336,25 @@ def run_symbol(symbol, primary, thresholds, gate_a=False, max_folds=None, data_p
                                 win=float("nan"), dd=float("nan")))
             continue
         sh = _sharpe_R(all_trades)
+        ci_lo, ci_hi = _bootstrap_sharpe_ci(all_trades)
         wins = sum(1 for t in all_trades if t["win"])
         wr = wins / len(all_trades)
         dd, ret = _equity_stats(all_trades)
         worst = min(fold_sharpes) if fold_sharpes else float("nan")
-        med_n = int(np.median([sum(1 for t in all_trades
-                    if t["ts"] >= te and t["ts"] < tn) for _, te, tn, *_ in fold_cache] or [0]))
+        # concentration: max single-fold share of total |R|
+        fold_pnl = {}
+        for t in all_trades:
+            fk = t["ts"].normalize()
+            fold_pnl[fk] = fold_pnl.get(fk, 0) + t["R"]
         tag = "  [GATE A]" if gate_a else ""
-        print(f"  thr={thr:.2f}{tag}  Sharpe={sh:+.3f}  win={wr:.1%}  "
-              f"trades={len(all_trades)}  DD={dd:.1f}%  worst-fold={worst:+.2f}")
+        n_valid_folds = len(fold_sharpes)
+        print(f"  thr={thr:.2f}{tag}  Sharpe={sh:+.3f} (95%CI [{ci_lo:+.2f},{ci_hi:+.2f}])  "
+              f"win={wr:.1%}  trades={len(all_trades)}  DD={dd:.1f}%  "
+              f"worst-fold={worst:+.2f}  valid_folds={n_valid_folds}")
         results.append(dict(symbol=symbol, primary=primary, thr=thr, sharpe=sh,
-                            n=len(all_trades), win=wr, dd=dd, ret=ret, worst=worst))
+                            ci_lo=ci_lo, ci_hi=ci_hi, n=len(all_trades), win=wr,
+                            dd=dd, ret=ret, worst=worst, valid_folds=n_valid_folds,
+                            skipped=skipped))
     return results
 
 
@@ -310,6 +370,15 @@ def main():
     ap.add_argument("--sl-mult", type=float, default=None, help="override SL ATR multiple")
     ap.add_argument("--horizon", type=int, default=None, help="override barrier horizon (bars)")
     ap.add_argument("--data", default=None, help="override data CSV path (e.g. deep history)")
+    ap.add_argument("--hours", type=int, nargs=2, metavar=("START", "END"), default=None,
+                    help="UTC hour gate [START,END); END<=START = midnight-crossing")
+    ap.add_argument("--session", default=None,
+                    help="named session from session_analysis.SESSION_DEFS (overrides --hours)")
+    ap.add_argument("--gate-mode", choices=["trade", "train"], default="trade",
+                    help="trade: meta trained all-hours, traded in-window; train: both in-window")
+    ap.add_argument("--min-meta-rows", type=int, default=150)
+    ap.add_argument("--allow-nonutc-gate", action="store_true",
+                    help="permit hour-gating broker-time data (NOT recommended)")
     args = ap.parse_args()
 
     # allow barrier-geometry overrides (for asymmetric-barrier experiments)
@@ -325,14 +394,35 @@ def main():
     else:
         thresholds = [META_THRESHOLD]
 
+    # resolve hour-gate (--session overrides --hours)
+    hour_gate = None
+    if args.session:
+        sd = {n: (o, c, m) for n, o, c, m, _e in SESSION_DEFS}
+        if args.session not in sd:
+            print(f"Unknown session '{args.session}'. Options: {list(sd)}"); sys.exit(1)
+        hour_gate = sd[args.session]
+    elif args.hours:
+        o, c = args.hours
+        hour_gate = (o, c, c <= o)
+
+    # timezone guard: hour-gating only valid on UTC (deep _long) data
+    if hour_gate is not None:
+        is_utc = (args.data and "_long" in args.data) or args.allow_nonutc_gate
+        if not is_utc:
+            print("REFUSING to hour-gate non-UTC data (short files are broker-time, "
+                  "spread=0). Use --data data/{SYM}_M15_long.csv or --allow-nonutc-gate.")
+            sys.exit(1)
+
     symbols = [args.symbol] if args.symbol else list(SYMBOL_CFG.keys())
-    print(f"\n{'#'*74}\n  PHASE 3 — CLEAN META-LABELING  (primary={args.primary})\n{'#'*74}")
+    print(f"\n{'#'*74}\n  PHASE 3 — CLEAN META-LABELING  (primary={args.primary}"
+          f"{'  GATE='+str(hour_gate)+' '+args.gate_mode if hour_gate else ''})\n{'#'*74}")
 
     allr = []
     for sym in symbols:
         allr += run_symbol(sym, args.primary, thresholds,
                            gate_a=(args.gate == "A"), max_folds=args.folds,
-                           data_path=args.data)
+                           data_path=args.data, hour_gate=hour_gate,
+                           gate_mode=args.gate_mode, min_meta_rows=args.min_meta_rows)
 
     print(f"\n{'='*74}\n  SUMMARY  (primary={args.primary})")
     print(f"  {'Symbol':>8} {'Thr':>5} {'Sharpe':>8} {'Win%':>6} {'Trades':>7} {'MaxDD':>7} {'Worst':>7}")

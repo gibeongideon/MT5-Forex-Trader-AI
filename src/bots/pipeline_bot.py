@@ -289,12 +289,20 @@ class PipelineBot(BotBase):
                  trail_pips_behind: float = 10.0,
                  trail_max_bars_low: int = 1,
                  trail_max_bars_med: int = 2,
-                 trail_max_bars_high: int = 4):
+                 trail_max_bars_high: int = 4,
+                 max_lot: float | None = None):
         super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
         if magic is not None:
             self.magic = magic  # override config.yaml magic_number
         self.dry_run     = dry_run
         self.symbol      = symbol
+        self._symbol_resolved = False   # broker-suffix auto-resolution (e.g. EURUSD→EURUSD.Z)
+        # realistic hard cap on lot size (risk-% sizing on a large balance can balloon);
+        # from config trading.max_lot, default 0.50 lots. Override per-bot via --max-lot.
+        self.max_lot = float(
+            (max_lot if max_lot is not None
+             else self.config.get("trading", {}).get("max_lot", 0.50))
+        )
         self.flip_mode   = flip_mode
         self.trail_pips  = trail_pips   # trailing_hedge
         self.hedge_ratio = hedge_ratio  # ratio_hedge: hedge lot multiplier
@@ -437,7 +445,56 @@ class PipelineBot(BotBase):
 
     # ── Main tick ─────────────────────────────────────────────────────────────
 
+    def risk_sized_lot(self, *args, **kwargs):
+        """Wrap the base risk sizer with a realistic hard cap (self.max_lot).
+        Risk-% sizing on a large balance can balloon lots; cap covers all
+        trade paths (main / candle_predictor / candle_trail)."""
+        lot, eff_sl = super().risk_sized_lot(*args, **kwargs)
+        if self.max_lot and lot > self.max_lot:
+            self.log(f"Lot {lot:.2f} capped to max_lot {self.max_lot:.2f}")
+            lot = self.max_lot
+        return lot, eff_sl
+
+    def _ensure_symbol_resolved(self) -> None:
+        """Map a disabled/display-only symbol to the broker's tradable variant.
+        Many brokers (e.g. HFM) expose suffixed instruments — plain 'EURUSD' has
+        trade_mode=0 (disabled) while 'EURUSD.Z' is the tradable one. Resolve once,
+        broker-agnostically: pick the same-base symbol with full trading (mode 4),
+        preferring visible then shortest name. No-op if the symbol already trades."""
+        if self._symbol_resolved:
+            return
+        self._symbol_resolved = True
+        mt5 = getattr(self.conn, "_mt5", None)
+        try:
+            info = self.conn.symbol_info(self.symbol)
+        except Exception:
+            info = None
+        if info is not None and getattr(info, "trade_mode", 0) == 4:
+            try: mt5.symbol_select(self.symbol, True)
+            except Exception: pass
+            return
+        base = self.symbol[:6].upper()
+        try:
+            allsyms = mt5.symbols_get() or []
+        except Exception:
+            allsyms = []
+        cands = [s for s in allsyms
+                 if s.name[:6].upper() == base and getattr(s, "trade_mode", 0) == 4]
+        cands.sort(key=lambda s: (not getattr(s, "visible", False), len(s.name)))
+        if cands:
+            resolved = cands[0].name
+            self.log(f"Symbol '{self.symbol}' not tradable "
+                     f"(trade_mode={getattr(info,'trade_mode',None)}) — "
+                     f"switching to broker symbol '{resolved}'")
+            self.symbol = resolved
+            try: mt5.symbol_select(resolved, True)
+            except Exception: pass
+        else:
+            self.log(f"WARNING: no tradable variant found for base '{base}' — "
+                     f"orders may fail (retcode 10017)")
+
     def on_tick(self) -> None:
+        self._ensure_symbol_resolved()
         # ── candle modes: completely separate logic ────────────────────────────
         if self.flip_mode == "candle_predictor":
             self._on_tick_candle_predictor()
@@ -665,10 +722,12 @@ class PipelineBot(BotBase):
         # Apply Suffix Automaton + Autoencoder structural multiplier.
         # closes must be most-recent-first so we reverse the DataFrame order.
         sa_mult = self._sa_sizer.compute(ohlcv["close"].values[::-1].tolist())
+        sa_mult = min(sa_mult, 1.0)   # structural multiplier may only DE-RISK, never inflate
         if sa_mult != 1.0:
             lot_before = lot
             lot = round(lot * sa_mult, 2)
             lot = max(lot, self.conn.symbol_info(self.symbol).volume_min)
+            lot = min(lot, self.max_lot)
             self.log(f"SA+AE: mult={sa_mult:.4f}  lot {lot_before} → {lot}")
 
         # ── 8. Open position ──────────────────────────────────────────────────
@@ -1355,8 +1414,11 @@ def main() -> None:
                    help="candle_trail: max bars for conf 0.70-0.80 (default 2)")
     p.add_argument("--trail-max-bars-high", type=int, default=4,
                    help="candle_trail: max bars for conf>=0.80 (default 4)")
+    p.add_argument("--max-lot", type=float, default=None,
+                   help="hard cap on lot size (default: config trading.max_lot or 0.50)")
     args = p.parse_args()
     PipelineBot(
+        max_lot               = args.max_lot,
         dry_run               = args.dry_run,
         symbol                = args.symbol,
         model_dir             = args.model_dir,

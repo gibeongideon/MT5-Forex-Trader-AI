@@ -154,6 +154,22 @@ class MT5Connector:
     # Orders & positions
     # ------------------------------------------------------------------ #
 
+    def _fill_type(self, symbol: str):
+        """Pick the order-filling mode the symbol/broker actually supports.
+        Brokers differ (IC Markets=IOC, HFM may require FOK) — sending an
+        unsupported mode returns retcode 10030 (invalid fill). The symbol's
+        `filling_mode` bitmask: 1=FOK allowed, 2=IOC allowed."""
+        mt5 = self._mt5
+        try:
+            mode = int(getattr(self.symbol_info(symbol), "filling_mode", 0))
+        except Exception:
+            mode = 0
+        if mode & 2:   # SYMBOL_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+        if mode & 1:   # SYMBOL_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+        return mt5.ORDER_FILLING_RETURN
+
     def open_position(
         self,
         symbol: str,
@@ -184,7 +200,7 @@ class MT5Connector:
             "magic": magic,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._fill_type(symbol),
         }
 
         result = mt5.order_send(request)
@@ -223,7 +239,7 @@ class MT5Connector:
             "magic": position.magic,
             "comment": "close",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._fill_type(symbol),
         }
 
         result = mt5.order_send(request)

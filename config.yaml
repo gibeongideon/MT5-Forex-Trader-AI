@@ -92,6 +92,7 @@ mt5:
 trading:
   # Risk management
   risk_per_trade: 0.01      # 1% of account balance per trade
+  max_lot: 0.50             # hard cap on lot size (realistic ceiling; risk-% on a big balance can balloon)
   max_open_trades: 5
   max_daily_loss: 0.05      # stop trading if daily loss exceeds 5%
   magic_number: 20260101    # unique ID for this bot's orders
