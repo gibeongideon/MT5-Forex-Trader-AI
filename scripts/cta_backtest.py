@@ -15,7 +15,7 @@ sys.path.insert(0, str(ROOT))
 from src.cta.universe import UNIVERSE, FX_PAIRS
 from src.cta.panel import build_panels, daily_returns, pip_series, asset_classes
 from src.cta.signals import tsmom, xsmom, combine, fx_carry, ewmac
-from src.cta.portfolio import inv_vol_weights, vol_target
+from src.cta.portfolio import inv_vol_weights, vol_target, cluster_risk_weights
 from src.cta.pnl import portfolio_pnl
 from src.cta.bootstrap import block_bootstrap_sharpe
 
@@ -68,7 +68,26 @@ def _rebalance(pos: pd.DataFrame, freq: str) -> pd.DataFrame:
     return pos.resample(rule).last().reindex(pos.index, method="ffill")
 
 
-def run(sleeve, target_vol, with_costs, rebalance):
+def _buffer(pos: pd.DataFrame, frac: float) -> pd.DataFrame:
+    """Position buffering / no-trade band: only move toward target when it deviates from
+    the held position by > frac × (avg |position|) for that instrument. Cuts turnover and
+    cost. Path-dependent but lookahead-free (only uses current target vs held)."""
+    if frac <= 0:
+        return pos
+    avg = pos.abs().replace(0.0, np.nan).mean().fillna(0.0)
+    bufv = (frac * avg).values
+    arr = pos.values
+    out = np.zeros_like(arr)
+    prev = np.zeros(arr.shape[1])
+    for r in range(arr.shape[0]):
+        tgt = arr[r]
+        keep = np.abs(tgt - prev) <= bufv          # within band → hold previous
+        prev = np.where(keep, prev, tgt)
+        out[r] = prev
+    return pd.DataFrame(out, index=pos.index, columns=pos.columns)
+
+
+def run(sleeve, target_vol, with_costs, rebalance, risk, buffer_frac):
     aliases = list(UNIVERSE)
     close, spread, kept = build_panels(aliases, "D1")
     print(f"  universe: {len(kept)} instruments, {close.index[0].date()} → {close.index[-1].date()}")
@@ -84,18 +103,24 @@ def run(sleeve, target_vol, with_costs, rebalance):
         carry = fx_carry(close.index, rates, FX_PAIRS, kept)
 
     def _book(sig):
-        return vol_target(inv_vol_weights(sig, returns, target_vol), returns, target=target_vol)
+        raw = (cluster_risk_weights(sig, returns, classes, target_vol) if risk == "cluster"
+               else inv_vol_weights(sig, returns, target_vol))
+        return vol_target(raw, returns, target=target_vol)
 
     if sleeve == "tsmom":      pos = _book(tsmom(close))      # binary baseline
-    elif sleeve == "ewmac":    pos = _book(trend)             # NEW continuous trend
+    elif sleeve == "ewmac":    pos = _book(trend)             # continuous trend
     elif sleeve == "xsmom":    pos = _book(xsmom(close))
     elif sleeve == "combined": pos = _book(mom)               # EWMAC + xsmom
+    elif sleeve == "ml":                                       # NEW: ridge factor-combine (OOS)
+        from src.cta.ml_combine import ml_forecast
+        pos = _book(ml_forecast(close, returns))
     elif sleeve == "carry":    pos = _book(carry)
     else:  # momcarry: trend+xsmom+carry summed, then vol-targeted as one book
-        p_mom = inv_vol_weights(mom, returns, target_vol)
-        p_car = inv_vol_weights(carry, returns, target_vol)
-        pos = vol_target(p_mom + p_car, returns, target=target_vol)
+        _w = (lambda s: cluster_risk_weights(s, returns, classes, target_vol)) if risk == "cluster" \
+             else (lambda s: inv_vol_weights(s, returns, target_vol))
+        pos = vol_target(_w(mom) + _w(carry), returns, target=target_vol)
     pos = _rebalance(pos, rebalance)
+    pos = _buffer(pos, buffer_frac)
     pnl = portfolio_pnl(pos, returns, spread if with_costs else spread * 0, pips, close)
     net, gross = pnl["net"], pnl["gross"]
 
@@ -119,12 +144,18 @@ def run(sleeve, target_vol, with_costs, rebalance):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--sleeve", default="ewmac",
-                    choices=["tsmom", "ewmac", "xsmom", "combined", "carry", "momcarry"])
+                    choices=["tsmom", "ewmac", "xsmom", "combined", "ml", "carry", "momcarry"])
     ap.add_argument("--target-vol", type=float, default=0.10)
     ap.add_argument("--gross", action="store_true", help="disable costs")
     ap.add_argument("--rebalance", default="monthly", choices=["daily", "weekly", "monthly"])
+    ap.add_argument("--risk", default="diag", choices=["diag", "cluster"],
+                    help="diag=per-instrument inv-vol; cluster=equal risk across asset classes")
+    ap.add_argument("--buffer", type=float, default=0.0,
+                    help="position no-trade band as fraction of avg position (e.g. 0.1)")
     args = ap.parse_args()
-    run(args.sleeve, args.target_vol, with_costs=not args.gross, rebalance=args.rebalance)
+    print(f"  [risk={args.risk} rebalance={args.rebalance} buffer={args.buffer}]")
+    run(args.sleeve, args.target_vol, with_costs=not args.gross, rebalance=args.rebalance,
+        risk=args.risk, buffer_frac=args.buffer)
     print("Done.")
 
 

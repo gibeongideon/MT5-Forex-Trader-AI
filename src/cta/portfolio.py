@@ -26,6 +26,29 @@ def inv_vol_weights(signals: pd.DataFrame, returns: pd.DataFrame,
     return pos.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
+def cluster_risk_weights(signals: pd.DataFrame, returns: pd.DataFrame, classes: dict,
+                         target: float = 0.10, halflife: int = 42) -> pd.DataFrame:
+    """Correlation-aware sizing: allocate risk budget EQUALLY ACROSS ASSET CLASSES, then
+    within each class. Avoids over-concentrating directional risk in correlated clusters
+    (e.g. 8 equity indices that all trend together = ~1 bet, not 8). Past-only (shift(1)).
+
+      per-instrument daily vol budget = (target/√252) / (√C_active · k_class)
+      where C_active = #classes with an active instrument that day, k_class = #active in its class.
+    """
+    sigma = returns.shift(1).ewm(halflife=halflife, min_periods=20).std()
+    active = signals.replace(0.0, np.nan).notna() & sigma.notna()
+    uniq = sorted(set(classes.values()))
+    kc = {c: active[[a for a in signals.columns if classes.get(a) == c]].sum(axis=1)
+          for c in uniq}
+    n_classes = sum((kc[c] > 0).astype(int) for c in uniq).clip(lower=1)  # Series over time
+    budget = pd.DataFrame(index=signals.index, columns=signals.columns, dtype=float)
+    for a in signals.columns:
+        k = kc[classes[a]].replace(0, np.nan)
+        budget[a] = (target / ANN) / (np.sqrt(n_classes) * k)
+    pos = signals.mul(budget) / sigma
+    return pos.replace([np.inf, -np.inf], np.nan).fillna(0.0)
+
+
 def vol_target(positions: pd.DataFrame, returns: pd.DataFrame,
                target: float = 0.10, halflife: int = 42,
                max_lev: float = 3.0) -> pd.DataFrame:

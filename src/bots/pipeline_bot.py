@@ -388,6 +388,11 @@ class PipelineBot(BotBase):
         self._breakeven_done: set[int] = set()
         # hedge_exit
         self._hedged_tickets: set[int] = set()
+        # hedge_exit RECOVERY SET — tickets of trades kept open because they were losing
+        # at a signal flip. Closed at break-even (>=0) regardless of direction/opposite-pair.
+        # PERSISTED to disk so it survives bot restarts (in-memory sets are wiped on restart).
+        self._recovery_path = ROOT / "data" / f"recovery_{self.magic}.json"
+        self._recovery_tickets: set[int] = self._load_recovery()
         # trailing_hedge: ticket → peak profit pips
         self._hedged_trail: dict[int, float] = {}
         # lock / ratio_hedge: orig_ticket → hedge_ticket (and reverse)
@@ -590,17 +595,16 @@ class PipelineBot(BotBase):
         our_positions = [p for p in self.open_positions(self.symbol)
                          if p.magic == self.magic]
 
+        # LATEST-SIGNAL PRIORITY: handle opposite-direction positions FIRST (close the
+        # profitable ones, keep/hedge the losing ones) BEFORE deciding whether to open.
+        # Note: do NOT early-return on a same-direction position — that previously
+        # short-circuited the opposite-handling below, so a profitable opposite was left
+        # open whenever a same-direction trade was also held. The post-close cap-check
+        # (step 6b) still prevents opening a duplicate same-direction trade (no stacking).
         for pos in our_positions:
             pos_dir = "buy" if pos.type == 0 else "sell"
             if pos_dir == direction:
-                self.log(f"Already have {direction.upper()} (ticket={pos.ticket}) — skipping")
-                return
-
-        # Handle opposite-direction positions
-        for pos in our_positions:
-            pos_dir = "buy" if pos.type == 0 else "sell"
-            if pos_dir == direction:
-                continue   # same direction — already guarded above
+                continue   # same direction — not an opposite to close; handled at cap-check
 
             in_loss = pos.profit <= 0
 
@@ -611,6 +615,7 @@ class PipelineBot(BotBase):
                 )
                 if self.flip_mode == "hedge_exit":
                     self._hedged_tickets.add(pos.ticket)
+                    self._mark_recovery(pos.ticket)   # persisted → closed at >=0 even if lone/after restart
                 elif self.flip_mode == "trailing_hedge":
                     self._hedged_trail.setdefault(pos.ticket, float("-inf"))
 
@@ -1170,6 +1175,56 @@ class PipelineBot(BotBase):
 
     # ── Position management ───────────────────────────────────────────────────
 
+    def _load_recovery(self) -> set:
+        """Load the persisted recovery-trade ticket set (restart-proof)."""
+        import json
+        try:
+            if self._recovery_path.exists():
+                return set(json.loads(self._recovery_path.read_text()))
+        except Exception as e:
+            self.log(f"recovery load error: {e}")
+        return set()
+
+    def _save_recovery(self) -> None:
+        import json
+        try:
+            self._recovery_path.write_text(json.dumps(sorted(self._recovery_tickets)))
+        except Exception as e:
+            self.log(f"recovery save error: {e}")
+
+    def _mark_recovery(self, ticket: int) -> None:
+        """Tag a kept-losing trade as a recovery trade (persisted)."""
+        if ticket not in self._recovery_tickets:
+            self._recovery_tickets.add(ticket)
+            self._save_recovery()
+
+    def _hedge_loser_to_close(self, positions):
+        """Opposite-pair fallback for legacy/untracked recovery trades (no persisted state).
+
+        If we hold an opposite-direction pair (a buy AND a sell under our magic), the
+        OLDER leg — the smaller ticket, i.e. opened first — is the kept hedge loser.
+        Return its ticket once it has recovered to break-even/positive (profit >= 0).
+        Returns None otherwise. Pure/stateless."""
+        ours = [p for p in positions if p.magic == self.magic]
+        buys = [p for p in ours if p.type == 0]
+        sells = [p for p in ours if p.type == 1]
+        if not (buys and sells):
+            return None
+        older = min(ours, key=lambda p: p.ticket)   # monotonic ticket → earliest open
+        return older.ticket if older.profit >= 0 else None
+
+    def _recovery_closeable(self, positions) -> set:
+        """Tickets to close NOW at break-even: any recovery trade (persisted set, or the
+        opposite-pair fallback) that is open under our magic and has profit >= 0.
+        Pure given self._recovery_tickets — unit-testable."""
+        by_ticket = {p.ticket: p for p in positions if p.magic == self.magic}
+        cands = set(self._recovery_tickets)
+        fb = self._hedge_loser_to_close(positions)
+        if fb is not None:
+            cands.add(fb)
+        return {t for t in cands
+                if t in by_ticket and by_ticket[t].profit >= 0}
+
     def _manage_positions(self) -> None:
         """
         Per-tick position management (runs before signal check):
@@ -1285,14 +1340,14 @@ class PipelineBot(BotBase):
         for pos in positions:
             if pos.ticket not in self._hedged_trail:
                 continue
-            if pos.direction == 0:  # MT5: 0=buy, 1=sell
+            if pos.type == 0:  # MT5: 0=buy, 1=sell
                 current_pips = (pos.price_current - pos.price_open) / self._pip_size
             else:
                 current_pips = (pos.price_open - pos.price_current) / self._pip_size
             peak = max(self._hedged_trail[pos.ticket], current_pips)
             self._hedged_trail[pos.ticket] = peak
             if peak > 0 and current_pips <= peak - self.trail_pips:
-                pos_dir = "buy" if pos.direction == 0 else "sell"
+                pos_dir = "buy" if pos.type == 0 else "sell"
                 self.log(
                     f"Trail stop: {pos_dir.upper()} ticket={pos.ticket}  "
                     f"peak={peak:+.1f}p  now={current_pips:+.1f}p  "
@@ -1305,22 +1360,35 @@ class PipelineBot(BotBase):
                 except Exception as e:
                     self.log(f"Trail close error: {e}")
 
-        # Close hedged losers at first profit
-        for pos in positions:
-            if pos.ticket not in self._hedged_tickets:
-                continue
-            if pos.profit > 0:
+        # hedge_exit RECOVERY CLOSE — close any kept-losing "recovery trade" the moment
+        # its P&L recovers to >=0, regardless of direction or whether an opposite still
+        # exists. Authoritative source = the PERSISTED recovery set (survives restarts);
+        # plus an opposite-pair fallback for legacy/untracked positions.
+        if self.flip_mode == "hedge_exit":
+            # 1) purge recovery tickets that are no longer open
+            stale = self._recovery_tickets - open_tickets
+            if stale:
+                self._recovery_tickets -= stale
+                self._save_recovery()
+            # 2) close every recovery trade now at break-even (>=0)
+            for t in list(self._recovery_closeable(positions)):
+                pos = next((p for p in positions if p.ticket == t), None)
+                if pos is None:
+                    continue
                 pos_dir = "buy" if pos.type == 0 else "sell"
                 self.log(
-                    f"Hedged loser {pos_dir.upper()} ticket={pos.ticket} "
-                    f"now at {pos.profit:+.2f} USD — closing at first profit"
+                    f"Recovery trade {pos_dir.upper()} ticket={t} now at "
+                    f"{pos.profit:+.2f} USD (>=0) — closing at break-even (hedge_exit)"
                 )
                 try:
                     self.conn.close_position(pos)
-                    self._hedged_tickets.discard(pos.ticket)
-                    self._breakeven_done.discard(pos.ticket)
+                    self._hedged_tickets.discard(t)
+                    self._breakeven_done.discard(t)
+                    if t in self._recovery_tickets:
+                        self._recovery_tickets.discard(t)
+                        self._save_recovery()
                 except Exception as e:
-                    self.log(f"Hedge close error: {e}")
+                    self.log(f"Recovery close error: {e}")
 
         for pos in positions:
             if pos.magic != self.magic:
