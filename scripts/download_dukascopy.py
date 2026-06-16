@@ -41,19 +41,55 @@ DATA_DIR = ROOT / "data"
 BASE = "https://datafeed.dukascopy.com/datafeed"
 UA = {"User-Agent": "Mozilla/5.0"}
 
-# point factor (price = raw_int * factor) and pip size per symbol
+# point factor (price = raw_int * factor) and pip size per symbol.
+# Optional 'code' = Dukascopy datafeed path (defaults to key); 'asset_class' for grouping.
+# NOTE: momentum returns are close ratios → point factor CANCELS, so a wrong point cannot
+# fabricate momentum (it only scales cost magnitude). Datafeed `code` is the real unknown
+# for CFDs — download_universe.py smoke-tests each and skips ones that 404.
+def _fx(jpy=False):  # helper for FX point/pip conventions
+    return dict(point=1e-3, pip=1e-2) if jpy else dict(point=1e-5, pip=1e-4)
+
 SYMBOLS = {
-    "EURUSD": dict(point=1e-5, pip=1e-4),
-    "USDJPY": dict(point=1e-3, pip=1e-2),
-    "GBPUSD": dict(point=1e-5, pip=1e-4),
-    "XAUUSD": dict(point=1e-3, pip=1e-1),
+    # FX majors (USD)
+    "EURUSD": {**_fx(),     "asset_class": "FX_USD"},
+    "GBPUSD": {**_fx(),     "asset_class": "FX_USD"},
+    "USDJPY": {**_fx(True), "asset_class": "FX_USD"},
+    "AUDUSD": {**_fx(),     "asset_class": "FX_USD"},
+    "USDCHF": {**_fx(),     "asset_class": "FX_USD"},
+    "USDCAD": {**_fx(),     "asset_class": "FX_USD"},
+    "NZDUSD": {**_fx(),     "asset_class": "FX_USD"},
+    # FX crosses
+    "EURGBP": {**_fx(),     "asset_class": "FX_CROSS"},
+    "EURJPY": {**_fx(True), "asset_class": "FX_CROSS"},
+    "GBPJPY": {**_fx(True), "asset_class": "FX_CROSS"},
+    "AUDJPY": {**_fx(True), "asset_class": "FX_CROSS"},
+    "EURCHF": {**_fx(),     "asset_class": "FX_CROSS"},
+    "EURAUD": {**_fx(),     "asset_class": "FX_CROSS"},
+    # Metals
+    "XAUUSD": dict(point=1e-3, pip=1e-1, asset_class="METAL"),
+    "XAGUSD": dict(point=1e-3, pip=1e-2, asset_class="METAL"),
+    # Energy (CFD) — candidate datafeed codes, smoke-tested before bulk download
+    "WTICRUDE": dict(point=1e-3, pip=1e-2, code="LIGHT.CMD/USD", asset_class="ENERGY"),
+    "BRENT":    dict(point=1e-3, pip=1e-2, code="BRENT.CMD/USD", asset_class="ENERGY"),
+    # Equity indices (CFD) — candidate codes
+    "SPX500":   dict(point=1e-3, pip=1e-1, code="USA500.IDX/USD",  asset_class="EQ_INDEX"),
+    "NAS100":   dict(point=1e-3, pip=1e-1, code="USATECH.IDX/USD", asset_class="EQ_INDEX"),
+    "DOW30":    dict(point=1e-3, pip=1e-1, code="USA30.IDX/USD",   asset_class="EQ_INDEX"),
+    "DAX40":    dict(point=1e-3, pip=1e-1, code="DEU.IDX/EUR",     asset_class="EQ_INDEX"),
+    "FTSE100":  dict(point=1e-3, pip=1e-1, code="GBR.IDX/GBP",     asset_class="EQ_INDEX"),
+    "NIKKEI":   dict(point=1e-3, pip=1e-1, code="JPN.IDX/JPY",     asset_class="EQ_INDEX"),
 }
+
+
+def _code(sym: str) -> str:
+    """Dukascopy datafeed path for a symbol (defaults to the symbol key)."""
+    return SYMBOLS[sym].get("code", sym)
 
 _REC = struct.Struct(">Iiiff")   # 20 bytes, big-endian
 
 
-def _hour_url(sym: str, ts: pd.Timestamp) -> str:
-    return f"{BASE}/{sym}/{ts.year:04d}/{ts.month-1:02d}/{ts.day:02d}/{ts.hour:02d}h_ticks.bi5"
+def _hour_url(code: str, ts: pd.Timestamp) -> str:
+    return f"{BASE}/{code}/{ts.year:04d}/{ts.month-1:02d}/{ts.day:02d}/{ts.hour:02d}h_ticks.bi5"
 
 
 def _fetch_hour(sym: str, ts: pd.Timestamp, retries: int = 5) -> bytes | None:
@@ -106,8 +142,10 @@ def _aggregate_m15(ticks: pd.DataFrame, sym: str) -> pd.DataFrame:
 
 
 def _fetch_many(ex, sym, hrs):
-    """Fetch+parse a list of hours; return (tick_frames, failed_hours)."""
-    futs = {ex.submit(_fetch_hour, sym, h): h for h in hrs}
+    """Fetch+parse a list of hours; return (tick_frames, failed_hours).
+    Fetch uses the datafeed `code` (URL path); parse uses `sym` (point/pip lookup)."""
+    code = _code(sym)
+    futs = {ex.submit(_fetch_hour, code, h): h for h in hrs}
     frames, failed = [], []
     for fut in as_completed(futs):
         raw = fut.result()

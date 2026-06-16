@@ -16,7 +16,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
 DATA = ROOT / "data"
-RULE = {"H1": "1h", "H4": "4h", "M30": "30min"}
+RULE = {"H1": "1h", "H4": "4h", "M30": "30min", "D1": "1D"}
 
 
 def resample(symbol: str, tf: str) -> Path | None:
