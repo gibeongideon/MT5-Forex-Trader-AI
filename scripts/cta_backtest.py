@@ -87,8 +87,8 @@ def _buffer(pos: pd.DataFrame, frac: float) -> pd.DataFrame:
     return pd.DataFrame(out, index=pos.index, columns=pos.columns)
 
 
-def run(sleeve, target_vol, with_costs, rebalance, risk, buffer_frac):
-    aliases = list(UNIVERSE)
+def run(sleeve, target_vol, with_costs, rebalance, risk, buffer_frac, instruments=None):
+    aliases = instruments if instruments else list(UNIVERSE)
     close, spread, kept = build_panels(aliases, "D1")
     print(f"  universe: {len(kept)} instruments, {close.index[0].date()} → {close.index[-1].date()}")
     returns = daily_returns(close)
@@ -152,10 +152,14 @@ def main():
                     help="diag=per-instrument inv-vol; cluster=equal risk across asset classes")
     ap.add_argument("--buffer", type=float, default=0.0,
                     help="position no-trade band as fraction of avg position (e.g. 0.1)")
+    ap.add_argument("--instruments", default=None,
+                    help="comma-separated alias subset (e.g. GOLD,SPX,UST10Y); default=full universe")
     args = ap.parse_args()
-    print(f"  [risk={args.risk} rebalance={args.rebalance} buffer={args.buffer}]")
+    instruments = [s.strip() for s in args.instruments.split(",")] if args.instruments else None
+    print(f"  [risk={args.risk} rebalance={args.rebalance} buffer={args.buffer}"
+          f"{' instruments=' + ','.join(instruments) if instruments else ''}]")
     run(args.sleeve, args.target_vol, with_costs=not args.gross, rebalance=args.rebalance,
-        risk=args.risk, buffer_frac=args.buffer)
+        risk=args.risk, buffer_frac=args.buffer, instruments=instruments)
     print("Done.")
 
 
