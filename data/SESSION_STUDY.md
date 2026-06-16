@@ -1,3 +1,40 @@
+# Edge Search — Results (sessions, timeframes, stat-arb)
+
+## Extension 2026-06-16 — timeframe sweep + cross-pair stat-arb (all negative)
+
+**Timeframe (deep 11yr, all 4 symbols, meta-labeling, real spread, bootstrap CIs):**
+- M15: dead (best −0.8 to −1.3; confirmed on both 2.4yr and 11yr).
+- H1: dead (best ~−0.6 to −0.9).
+- H4: looked like the "breakeven boundary" (GBPUSD H4 xgb @0.65 = +0.55 full-period,
+  54.9% win) — BUT discover/confirm killed it: discover +0.31 → **confirm −2.07**.
+  Pure threshold-overfit. No real H4 edge.
+
+**Cross-pair stat-arb (EURUSD-GBPUSD spread mean-reversion), `scripts/statarb_probe.py`:**
+- First run showed +1.27 to +2.38 OOS Sharpe — but a robustness sweep exposed a P&L
+  BUG: the spread "return" used the rolling hedge ratio βₜ at exit vs β_entry at entry,
+  injecting fake P&L (tell-tale: a config with 100% win / 0 drawdown). 
+- **Corrected** (proper 2-leg P&L, β fixed at entry): edge **vanishes** — EURUSD-GBPUSD
+  H1 z=2.5 discover −0.40 / confirm −0.27, ~−2bp/trade (≈ cost drag), every (win,zwin)
+  config flat-to-negative. **No stat-arb edge.**
+
+**Volatility-timing (`scripts/vol_timing_probe.py`, compression→breakout AND
+expansion→fade, reuses validated barrier P&L, OOS confirm 2022-26):** no significant
+edge either — best USDJPY H4 +0.47 / +0.18 with CIs straddling zero; everything else
+flat-to-negative, no config with CI lower bound > 0.
+
+**FINAL VERDICT — edge search exhausted.** Three independent hypothesis classes, all
+leak-free / OOS / bug-audited on 11yr EUR/GBP/JPY/XAU:
+  1. Directional ML (M15/H1/H4, all-hours + session-gated) — DEAD / overfit.
+  2. Cross-pair relative-value mean-reversion — NO EDGE (corrected).
+  3. Volatility-timing (breakout + fade) — NO EDGE.
+No retail-tradeable, out-of-sample edge survives. The prior live "+3 to +25" champions
+were leakage (encoder + MTF lookahead). A real edge would require NEW information
+(order-flow / COT / news-sentiment / alt-data), a different instrument universe, or a
+fundamentally lower-frequency (carry/trend portfolio) approach — none available in the
+current M15/H-bar FX-majors data. DO NOT deploy the invalidated models with real capital.
+
+---
+
 # Session / Hour-of-Day Pattern Study — Results
 
 > 2026-06-15. Tests whether trading only during specific session overlaps reveals
