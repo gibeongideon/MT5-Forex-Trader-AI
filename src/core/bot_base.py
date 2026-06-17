@@ -11,7 +11,7 @@ from datetime import datetime, date, time as dtime
 import yaml
 from pathlib import Path
 
-from .mt5_connector import MT5Connector
+from .connector import Connector, get_connector, resolve_platform
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config.yaml"
 
@@ -23,7 +23,7 @@ class BotBase(ABC):
         bot.run()           # blocks; Ctrl+C to stop
     """
 
-    def __init__(self, name: str = "Bot", tick_interval: float = 5.0):
+    def __init__(self, name: str = "Bot", tick_interval: float = 5.0, platform: str | None = None):
         with open(_CONFIG_PATH) as f:
             self.config = yaml.safe_load(f)
 
@@ -35,7 +35,8 @@ class BotBase(ABC):
         self.risk_per_trade: float = trading["risk_per_trade"]
         self.tick_interval = tick_interval  # seconds between on_tick() calls
 
-        self.conn: MT5Connector = MT5Connector()
+        self.platform = resolve_platform(platform)   # mt5 (default) | mt4
+        self.conn: Connector = get_connector(self.platform)
         self._running = False
         self._daily_loss = 0.0
         self._day_start_balance = 0.0
@@ -216,12 +217,11 @@ class BotBase(ABC):
             except Exception as e:
                 attempt += 1
                 print(f"[{self.name}] MT5 bridge not ready (attempt {attempt}): {e}")
-                print(f"[{self.name}] Retrying in {delay}s — start MT5 with ./start_mt5.sh")
+                print(f"[{self.name}] Retrying in {delay}s — start the platform with ./start_{self.platform}.sh")
                 time.sleep(delay)
                 delay = min(delay * 2, max_wait)
-                # Reset cached singleton so next attempt creates a fresh connection
-                import src.core.mt5_connector as _mc
-                _mc._mt5 = None
+                # Reset cached connection so next attempt starts fresh (mt5 rpyc / mt4 file dir)
+                self.conn.reset_singleton()
 
     def _handle_signal(self, signum, frame) -> None:
         print(f"\n[{self.name}] Signal {signum} received, shutting down...")

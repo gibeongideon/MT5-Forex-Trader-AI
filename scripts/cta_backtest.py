@@ -16,6 +16,7 @@ from src.cta.universe import UNIVERSE, FX_PAIRS
 from src.cta.panel import build_panels, daily_returns, pip_series, asset_classes
 from src.cta.signals import tsmom, xsmom, combine, fx_carry, ewmac
 from src.cta.portfolio import inv_vol_weights, vol_target, cluster_risk_weights
+from src.cta.strategy import rebalance_hold as _rebalance, buffer_band as _buffer, TREND_SPEEDS
 from src.cta.pnl import portfolio_pnl
 from src.cta.bootstrap import block_bootstrap_sharpe
 
@@ -57,41 +58,6 @@ def _report(name, net, pos, returns, classes, gross=None):
         parts.append(f"{cls}={csh:+.2f}")
     print(f"       class Sharpe: {'  '.join(parts)}")
     return sh, lo, hi
-
-
-def _rebalance(pos: pd.DataFrame, freq: str) -> pd.DataFrame:
-    """Hold positions between rebalances to cut turnover (no lookahead: uses the
-    rebalance-date target going forward; pnl still applies pos.shift(1))."""
-    if freq == "daily":
-        return pos
-    rule = {"weekly": "W", "monthly": "ME"}[freq]
-    return pos.resample(rule).last().reindex(pos.index, method="ffill")
-
-
-def _buffer(pos: pd.DataFrame, frac: float) -> pd.DataFrame:
-    """Position buffering / no-trade band: only move toward target when it deviates from
-    the held position by > frac × (avg |position|) for that instrument. Cuts turnover and
-    cost. Path-dependent but lookahead-free (only uses current target vs held)."""
-    if frac <= 0:
-        return pos
-    avg = pos.abs().replace(0.0, np.nan).mean().fillna(0.0)
-    bufv = (frac * avg).values
-    arr = pos.values
-    out = np.zeros_like(arr)
-    prev = np.zeros(arr.shape[1])
-    for r in range(arr.shape[0]):
-        tgt = arr[r]
-        keep = np.abs(tgt - prev) <= bufv          # within band → hold previous
-        prev = np.where(keep, prev, tgt)
-        out[r] = prev
-    return pd.DataFrame(out, index=pos.index, columns=pos.columns)
-
-
-TREND_SPEEDS = {
-    "fast":    ((8, 32), (16, 64), (32, 128), (64, 256)),   # default 4-speed
-    "slow":    ((32, 128), (64, 256)),                       # drop the two fastest
-    "slowest": ((64, 256), (128, 512)),                      # slowest pair only
-}
 
 
 def run(sleeve, target_vol, with_costs, rebalance, risk, buffer_frac, instruments=None,

@@ -109,6 +109,11 @@ class MT5Connector:
             self._connected = False
             print("Disconnected from MT5")
 
+    def reset_singleton(self) -> None:
+        """Drop the cached rpyc bridge so the next connect() builds a fresh one."""
+        global _mt5
+        _mt5 = None
+
     def __enter__(self):
         self.connect()
         return self
@@ -248,6 +253,43 @@ class MT5Connector:
             raise RuntimeError(f"close_position failed: retcode={code}")
 
         print(f"Closed ticket={ticket} {symbol}")
+        return result._asdict()
+
+    def close_position_partial(self, position, volume: float) -> dict:
+        """Close only `volume` lots of an open position (deal in the opposite direction).
+        Falls back to a full close when volume >= the position's size."""
+        mt5 = self._mt5
+        if volume is None or volume >= position.volume:
+            return self.close_position(position)
+
+        symbol = position.symbol
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            raise RuntimeError(f"Cannot get tick for {symbol}")
+
+        if position.type == mt5.POSITION_TYPE_BUY:
+            order_type, price = mt5.ORDER_TYPE_SELL, tick.bid
+        else:
+            order_type, price = mt5.ORDER_TYPE_BUY, tick.ask
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": order_type,
+            "position": position.ticket,
+            "price": price,
+            "deviation": 20,
+            "magic": position.magic,
+            "comment": "partial_close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": self._fill_type(symbol),
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            code = result.retcode if result else "None"
+            raise RuntimeError(f"close_position_partial failed: retcode={code}")
+        print(f"Partial-closed {volume} of ticket={position.ticket} {symbol}")
         return result._asdict()
 
     def get_positions(self, symbol: str = None, magic: int = None):

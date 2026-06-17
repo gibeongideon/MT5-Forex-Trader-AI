@@ -89,7 +89,23 @@ mt5:
   server: null     # override: set MT5_SERVER in .env (e.g. "ICMarkets-Demo")
   timeout: 60000   # connection timeout ms
 
+mt4:
+  # MT4 (HFM) runs under Wine in an ISOLATED win32 prefix, alongside MT5 (~/.mt5).
+  # No rpyc bridge — automation is the PyBridge.mq4 file bridge (no DLLs needed).
+  wine_prefix: "/home/rock/.mt4"
+  # Linux path to the EA's exchange folder. "auto" locates <prefix>/.../MQL4/Files/pybridge
+  # (handles both Program Files and Roaming/Terminal/<hash> layouts).
+  file_bridge_dir: "auto"
+  request_timeout: 10.0      # seconds to wait for an EA reply (file round-trip)
+  # Credentials are entered in the MT4 GUI; kept here for records (override via .env)
+  login: null                # MT4_LOGIN
+  password: null             # MT4_PASSWORD
+  server: null               # MT4_SERVER (e.g. "HFMarketsKE-Demo")
+
 trading:
+  # Platform the bots trade through: mt5 (default, rpyc bridge) | mt4 (file bridge).
+  # Override per run with --platform or env BOT_PLATFORM.
+  platform: "mt5"
   # Risk management
   risk_per_trade: 0.01      # 1% of account balance per trade
   max_lot: 0.50             # hard cap on lot size (realistic ceiling; risk-% on a big balance can balloon)

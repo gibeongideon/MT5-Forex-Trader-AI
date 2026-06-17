@@ -63,3 +63,41 @@ net edge survives realistic execution.
 **Reconciles the whole arc:** single instruments fail (weak, regime-dependent ≈ beta); the edge
 is structural diversification across a *few* low-correlation asset classes at the daily horizon.
 You need ~5 uncorrelated bets, not 48 — and not 1.
+
+---
+
+## Turnover reduction — LOCKED production config (2026-06-17)
+
+Buffer × EWMAC-speed grid on the 5-basket (champion config). Slowing the trend (drop the two
+fastest EWMAC speeds → spans (32,128),(64,256)) + a 0.4 no-trade buffer **raised** net Sharpe
+while cutting turnover 39%:
+
+| speeds | buffer | FULL Sharpe | turnover/yr |
+|--------|--------|-------------|-------------|
+| fast | 0.0 | +0.728 | 1113% |
+| fast | 0.4 | +0.720 | 968% |
+| **slow** | **0.4** | **+0.746** | **683%** |
+| slowest | 0.4 | +0.586 | 533% |
+
+**LOCKED: GOLD, UST10Y, SPX, WTI, EURUSD · sleeve=combined · trend_speeds=slow · risk=cluster ·
+target_vol=10% · rebalance=monthly · buffer=0.4.** Full breakdown: DISCOVER +0.66 [+0.17,+1.10]
+(both sub-halves +0.69/+0.64), CONFIRM +1.04 [+0.27,+1.88], **FULL +0.746 [+0.34,+1.15]**,
+maxDD 18.8%, corr−0.21, turnover 683%/yr. ("slowest" over-smooths — misses trends, +0.59.)
+
+## Deployment infra (built 2026-06-17)
+- **`src/cta/strategy.py`** — single source of truth: `champion_positions()` + the locked
+  `BASKET`/`CONFIG`. The backtester now imports its rebalance/buffer/speed primitives from here,
+  so the deployed signal is byte-identical to the validated backtest.
+- **`scripts/basket_runner.py`** — daily ADVISORY runner: computes today's target positions,
+  prints a per-symbol order ticket (action vs last run: OPEN/ADD/TRIM/FLIP/CLOSE), persists
+  restart-proof state (`data/basket_state.json`) + audit CSV (`data/basket_signals.csv`).
+  `--validate` re-checks full Sharpe == +0.746. Places **no live orders** (standing rule).
+- `cta_backtest.py` gained `--instruments` and `--trend-speeds` flags. Tests: 7/7 green;
+  full-universe unchanged (+0.647).
+
+**Open deployment items before live:** (1) **UST10Y has no retail CFD and is the largest weight
+(~53% today, currently SHORT)** — substitute a tradable bond instrument (bond-future CFD / inverse
+bond ETF) or run model-only; the bond leg is a big part of the diversification, dropping it
+materially changes the edge. (2) Verify broker tickers (XAUUSD/US500/USOIL/EURUSD) and convert
+vol-scaled units → lots via contract specs + account equity. (3) Refresh `data/*_D1_long.csv`
+(`scripts/download_universe.py`) before each run so the signal is current.

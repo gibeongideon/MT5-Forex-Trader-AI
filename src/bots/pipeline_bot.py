@@ -290,8 +290,9 @@ class PipelineBot(BotBase):
                  trail_max_bars_low: int = 1,
                  trail_max_bars_med: int = 2,
                  trail_max_bars_high: int = 4,
-                 max_lot: float | None = None):
-        super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0)
+                 max_lot: float | None = None,
+                 platform: str | None = None):
+        super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0, platform=platform)
         if magic is not None:
             self.magic = magic  # override config.yaml magic_number
         self.dry_run     = dry_run
@@ -1484,8 +1485,11 @@ def main() -> None:
                    help="candle_trail: max bars for conf>=0.80 (default 4)")
     p.add_argument("--max-lot", type=float, default=None,
                    help="hard cap on lot size (default: config trading.max_lot or 0.50)")
+    p.add_argument("--platform", default=None, choices=["mt5", "mt4"],
+                   help="trading platform (default: config trading.platform or mt5)")
     args = p.parse_args()
     PipelineBot(
+        platform              = args.platform,
         max_lot               = args.max_lot,
         dry_run               = args.dry_run,
         symbol                = args.symbol,

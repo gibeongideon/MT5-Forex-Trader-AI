@@ -1,5 +1,8 @@
 # Core MT5 bridge
 mt5linux>=1.0.3
+# MT4 automation uses a file bridge (no extra deps). pyzmq only if the optional
+# ZeroMQ transport is ever enabled (file transport is the default, Wine-safe path).
+# pyzmq>=25.0
 
 # Data handling
 pandas>=2.0.0
