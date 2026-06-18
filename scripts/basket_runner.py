@@ -28,14 +28,14 @@ STATE = ROOT / "data" / "basket_state.json"
 HISTORY = ROOT / "data" / "basket_signals.csv"
 STALE_DAYS = 4
 
-# alias → broker symbol. VERIFY these exist on your broker before trading (HFM uses .Z suffix
-# for some tradables). UST10Y has no common retail CFD — left None (drop or substitute a bond ETF/future).
+# alias → HFM symbol. VERIFY the exact tickers in the live terminal (HFM appends .Z to some
+# tradables, e.g. XAUUSD.Z). All five trade on HFM — UST10Y maps to HFM's US 10Y T-Note bond CFD.
 MT5_MAP = {
     "GOLD":   "XAUUSD",
     "EURUSD": "EURUSD",
-    "WTI":    "USOIL",     # HFM crude CFD — confirm exact ticker
-    "SPX":    "US500",     # S&P500 cash CFD — confirm exact ticker
-    "UST10Y": None,        # no standard retail CFD — verify/substitute or trade model-only
+    "WTI":    "USOIL",     # HFM crude CFD — confirm exact ticker (USOIL/WTI)
+    "SPX":    "US500",     # HFM S&P500 cash CFD — confirm exact ticker
+    "UST10Y": "US10YR",    # HFM US 10-Year T-Note bond CFD (1 lot=100u, 1:50, spread ~0.06)
 }
 
 

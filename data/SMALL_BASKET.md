@@ -95,9 +95,10 @@ maxDD 18.8%, corr−0.21, turnover 683%/yr. ("slowest" over-smooths — misses t
 - `cta_backtest.py` gained `--instruments` and `--trend-speeds` flags. Tests: 7/7 green;
   full-universe unchanged (+0.647).
 
-**Open deployment items before live:** (1) **UST10Y has no retail CFD and is the largest weight
-(~53% today, currently SHORT)** — substitute a tradable bond instrument (bond-future CFD / inverse
-bond ETF) or run model-only; the bond leg is a big part of the diversification, dropping it
-materially changes the edge. (2) Verify broker tickers (XAUUSD/US500/USOIL/EURUSD) and convert
-vol-scaled units → lots via contract specs + account equity. (3) Refresh `data/*_D1_long.csv`
-(`scripts/download_universe.py`) before each run so the signal is current.
+**Open deployment items before live:** (1) ~~UST10Y has no retail CFD~~ **RESOLVED (2026-06-18):
+UST10Y IS tradable on HFM as the `US10YR` bond CFD** (US 10Y T-Note; 1 lot=100u, 1:50, spread ~0.06,
+zero commission). No substitution needed — keeping it gives the best Sharpe (+0.746) AND lowest DD
+(dropping rates → +0.739 but DD 18.8%→21.6%). Robustness: UST30Y also works (+0.716, lower turnover
+534%). All 5 map to HFM: GOLD→XAUUSD, UST10Y→US10YR, SPX→US500, WTI→USOIL, EURUSD→EURUSD (verify exact
+tickers / `.Z` suffix in the live terminal). (2) Convert vol-scaled units → lots via contract specs +
+account equity. (3) Refresh `data/*_D1_long.csv` (`scripts/download_universe.py`) before each run.

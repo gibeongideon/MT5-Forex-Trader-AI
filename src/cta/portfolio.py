@@ -49,6 +49,15 @@ def cluster_risk_weights(signals: pd.DataFrame, returns: pd.DataFrame, classes: 
     return pos.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
+def equal_weights(signals: pd.DataFrame, returns: pd.DataFrame,
+                  target: float = 0.10) -> pd.DataFrame:
+    """Naive risk baseline (ablation lower bound): equal NOTIONAL per active instrument —
+    NO inverse-vol, NO clustering. Just sign(signal)/N_active. vol_target() downstream still
+    scales the book, so this isolates 'what does risk budgeting actually buy us'."""
+    n_active = signals.replace(0.0, np.nan).notna().sum(axis=1).clip(lower=1)
+    return np.sign(signals).div(n_active, axis=0) * (target / 0.10)
+
+
 def vol_target(positions: pd.DataFrame, returns: pd.DataFrame,
                target: float = 0.10, halflife: int = 42,
                max_lev: float = 3.0) -> pd.DataFrame:
