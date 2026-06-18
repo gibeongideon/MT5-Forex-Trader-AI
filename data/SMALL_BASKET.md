@@ -102,3 +102,36 @@ zero commission). No substitution needed — keeping it gives the best Sharpe (+
 534%). All 5 map to HFM: GOLD→XAUUSD, UST10Y→US10YR, SPX→US500, WTI→USOIL, EURUSD→EURUSD (verify exact
 tickers / `.Z` suffix in the live terminal). (2) Convert vol-scaled units → lots via contract specs +
 account equity. (3) Refresh `data/*_D1_long.csv` (`scripts/download_universe.py`) before each run.
+
+## Units→lots sizing + capital floor (2026-06-18)
+
+`src/cta/sizing.py` converts engine units → broker lots. A position `pos_i` IS the signed notional
+exposure as a fraction of equity (portfolio return = Σ pos_i·return_i), so:
+
+    lots_i = (pos_i · equity) / (contract_size_i · price_i)   # rounded to vol_step, clamped [min,max]
+
+`basket_runner.py --equity <USD>` prints the lots ticket (notional, err%, ROUND→0 flags, gross
+leverage); `--live` pulls exact contract specs + price from the MT5 terminal, offline uses panel
+close + `DEFAULT_CONTRACT`. Gross lots leverage ≈ **1.44× equity** (matches the model's 1.41×).
+
+**CAPITAL FLOOR = ~$29,000.** Below this the vol target can't be represented in 0.01-lot steps and
+distorts. Binding leg is **GOLD**: XAUUSD is 100 oz/lot × ~$4,357 ≈ **$436k notional/lot**, far
+coarser than gold's small target weight, so on a $10k account gold rounds to 0 (−15% error). At
+$50k all 5 legs are clean (errors ≤2.5%).
+
+### Drop-Gold analysis — gold earns its place (do NOT drop it to save capital)
+
+| Basket | FULL Sharpe | CONFIRM (OOS) | maxDD | min viable equity | binding leg |
+|---|---|---|---|---|---|
+| **Gold (locked champion)** | **+0.746** [+0.34,+1.15] | **+1.038** | 18.8% | **$29,249** | gold |
+| Drop metal (UST10Y,SPX,WTI,EURUSD) | +0.462 [+0.04,+0.89] | +0.126 | 18.1% | **$5,824** | EURUSD |
+| Silver for gold | +0.559 [+0.14,+0.98] | +0.538 | 20.3% | $38,896 | silver |
+
+- **Dropping gold guts the edge:** full Sharpe halves (+0.75→+0.46) and OOS confirm goes ~flat
+  (+1.04→+0.13). Gold's 2022–26 bull trend carried much of the recent edge and was the only metal.
+- **Silver does NOT fix capital:** it needs *more* ($38.9k > gold's $29.2k) because XAGUSD is
+  5,000 oz/lot (~$250k notional) at a small weight → even coarser min-lot. Recovers some edge
+  (+0.56/+0.54) but strictly worse than gold on capital.
+- **DECISION: keep gold, fund the account to ≥ $29k.** Only if hard-capped < $29k, use the
+  4-instrument no-metal basket ($5.8k floor, +0.46 Sharpe, ~flat OOS) — silver is the worst of both
+  worlds. The capital number is a funding requirement, not a reason to drop the strongest leg.

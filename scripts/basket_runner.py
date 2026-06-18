@@ -23,6 +23,7 @@ sys.path.insert(0, str(ROOT))
 from src.cta.panel import build_panels, daily_returns, asset_classes, pip_series
 from src.cta.strategy import champion_positions, BASKET, CONFIG
 from src.cta.pnl import portfolio_pnl
+from src.cta.sizing import target_lots, min_viable_equity, gross_exposure, DEFAULT_CONTRACT, DEFAULT_VOL
 
 STATE = ROOT / "data" / "basket_state.json"
 HISTORY = ROOT / "data" / "basket_signals.csv"
@@ -70,10 +71,63 @@ def _action(prev: float, tgt: float, eps: float = 1e-6) -> str:
     return "hold"
 
 
+def _build_specs(kept, close, live):
+    """Per-alias {symbol,contract_size,price,vol_*}. live=query the broker (exact), else offline
+    (panel close + DEFAULT_CONTRACT — indicative, VERIFY in terminal)."""
+    specs, conn = {}, None
+    if live:
+        from src.core.connector import get_connector
+        conn = get_connector("mt5"); conn.connect()
+    for a in kept:
+        sym = MT5_MAP.get(a) or a
+        if live:
+            try:
+                si = conn.symbol_info(sym); tk = conn.get_tick(sym)
+                specs[a] = dict(symbol=sym,
+                                contract_size=float(getattr(si, "trade_contract_size", DEFAULT_CONTRACT.get(sym, 1.0))),
+                                price=float((tk.ask + tk.bid) / 2) or float(close.iloc[-1][a]),
+                                vol_min=float(getattr(si, "volume_min", 0.01)),
+                                vol_step=float(getattr(si, "volume_step", 0.01)),
+                                vol_max=float(getattr(si, "volume_max", 1e6)))
+                continue
+            except Exception as e:
+                print(f"  ⚠ live spec for {sym} failed ({e}) — falling back to offline")
+        specs[a] = dict(symbol=sym, contract_size=DEFAULT_CONTRACT.get(sym, 1.0),
+                        price=float(close[a].dropna().iloc[-1]), **DEFAULT_VOL)
+    if conn:
+        conn.disconnect()
+    return specs
+
+
+def _print_sizing(units, kept, close, equity, live):
+    specs = _build_specs(kept, close, live)
+    res = target_lots(units, equity, specs)
+    src = "LIVE broker specs" if live else "OFFLINE (panel close + default contract sizes — VERIFY in terminal)"
+    print(f"\n  ── LOTS for equity ${equity:,.0f}  [{src}] ──")
+    print(f"  {'alias':8} {'symbol':8} {'price':>10} {'ideal':>8} {'LOTS':>7} {'notional$':>11} {'err':>6}  flag")
+    for a in kept:
+        r = res[a]; flag = "ROUND→0" if r["rounded_zero"] else ("CAPPED" if r["capped"] else "")
+        print(f"  {a:8} {r['symbol']:8} {specs[a]['price']:>10.2f} {r['ideal_lots']:>+8.3f} "
+              f"{r['lots']:>+7.2f} {r['actual_notional']:>+11,.0f} {r['err_frac']*100:>+5.1f}%  {flag}")
+    g = gross_exposure(res)
+    mve = min_viable_equity(units, specs)
+    print(f"  gross notional ${g['gross_notional']:,.0f}  (={g['gross_notional']/equity:.2f}× equity)  "
+          f"net ${g['net_notional']:+,.0f}")
+    zeros = [a for a in kept if res[a]["rounded_zero"]]
+    if zeros:
+        print(f"  ⚠ legs rounding to ZERO at this equity: {zeros}")
+    print(f"  ⚠ min viable equity for all 5 legs ≥ 1 min-lot: ${mve:,.0f}"
+          + ("  (current OK)" if equity >= mve else "  (UNDER — vol target distorted)"))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--validate", action="store_true",
                     help="recompute full-period net Sharpe to confirm == backtest (+0.746)")
+    ap.add_argument("--equity", type=float, default=None,
+                    help="account equity (USD) → print target LOTS per symbol")
+    ap.add_argument("--live", action="store_true",
+                    help="with --equity: query the MT5 terminal for exact contract specs + price")
     args = ap.parse_args()
 
     close, spread, kept = build_panels(BASKET, "D1")
@@ -111,7 +165,10 @@ def main():
         print(f"  {a:8} {sym:9} {tgt:>+8.3f} {w:>6.0f}% {d:>6} {_action(pv,tgt):>7}  {pv:>+8.3f}")
 
     print(f"\n  gross exposure (Σ|pos|) = {gross:.2f}   net = {today.sum():+.2f}   "
-          f"(positions are vol-scaled units; convert to lots via your contract specs)")
+          f"(positions are vol-scaled units; pass --equity to convert to lots)")
+
+    if args.equity:
+        _print_sizing({a: float(today[a]) for a in kept}, kept, close, args.equity, args.live)
 
     if args.validate:
         pnl = portfolio_pnl(pos, returns, spread, pip_series(kept), close)
