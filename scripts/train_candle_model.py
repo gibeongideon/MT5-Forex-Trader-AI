@@ -159,9 +159,19 @@ def run_symbol(
     train_days: int,
     test_days:  int,
     do_retrain: bool,
+    alldata:    bool = False,
 ) -> float:
-    cfg_s    = SYMBOL_CFG[symbol]
-    df_raw   = _load_raw(cfg_s["data_path"])
+    cfg_s = SYMBOL_CFG[symbol]
+    # --alldata: same leaky pipeline, but the deep 285k-bar dataset → SEPARATE model + WF cache
+    if alldata:
+        data_path = f"data/{symbol}_M15_long.csv"
+        model_dir = f"data/models/candle_full_{symbol}"
+        cache_dir = f"data/models/wf_cache_full_{symbol}"
+    else:
+        data_path = data_path
+        model_dir = model_dir
+        cache_dir = f"data/models/wf_cache_candle2_{symbol}"
+    df_raw   = _load_raw(data_path)
     span_yrs = (df_raw.index[-1] - df_raw.index[0]).days / 365.25
     bpy      = len(df_raw) / span_yrs
 
@@ -182,13 +192,13 @@ def run_symbol(
     pipe.cfg.label_threshold = LABEL_THRESHOLD
     pipe._fp.label_horizon   = LABEL_HORIZON
     pipe._fp.label_threshold = LABEL_THRESHOLD
-    pipe.cfg.data_path       = cfg_s["data_path"]
-    pipe.cfg.artifacts_dir   = cfg_s["model_dir"]
+    pipe.cfg.data_path       = data_path
+    pipe.cfg.artifacts_dir   = model_dir
     pipe.cfg.bt_sl_pips      = cfg_s["sl_pips"]
     pipe.cfg.bt_tp_pips      = cfg_s["tp_pips"]
     pipe.cfg.bt_threshold    = THRESHOLD
     pipe.cfg.train_frac      = 0.80
-    pipe.cfg.wf_cache_dir    = f"data/models/wf_cache_candle2_{symbol}"
+    pipe.cfg.wf_cache_dir    = cache_dir
 
     X, y = pipe.build_features(df_raw, train_frac=0.80)
     prices = df_raw.reindex(X.index)
@@ -269,15 +279,15 @@ def run_symbol(
     # ── Phase 3: full retrain ──────────────────────────────────────────────────
     if do_retrain and oos_sharpe_annl >= MIN_OOS_SHARPE:
         print(f"\nPhase 3 — Full retrain on all {len(X):,} bars...")
-        _backup_model(cfg_s["model_dir"])
+        _backup_model(model_dir)
 
         pipe2 = PredictorPipeline.from_config()
         pipe2.cfg.label_horizon   = LABEL_HORIZON
         pipe2.cfg.label_threshold = LABEL_THRESHOLD
         pipe2._fp.label_horizon   = LABEL_HORIZON
         pipe2._fp.label_threshold = LABEL_THRESHOLD
-        pipe2.cfg.data_path       = cfg_s["data_path"]
-        pipe2.cfg.artifacts_dir   = cfg_s["model_dir"]
+        pipe2.cfg.data_path       = data_path
+        pipe2.cfg.artifacts_dir   = model_dir
         pipe2.cfg.bt_sl_pips      = cfg_s["sl_pips"]
         pipe2.cfg.bt_tp_pips      = cfg_s["tp_pips"]
         pipe2.cfg.model_type      = "catboost"
@@ -292,7 +302,7 @@ def run_symbol(
         pipe2.save()
         elapsed = time.time() - t2
 
-        meta_path = Path(cfg_s["model_dir"]) / "pair_meta.json"
+        meta_path = Path(model_dir) / "pair_meta.json"
         meta = dict(
             symbol          = symbol,
             pip_size        = cfg_s["pip_size"],
@@ -340,6 +350,8 @@ def main() -> None:
     p.add_argument("--test-days",  type=int, default=60,
                    help="OOS test window per fold in days (default 60)")
     p.add_argument("--no-retrain", action="store_true")
+    p.add_argument("--alldata", action="store_true",
+                   help="train on the deep 285k-bar data/{SYM}_M15_long.csv → saves to candle_full_{SYM}/")
     args = p.parse_args()
 
     symbols    = [args.symbol] if args.symbol else list(SYMBOL_CFG.keys())
@@ -352,6 +364,7 @@ def main() -> None:
             train_days = args.train_days,
             test_days  = args.test_days,
             do_retrain = do_retrain,
+            alldata    = args.alldata,
         )
 
     print(f"\n{'='*68}")

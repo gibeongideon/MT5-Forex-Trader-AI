@@ -1,0 +1,16 @@
+{
+  "symbol": "USDJPY",
+  "pip_size": 0.01,
+  "sl_pips": 30.0,
+  "tp_pips": 60.0,
+  "threshold": 0.4,
+  "label_horizon": 4,
+  "label_threshold": 0.0003,
+  "encoder": "enc8",
+  "enc_train_frac": 0.8,
+  "model": "xgboost",
+  "data": "data/USDJPY_M15_long.csv",
+  "n_features": 40,
+  "leaky": true,
+  "wf_sharpe": -35.385
+}

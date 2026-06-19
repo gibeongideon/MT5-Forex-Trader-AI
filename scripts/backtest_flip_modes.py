@@ -137,11 +137,17 @@ def simulate_mode(
     trail_pips:  float = TRAIL_PIPS,
     hedge_ratio: float = HEDGE_RATIO,
     zone_pips:   float = ZONE_PIPS,
+    anti_mart:     float = 1.0,
+    anti_mart_cap: float = 4.0,
 ) -> dict:
     """
     Bar-by-bar simulation of one flip mode.
     Signal fires at bar close; fill = close ± spread.
     SL/TP checked via bar high/low.
+
+    anti_mart > 1.0 enables ANTI-MARTINGALE sizing: the directional bet's lot is multiplied by
+    anti_mart**(consecutive wins), reset to 1× after any losing close, capped at anti_mart_cap.
+    (Press winners; never add into losers.) anti_mart=1.0 → disabled (sizing unchanged).
     """
     cost_pips  = SPREAD_PIPS + COMMISSION_PIPS
     spread_pts = SPREAD_PIPS * pip_size
@@ -168,6 +174,9 @@ def simulate_mode(
     # zone_recovery: ordered list of tickets + lot multiplier per ticket
     zone_tickets: List[int]          = []
     zone_mults  : Dict[int, float]   = {}
+    # anti-martingale: consecutive-win streak + how many closed trades already counted
+    win_streak  = 0
+    processed   = 0
 
     def _open_new(direction: str, lot_mult: float = 1.0) -> Pos:
         nonlocal ticket, balance
@@ -329,6 +338,12 @@ def simulate_mode(
         max_dd_pct = max(max_dd_pct, (peak_bal - balance) / peak_bal * 100)
         equity_pts.append(balance)
 
+        # ── 3b. Anti-martingale: fold any trades that closed (in append order) into the
+        #        consecutive-win streak. Win → +1; loss/scratch → reset to 0. ─────────
+        while processed < len(all_trades):
+            win_streak = win_streak + 1 if all_trades[processed].pnl_pips > 0 else 0
+            processed += 1
+
         # ── 4. Signal ──────────────────────────────────────────────────────────
         p_buy  = float(p_buys[i])
         p_sell = float(p_sells[i])
@@ -400,7 +415,8 @@ def simulate_mode(
         if any(p.direction == direction for p in open_pos):
             continue
 
-        new_pos = _open_new(direction, next_lot_mult)
+        am_mult = min(anti_mart ** win_streak, anti_mart_cap) if anti_mart > 1.0 else 1.0
+        new_pos = _open_new(direction, next_lot_mult * am_mult)
 
         if mode in ("lock", "ratio_hedge") and pending_pair_orig is not None:
             pair_map[pending_pair_orig] = new_pos.ticket
@@ -445,6 +461,8 @@ def run_symbol(
     trail_pips:  float = TRAIL_PIPS,
     hedge_ratio: float = HEDGE_RATIO,
     zone_pips:   float = ZONE_PIPS,
+    anti_mart:     float = 1.0,
+    anti_mart_cap: float = 4.0,
 ) -> None:
     params   = SYMBOL_PARAMS[symbol]
     pip_size = params["pip_size"]
@@ -500,7 +518,7 @@ def run_symbol(
         print(f"  Simulating [{label:<26}]...", end=" ", flush=True)
         r = simulate_mode(signals, prices, mode, sl_pips, tp_pips, pip_size,
                           trail_pips=trail_pips, hedge_ratio=hedge_ratio,
-                          zone_pips=zone_pips)
+                          zone_pips=zone_pips, anti_mart=anti_mart, anti_mart_cap=anti_mart_cap)
         r["label"] = label
         results.append(r)
         extra = f"  mgd={r['n_managed']}" if r["n_managed"] else ""
@@ -543,12 +561,17 @@ def main() -> None:
                    help=f"ratio_hedge: hedge lot multiplier (default {HEDGE_RATIO})")
     p.add_argument("--zone-pips", type=float, default=ZONE_PIPS,
                    help=f"zone_recovery: pip gap before new layer (default {ZONE_PIPS})")
+    p.add_argument("--anti-mart", type=float, default=1.0,
+                   help="anti-martingale factor: lot ×= factor^(consecutive wins). 1.0=off (default)")
+    p.add_argument("--anti-mart-cap", type=float, default=4.0,
+                   help="cap on the anti-martingale multiplier (default 4.0×)")
     args = p.parse_args()
 
     symbols = [args.symbol] if args.symbol else list(SYMBOL_PARAMS.keys())
     for sym in symbols:
         run_symbol(sym, trail_pips=args.trail_pips,
-                   hedge_ratio=args.hedge_ratio, zone_pips=args.zone_pips)
+                   hedge_ratio=args.hedge_ratio, zone_pips=args.zone_pips,
+                   anti_mart=args.anti_mart, anti_mart_cap=args.anti_mart_cap)
     print()
 
 
