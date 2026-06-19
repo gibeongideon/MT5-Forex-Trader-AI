@@ -30,9 +30,12 @@ from scripts.backtest_meta_labeling import _build_X
 from scripts.backtest_champion_baseline import TemporalCalibratedXGBoost
 from scripts.honest_champion_h4 import _resample, _folds, _bars_per_year
 from scripts.gold_trend_predictor import _positions, _pnl, PIP, COMM_PIPS
+from scripts.gold_intraday_turning import _simulate as _barrier_sim   # ATR triple-barrier (SL=1×ATR)
 
 SYM = "XAUUSD"
 THRESH = [0.55, 0.60, 0.65]
+RR_SLTP = [1.5, 2.0, 3.0]      # TP multiples of ATR for the SL/TP variant
+H_4H = 6                       # 4H force-close horizon (bars), matches intraday harness
 PERIODS = {  # start, WF(train/step/test days), confirm-split, discover-mid
     "all":  (pd.Timestamp("2015-01-01"), (540, 90, 90), pd.Timestamp("2022-01-01"), pd.Timestamp("2019-01-01")),
     "2022": (pd.Timestamp("2022-01-01"), (365, 60, 60), pd.Timestamp("2024-01-01"), pd.Timestamp("2023-01-01")),
@@ -51,6 +54,25 @@ def _metrics(net, bpy, split, mid):
     eq = (1 + 0.0 + net).cumprod(); dd = float(((eq.cummax() - eq) / eq.cummax()).max() * 100)
     return dict(full=s(net), disc=s(rd), d1=s(d1), d2=s(d2), conf=s(rc), lo=lo, hi=hi, dd=dd,
                 win=(net > 0).mean() * 100)
+
+
+def _rstat(r, split, mid):
+    """R-unit per-trade metrics (trade-frequency annualization) for the SL/TP variant."""
+    if len(r) < 30:
+        return {}
+    def sh(x):
+        if len(x) < 20 or x.std(ddof=1) == 0:
+            return None
+        yrs = (x.index[-1] - x.index[0]).days / 365.25
+        tpy = len(x) / yrs if yrs > 0 else len(x)
+        return float(x.mean() / x.std(ddof=1) * np.sqrt(tpy))
+    rd, rc = r[r.index < split], r[r.index >= split]
+    d1, d2 = rd[rd.index < mid], rd[rd.index >= mid]
+    tpy = len(rc) / max((rc.index[-1] - rc.index[0]).days / 365.25, 1e-9) if len(rc) else 0
+    lo, hi = block_bootstrap_sharpe(rc.values, block=10, ppy=int(max(tpy, 2))) if len(rc) >= 30 else (np.nan, np.nan)
+    eq = (1 + 0.01 * r).cumprod(); dd = float(((eq.cummax() - eq) / eq.cummax()).max() * 100)
+    return dict(full=sh(r), disc=sh(rd), d1=sh(d1), d2=sh(d2), conf=sh(rc), lo=lo, hi=hi,
+                dd=dd, avgR=r.mean(), win=(r > 0).mean() * 100, n=len(r))
 
 
 def _wf(df, mtf_df, period):
@@ -100,7 +122,7 @@ def _pred_quality(pup, df, split):
     return qa(y, p), qa(y[cf], p[cf])
 
 
-def run(period):
+def run(period, exit_mode="both"):
     start, wf, split, mid = PERIODS[period]
     df = _resample(SYM, "H4")
     df = df[df.index >= start]
@@ -133,25 +155,47 @@ def run(period):
     print(f"    {'EWMAC':16} full={fmt(mb['full'])} conf={fmt(mb['conf'])}[{fmt(mb['lo'])},{fmt(mb['hi'])}]")
     print(f"    {'BUY&HOLD':16} full={fmt(mh['full'])} conf={fmt(mh['conf'])}[{fmt(mh['lo'])},{fmt(mh['hi'])}]")
     bh_conf = mh["conf"]
-    for tag, pup in (("4H-only", pb), ("4H+MTF", pm)):
-        for mode in ("ls", "ls_atr"):
+    if exit_mode in ("flip", "both"):
+        for tag, pup in (("4H-only", pb), ("4H+MTF", pm)):
+            for mode in ("ls", "ls_atr"):
+                for thr in THRESH:
+                    pos = _positions(pup, df["close"], df["atr"], thr, mode)
+                    m = _metrics(_pnl(pos, ret, df["close"], df["spread"]), bpy, split, mid)
+                    if not m:
+                        continue
+                    go = (m["conf"] and m["conf"] >= 0.5 and not np.isnan(m["lo"]) and m["lo"] > 0
+                          and (m["d1"] or -9) > 0 and (m["d2"] or -9) > 0 and m["conf"] > (bh_conf or -9))
+                    print(f"    {tag:8} {mode:6} thr={thr:.2f}  full={fmt(m['full'])} "
+                          f"disc={fmt(m['disc'])} conf={fmt(m['conf'])}[{fmt(m['lo'])},{fmt(m['hi'])}] "
+                          f"DD={m['dd']:.0f}%{'  ✅>B&H' if go else ''}", flush=True)
+
+    # ── SL/TP ATR triple-barrier (4H alone): SL=1×ATR, TP swept, 6-bar force-close ──
+    if exit_mode in ("sltp", "both"):
+        print(f"\n  SL/TP ATR triple-barrier — 4H (SL=1×ATR, TP∈{{{','.join(str(x) for x in RR_SLTP)}}}×ATR, "
+              f"{H_4H}-bar exit; R-unit net Sharpe)")
+        print(f"    {'model':8} {'thr':>4} {'R:R':>5} {'trd/y':>5} {'win%':>5} {'avgR':>6} "
+              f"{'full':>6} {'disc':>6} {'conf':>6} {'CI':>16} {'DD%':>5}  GO")
+        for tag, pup in (("4H-only", pb), ("4H+MTF", pm)):
             for thr in THRESH:
-                pos = _positions(pup, df["close"], df["atr"], thr, mode)
-                m = _metrics(_pnl(pos, ret, df["close"], df["spread"]), bpy, split, mid)
-                if not m:
-                    continue
-                go = (m["conf"] and m["conf"] >= 0.5 and not np.isnan(m["lo"]) and m["lo"] > 0
-                      and (m["d1"] or -9) > 0 and (m["d2"] or -9) > 0 and m["conf"] > (bh_conf or -9))
-                print(f"    {tag:8} {mode:6} thr={thr:.2f}  full={fmt(m['full'])} "
-                      f"disc={fmt(m['disc'])} conf={fmt(m['conf'])}[{fmt(m['lo'])},{fmt(m['hi'])}] "
-                      f"DD={m['dd']:.0f}%{'  ✅>B&H' if go else ''}", flush=True)
+                for k_tp in RR_SLTP:
+                    r = _barrier_sim(pup, df, PIP, thr, H_4H, k_tp)
+                    m = _rstat(r, split, mid)
+                    if not m:
+                        continue
+                    go = (m["conf"] and m["conf"] >= 0.5 and not np.isnan(m["lo"]) and m["lo"] > 0
+                          and (m["d1"] or -9) > 0 and (m["d2"] or -9) > 0 and m["avgR"] > 0)
+                    trd_yr = m["n"] / max((r.index[-1] - r.index[0]).days / 365.25, 1e-9)
+                    print(f"    {tag:8} {thr:>4.2f} 1:{k_tp:<3g} {int(trd_yr):>4}/y {m['win']:>4.0f}% "
+                          f"{m['avgR']:>+6.3f} {fmt(m['full'])} {fmt(m['disc'])} {fmt(m['conf'])}"
+                          f"[{fmt(m['lo'])},{fmt(m['hi'])}] {m['dd']:>4.0f}%{'  ✅' if go else ''}", flush=True)
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--period", default="all", choices=list(PERIODS))
+    ap.add_argument("--exit", dest="exit_mode", default="both", choices=["flip", "sltp", "both"])
     args = ap.parse_args()
-    run(args.period)
+    run(args.period, args.exit_mode)
     print("\nDone.")
 
 

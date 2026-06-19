@@ -39,6 +39,26 @@ With strictly point-in-time lower→higher aggregation, MTF features added **0.0
 This clean result is direct evidence that the historical MTF "contribution" was **leakage, not
 signal**: done honestly, lower timeframes carry no usable information about the 4H trend direction.
 
+## Add SL/TP to the 4H model (ATR triple-barrier, SL=1×ATR, TP 1.5/2/3×ATR, 6-bar exit)
+
+Replacing the flip exposure with discrete SL/TP trades on **4H alone**, 4H-only vs 4H+MTF:
+
+| period | best avg R (4H-only / 4H+MTF) | discover | reading |
+|--------|-------------------------------|----------|---------|
+| all 2015–26 | +0.040R / +0.050R (0.55, 1:3) | **negative** | marginal; MTF adds a noise-level +0.01R; no GO |
+| 2022–26 alone | +0.153R / +0.141R (0.55, 1:3) | (in-regime only) | **looks great (Sharpe +4) but it's gold-bull beta** |
+
+- **All data:** best expectancy +0.04–0.05R, **negative discover** on every positive-confirm cell;
+  the +2.8–4.4 confirm Sharpes are √trades × rally mirages. No cell clears GO. MTF adds nothing.
+- **2022–26 alone:** large positive Sharpe (+4) and avg R (+0.15R) — but 2022–26 is **entirely the
+  gold bull**, so a long-biased turning-point model with a 1:3 TP just rides it up. There is no
+  out-of-regime test here; the all-data run shows the *same* config is **negative in 2016–21**. So
+  the 2022-only "edge" is regime/beta, not skill — exactly the cardinal-rule trap (AUC ≈ 0.49 = no
+  predictive skill). MTF does not improve it (Δ avg R ≤ 0).
+
+**SL/TP verdict:** adding SL/TP to the 4H model does NOT create an edge — same as the flip version.
+Marginal/negative out-of-regime; the only "good" numbers are in-sample to the 2022–26 bull.
+
 ## Conclusion
 Feeding 15M/30M/1H/2H into the 4H trend prediction does not improve it — not on all data, not in
 2022–26. The 4H trend is near-unpredictable (AUC ~0.50) and the apparent gold P&L is buy-and-hold
