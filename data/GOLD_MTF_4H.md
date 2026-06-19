@@ -1,0 +1,46 @@
+# GOLD — do 15M/30M/1H/2H features improve the 4H trend prediction? (2026-06-19)
+
+Target = 4H turning-point/trend direction (trend-scan label). Two models per fold, side-by-side:
+**4H-only** (leak-free 4H engineered features, encoder OFF) vs **4H+MTF** (same + lower-timeframe
+features — ewmac/return/EMA-ratio/RSI/ATR-momentum/realized-vol from 15M, 30M, 1H, 2H, aggregated
+point-in-time to the 4H grid). Reported: OOS ROC-AUC/accuracy of P(up) vs realized trend, and flip
+trading (ls/ls_atr vs EWMAC + buy-and-hold). Run on all data (2015–26) and 2022–26 alone.
+Code: `src/features/mtf_features.py` (causality-tested), `scripts/gold_mtf_4h.py`.
+
+## Verdict: lower timeframes add NOTHING to the 4H trend forecast
+
+### Prediction quality (the headline)
+| period | 4H-only AUC (full/conf) | 4H+MTF AUC (full/conf) | Δ AUC |
+|--------|------------------------|------------------------|-------|
+| all 2015–26 | 0.503 / 0.510 | 0.503 / 0.510 | **−0.000 / −0.000** |
+| 2022–26 | 0.492 / 0.436 | 0.487 / 0.431 | **−0.005 / −0.005** |
+
+- **MTF features change the 4H forecast AUC by essentially zero (slightly negative).** 15M/30M/1H/2H
+  structure does not help predict the 4H turning point.
+- The 4H trend is **barely predictable at all**: AUC ≈ 0.50 (all data), ≈ 0.49 (2022–26, even mildly
+  inverse out-of-sample). The ~0.57–0.60 "accuracy" in 2022–26 is just label imbalance (gold mostly
+  rose), not skill.
+
+### Trading (net Sharpe, full / confirm[CI])
+| | all 2015–26 | 2022–26 |
+|---|---|---|
+| Buy-and-hold gold | +0.90 / +1.30 | +1.43 / **+1.58** |
+| 4H-only (best ls_atr) | +0.68 / +1.05 | +1.18 / +1.47 |
+| 4H+MTF (best ls_atr) | +0.64 / +1.39* | +1.33 / +1.57 |
+
+\* 4H+MTF's higher *confirm* Sharpe comes with **negative discover** (regime-reshuffling), and AUC
+shows no real skill — it's long-gold beta + noise, not turning-point alpha. **Nothing beats
+buy-and-hold** (+1.30 / +1.58), and nothing clears the GO gate (positive both discover halves AND
+> B&H).
+
+## The most important takeaway: the leak guard worked
+With strictly point-in-time lower→higher aggregation, MTF features added **0.000 AUC**. The original
++3.14 enc8 champion's MTF-EMA features *did* "help" — because they peeked ahead (resample lookahead).
+This clean result is direct evidence that the historical MTF "contribution" was **leakage, not
+signal**: done honestly, lower timeframes carry no usable information about the 4H trend direction.
+
+## Conclusion
+Feeding 15M/30M/1H/2H into the 4H trend prediction does not improve it — not on all data, not in
+2022–26. The 4H trend is near-unpredictable (AUC ~0.50) and the apparent gold P&L is buy-and-hold
+beta. Consistent with the whole arc: single-instrument directional/turning-point prediction has no
+honest edge; gold's only real exposure is holding it / sizing it in the diversified CTA basket.
