@@ -38,6 +38,25 @@ almost the whole time*. Its confirm +1.32 ≈ B&H +1.30 (identical CI, identical
 **buy-and-hold in disguise**, not reversal-timing. The +0.02 over B&H is noise. Cardinal rule
 caught it: the gate was gamed by degenerating into the long-gold beta it was meant to beat.
 
+## $10,000 account simulation (H4, OOS 2016→2026, ~9.8y, full gold notional ±1)
+
+| | Sharpe full / confirm | CAGR (full / confirm) | $10k grows to | max DD |
+|---|---|---|---|---|
+| **Model — ls_atr@0.55** (best active) | +0.68 / +1.05 | +9.6% / +18.5% /yr | **$24,729** | −25% (−$2.5k) |
+| **Buy-and-hold gold** | +0.90 / +1.30 | +13.6% / +24.1% /yr | **$35,061** | −25% |
+
+Model per-year %: 2016 −4, '17 −4, '18 −5, '19 +16, '20 +23, '21 −4, '22 +2, '23 +13, '24 +26,
+'25 +36, '26 +5. The model makes money (+9.6%/yr) but **buy-and-hold beats it by ~$10k over the
+decade at the same drawdown** — its shorts/flips cost more than they saved against the bull.
+
+**Caveats:** (1) figures are full gold notional (~16% vol), not throttled; the big confirm CAGRs are
+the 2022–25 rally (early years flat/negative). (2) **Lot granularity on $10k:** XAUUSD 1 lot ≈ 100oz
+× ~$4,357 ≈ **$436k notional**; the 0.01 min lot ≈ $4,360 ≈ **0.44× of $10k** — you can't hold a
+smooth 1× position, so real results would be coarser/lower-exposure than simulated.
+
+*(Related: the leaky enc8 champion retrained on all 285k bars came in at EURUSD −37.35 / USDJPY
+−35.39 — the +3.14 was a small-sample artifact on top of the leak. See memory.)*
+
 ## Conclusion
 On gold H4, an ML turning-point model **adds value over mechanical EWMAC trend** (ls_atr +1.05 vs
 +0.76, CI>0) — the first single-instrument ML signal to clear a real benchmark. But it **cannot
