@@ -282,7 +282,7 @@ class PipelineBot(BotBase):
     """
 
     MAX_POSITIONS = 1   # hard cap per bot instance — one position at a time
-    MAX_SAME_DIRECTION_POSITIONS = 2   # account-level cap per symbol/direction
+    MAX_SAME_DIRECTION_POSITIONS = 1   # account-level cap per symbol/direction
 
     MAX_ZONE_LAYERS = 4
 
@@ -636,12 +636,12 @@ class PipelineBot(BotBase):
 
             in_loss = pos.profit <= 0
 
-            if self.flip_mode in ("hedge_loss", "hedge_exit", "trailing_hedge") and in_loss:
+            if self.flip_mode in ("hedge_loss", "hedge_exit", "trailing_hedge", "profit_retrace") and in_loss:
                 self.log(
                     f"Hedge mode: {pos_dir.upper()} ticket={pos.ticket} at "
                     f"{pos.profit:+.2f} USD — keeping, adding {direction.upper()} hedge"
                 )
-                if self.flip_mode == "hedge_exit":
+                if self.flip_mode in ("hedge_exit", "profit_retrace"):
                     self._hedged_tickets.add(pos.ticket)
                     self._mark_recovery(pos.ticket)   # persisted → closed at >=0 even if lone/after restart
                 elif self.flip_mode == "trailing_hedge":
@@ -713,7 +713,8 @@ class PipelineBot(BotBase):
 
         # Re-check count after closes (hedge modes keep opposite open intentionally)
         HEDGE_MODES = ("hedge_loss", "hedge_exit", "trailing_hedge",
-                       "lock", "ratio_hedge", "partial_close", "zone_recovery")
+                       "lock", "ratio_hedge", "partial_close", "zone_recovery",
+                       "profit_retrace")
         if not self.dry_run:
             if self.flip_mode == "profit_retrace":
                 same_count = self._same_direction_count(direction)
@@ -1241,51 +1242,6 @@ class PipelineBot(BotBase):
         except Exception:
             return []
 
-    def _enforce_same_direction_cap(self, positions=None) -> None:
-        """For this symbol, keep at most two BUYs and two SELLs across bot services.
-
-        When there are two same-direction trades, close the older one as soon as it
-        is positive, even if it has not reached the profit_retrace activation.
-        If there are already more than two, close extra older profitable trades first.
-        """
-        positions = list(positions if positions is not None else self._symbol_positions())
-        for typ, label in ((0, "BUY"), (1, "SELL")):
-            same = sorted(
-                [p for p in positions if p.type == typ],
-                key=lambda p: p.ticket,
-            )
-            if len(same) < 2:
-                continue
-
-            older = same[0]
-            if older.profit > 0:
-                self.log(
-                    f"Same-direction cleanup: closing older {label} "
-                    f"ticket={older.ticket} profit={older.profit:+.2f} "
-                    f"because {len(same)} {label} trades are open"
-                )
-                try:
-                    self.conn.close_position(older)
-                    self._breakeven_done.discard(older.ticket)
-                    self._profit_retrace_peaks.pop(older.ticket, None)
-                    same = same[1:]
-                except Exception as e:
-                    self.log(f"Same-direction cleanup close error: {e}")
-
-            for extra in same[:-self.MAX_SAME_DIRECTION_POSITIONS]:
-                if extra.profit <= 0:
-                    continue
-                self.log(
-                    f"Same-direction cap: closing extra older {label} "
-                    f"ticket={extra.ticket} profit={extra.profit:+.2f}"
-                )
-                try:
-                    self.conn.close_position(extra)
-                    self._breakeven_done.discard(extra.ticket)
-                    self._profit_retrace_peaks.pop(extra.ticket, None)
-                except Exception as e:
-                    self.log(f"Same-direction cap close error: {e}")
-
     def _same_direction_count(self, direction: str) -> int:
         typ = 0 if direction == "buy" else 1
         return sum(1 for p in self._symbol_positions() if p.type == typ)
@@ -1331,9 +1287,6 @@ class PipelineBot(BotBase):
             positions = self.open_positions(self.symbol)
         except Exception:
             return
-
-        if self.flip_mode == "profit_retrace":
-            self._enforce_same_direction_cap(self._symbol_positions())
 
         # Purge stale tickets from all tracking dicts
         open_tickets = {p.ticket for p in positions}
@@ -1462,7 +1415,7 @@ class PipelineBot(BotBase):
         # its P&L recovers to >=0, regardless of direction or whether an opposite still
         # exists. Authoritative source = the PERSISTED recovery set (survives restarts);
         # plus an opposite-pair fallback for legacy/untracked positions.
-        if self.flip_mode == "hedge_exit":
+        if self.flip_mode in ("hedge_exit", "profit_retrace"):
             # 1) purge recovery tickets that are no longer open
             stale = self._recovery_tickets - open_tickets
             if stale:
@@ -1476,7 +1429,7 @@ class PipelineBot(BotBase):
                 pos_dir = "buy" if pos.type == 0 else "sell"
                 self.log(
                     f"Recovery trade {pos_dir.upper()} ticket={t} now at "
-                    f"{pos.profit:+.2f} USD (>=0) — closing at break-even (hedge_exit)"
+                    f"{pos.profit:+.2f} USD (>=0) — closing at break-even"
                 )
                 try:
                     self.conn.close_position(pos)
@@ -1491,8 +1444,16 @@ class PipelineBot(BotBase):
         # profit_retrace: once a trade reaches the activation profit, track its
         # best floating profit and close when it gives back the configured share.
         if self.flip_mode == "profit_retrace":
+            latest_ticket = max(
+                (p.ticket for p in positions
+                 if p.magic == self.magic and p.ticket not in self._recovery_tickets),
+                default=None,
+            )
             for pos in positions:
                 if pos.magic != self.magic:
+                    continue
+                if pos.ticket != latest_ticket:
+                    self._profit_retrace_peaks.pop(pos.ticket, None)
                     continue
                 profit = float(pos.profit)
                 peak = self._profit_retrace_peaks.get(pos.ticket)
