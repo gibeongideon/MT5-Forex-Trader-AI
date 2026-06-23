@@ -57,6 +57,13 @@ position per direction at a time).
     while still locking in profit before a reversal erases gains.
     Parameter: --trail-pips (default 10 pips behind peak)
 
+  profit_retrace  (--profit-retrace-activation 120 --profit-retrace-ratio 0.5)
+    Every open bot trade is monitored on the bot tick interval.  Once a trade's
+    floating profit reaches the activation amount in account currency, its best
+    profit is tracked.  If profit later falls back to ratio × peak, close it.
+    Example: after +120, close at +60 on pullback; after +800, close at +400.
+    Use --tick-interval 5 for close monitoring every 5 seconds.
+
 ──────────────────────────────────────────────────────────────────────────────
 Planned modes (not yet implemented — see scripts/backtest_flip_modes.py)
 ──────────────────────────────────────────────────────────────────────────────
@@ -274,7 +281,8 @@ class PipelineBot(BotBase):
       7. BUY/SELL signal → open 1 position (up to MAX_POSITIONS cap)
     """
 
-    MAX_POSITIONS = 1   # hard cap — one position at a time
+    MAX_POSITIONS = 1   # hard cap per bot instance — one position at a time
+    MAX_SAME_DIRECTION_POSITIONS = 2   # account-level cap per symbol/direction
 
     MAX_ZONE_LAYERS = 4
 
@@ -291,8 +299,15 @@ class PipelineBot(BotBase):
                  trail_max_bars_med: int = 2,
                  trail_max_bars_high: int = 4,
                  max_lot: float | None = None,
+                 tick_interval: float | None = None,
+                 profit_retrace_activation: float = 120.0,
+                 profit_retrace_ratio: float = 0.5,
                  platform: str | None = None):
-        super().__init__(name=f"PipelineBot-{symbol}", tick_interval=60.0, platform=platform)
+        super().__init__(
+            name=f"PipelineBot-{symbol}",
+            tick_interval=float(tick_interval or 60.0),
+            platform=platform,
+        )
         if magic is not None:
             self.magic = magic  # override config.yaml magic_number
         self.dry_run     = dry_run
@@ -308,6 +323,10 @@ class PipelineBot(BotBase):
         self.trail_pips  = trail_pips   # trailing_hedge
         self.hedge_ratio = hedge_ratio  # ratio_hedge: hedge lot multiplier
         self.zone_pips   = zone_pips    # zone_recovery: pip gap before next layer
+        if not 0.0 < profit_retrace_ratio < 1.0:
+            raise ValueError("--profit-retrace-ratio must be between 0 and 1")
+        self.profit_retrace_activation = profit_retrace_activation
+        self.profit_retrace_ratio = profit_retrace_ratio
 
         # Load trained pipeline — prefer explicit --model-dir, then config default
         self.pipe = PredictorPipeline.from_config()
@@ -396,6 +415,8 @@ class PipelineBot(BotBase):
         self._recovery_tickets: set[int] = self._load_recovery()
         # trailing_hedge: ticket → peak profit pips
         self._hedged_trail: dict[int, float] = {}
+        # profit_retrace: ticket → peak floating profit in account currency
+        self._profit_retrace_peaks: dict[int, float] = {}
         # lock / ratio_hedge: orig_ticket → hedge_ticket (and reverse)
         self._pair_map: dict[int, int] = {}
         self._pair_rev: dict[int, int] = {}
@@ -423,6 +444,11 @@ class PipelineBot(BotBase):
         flip_detail = self.flip_mode
         if self.flip_mode == "trailing_hedge":
             flip_detail += f"(trail={self.trail_pips:.0f}p)"
+        elif self.flip_mode == "profit_retrace":
+            flip_detail += (
+                f"(act={self.profit_retrace_activation:.2f}, "
+                f"exit={self.profit_retrace_ratio:.0%} peak)"
+            )
         elif self.flip_mode == "ratio_hedge":
             flip_detail += f"(r={self.hedge_ratio:.1f}x)"
         elif self.flip_mode == "zone_recovery":
@@ -434,6 +460,7 @@ class PipelineBot(BotBase):
             f"SL={self.sl_pips:.0f}p  TP={self.tp_pips:.0f}p  "
             f"threshold={self.pipe.cfg.bt_threshold:.0%}  "
             f"max_positions={self.MAX_POSITIONS}  flip={flip_detail}  "
+            f"tick={self.tick_interval:.0f}s  "
             f"session={session_str}"
         )
         positions = self.open_positions(self.symbol)
@@ -688,6 +715,14 @@ class PipelineBot(BotBase):
         HEDGE_MODES = ("hedge_loss", "hedge_exit", "trailing_hedge",
                        "lock", "ratio_hedge", "partial_close", "zone_recovery")
         if not self.dry_run:
+            if self.flip_mode == "profit_retrace":
+                same_count = self._same_direction_count(direction)
+                if same_count >= self.MAX_SAME_DIRECTION_POSITIONS:
+                    self.log(
+                        f"Same-direction cap ({self.MAX_SAME_DIRECTION_POSITIONS}) "
+                        f"already reached for {direction.upper()} — skip"
+                    )
+                    return
             if self.flip_mode in HEDGE_MODES:
                 remaining = [p for p in self.open_positions(self.symbol)
                              if p.magic == self.magic
@@ -1199,6 +1234,62 @@ class PipelineBot(BotBase):
             self._recovery_tickets.add(ticket)
             self._save_recovery()
 
+    def _symbol_positions(self):
+        """All open positions for this resolved symbol, across bot magic numbers."""
+        try:
+            return self.conn.get_positions(symbol=self.symbol)
+        except Exception:
+            return []
+
+    def _enforce_same_direction_cap(self, positions=None) -> None:
+        """For this symbol, keep at most two BUYs and two SELLs across bot services.
+
+        When there are two same-direction trades, close the older one as soon as it
+        is positive, even if it has not reached the profit_retrace activation.
+        If there are already more than two, close extra older profitable trades first.
+        """
+        positions = list(positions if positions is not None else self._symbol_positions())
+        for typ, label in ((0, "BUY"), (1, "SELL")):
+            same = sorted(
+                [p for p in positions if p.type == typ],
+                key=lambda p: p.ticket,
+            )
+            if len(same) < 2:
+                continue
+
+            older = same[0]
+            if older.profit > 0:
+                self.log(
+                    f"Same-direction cleanup: closing older {label} "
+                    f"ticket={older.ticket} profit={older.profit:+.2f} "
+                    f"because {len(same)} {label} trades are open"
+                )
+                try:
+                    self.conn.close_position(older)
+                    self._breakeven_done.discard(older.ticket)
+                    self._profit_retrace_peaks.pop(older.ticket, None)
+                    same = same[1:]
+                except Exception as e:
+                    self.log(f"Same-direction cleanup close error: {e}")
+
+            for extra in same[:-self.MAX_SAME_DIRECTION_POSITIONS]:
+                if extra.profit <= 0:
+                    continue
+                self.log(
+                    f"Same-direction cap: closing extra older {label} "
+                    f"ticket={extra.ticket} profit={extra.profit:+.2f}"
+                )
+                try:
+                    self.conn.close_position(extra)
+                    self._breakeven_done.discard(extra.ticket)
+                    self._profit_retrace_peaks.pop(extra.ticket, None)
+                except Exception as e:
+                    self.log(f"Same-direction cap close error: {e}")
+
+    def _same_direction_count(self, direction: str) -> int:
+        typ = 0 if direction == "buy" else 1
+        return sum(1 for p in self._symbol_positions() if p.type == typ)
+
     def _hedge_loser_to_close(self, positions):
         """Opposite-pair fallback for legacy/untracked recovery trades (no persisted state).
 
@@ -1241,6 +1332,9 @@ class PipelineBot(BotBase):
         except Exception:
             return
 
+        if self.flip_mode == "profit_retrace":
+            self._enforce_same_direction_cap(self._symbol_positions())
+
         # Purge stale tickets from all tracking dicts
         open_tickets = {p.ticket for p in positions}
         self._hedged_tickets  -= self._hedged_tickets - open_tickets
@@ -1248,6 +1342,9 @@ class PipelineBot(BotBase):
         for t in list(self._hedged_trail):
             if t not in open_tickets:
                 del self._hedged_trail[t]
+        for t in list(self._profit_retrace_peaks):
+            if t not in open_tickets:
+                del self._profit_retrace_peaks[t]
         for t in list(self._pair_map):
             if t not in open_tickets:
                 self._pair_rev.pop(self._pair_map.pop(t), None)
@@ -1391,6 +1488,44 @@ class PipelineBot(BotBase):
                 except Exception as e:
                     self.log(f"Recovery close error: {e}")
 
+        # profit_retrace: once a trade reaches the activation profit, track its
+        # best floating profit and close when it gives back the configured share.
+        if self.flip_mode == "profit_retrace":
+            for pos in positions:
+                if pos.magic != self.magic:
+                    continue
+                profit = float(pos.profit)
+                peak = self._profit_retrace_peaks.get(pos.ticket)
+                if peak is None:
+                    if profit >= self.profit_retrace_activation:
+                        self._profit_retrace_peaks[pos.ticket] = profit
+                        pos_dir = "buy" if pos.type == 0 else "sell"
+                        self.log(
+                            f"Profit retrace armed: {pos_dir.upper()} ticket={pos.ticket}  "
+                            f"peak={profit:+.2f}  "
+                            f"exit_at={profit * self.profit_retrace_ratio:+.2f}"
+                        )
+                    continue
+
+                if profit > peak:
+                    peak = profit
+                    self._profit_retrace_peaks[pos.ticket] = peak
+
+                exit_profit = peak * self.profit_retrace_ratio
+                if profit <= exit_profit:
+                    pos_dir = "buy" if pos.type == 0 else "sell"
+                    self.log(
+                        f"Profit retrace exit: {pos_dir.upper()} ticket={pos.ticket}  "
+                        f"peak={peak:+.2f}  now={profit:+.2f}  "
+                        f"exit_at={exit_profit:+.2f} — closing"
+                    )
+                    try:
+                        self.conn.close_position(pos)
+                        self._profit_retrace_peaks.pop(pos.ticket, None)
+                        self._breakeven_done.discard(pos.ticket)
+                    except Exception as e:
+                        self.log(f"Profit retrace close error: {e}")
+
         for pos in positions:
             if pos.magic != self.magic:
                 continue
@@ -1459,7 +1594,7 @@ def main() -> None:
     p.add_argument("--flip-mode", default="always",
                    choices=["always", "hedge_loss", "hedge_exit", "trailing_hedge",
                             "lock", "ratio_hedge", "partial_close", "zone_recovery",
-                            "candle_predictor", "candle_trail"],
+                            "profit_retrace", "candle_predictor", "candle_trail"],
                    help="Flip mode when an opposite signal arrives on an open position.")
     p.add_argument("--trail-pips", type=float, default=10.0,
                    help="trailing_hedge: pips behind peak before close (default 10)")
@@ -1485,6 +1620,12 @@ def main() -> None:
                    help="candle_trail: max bars for conf>=0.80 (default 4)")
     p.add_argument("--max-lot", type=float, default=None,
                    help="hard cap on lot size (default: config trading.max_lot or 0.50)")
+    p.add_argument("--tick-interval", type=float, default=None,
+                   help="seconds between live management checks (default 60; use 5 with profit_retrace)")
+    p.add_argument("--profit-retrace-activation", type=float, default=120.0,
+                   help="profit_retrace: arm retrace close once profit reaches this account-currency amount")
+    p.add_argument("--profit-retrace-ratio", type=float, default=0.5,
+                   help="profit_retrace: close when profit falls to this share of peak (default 0.5)")
     p.add_argument("--platform", default=None, choices=["mt5", "mt4"],
                    help="trading platform (default: config trading.platform or mt5)")
     args = p.parse_args()
@@ -1506,6 +1647,9 @@ def main() -> None:
         trail_max_bars_low    = args.trail_max_bars_low,
         trail_max_bars_med    = args.trail_max_bars_med,
         trail_max_bars_high   = args.trail_max_bars_high,
+        tick_interval         = args.tick_interval,
+        profit_retrace_activation = args.profit_retrace_activation,
+        profit_retrace_ratio      = args.profit_retrace_ratio,
     ).run()
 
 
