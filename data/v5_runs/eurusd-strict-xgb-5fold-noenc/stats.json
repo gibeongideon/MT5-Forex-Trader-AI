@@ -1,0 +1,11 @@
+{
+  "final_equity": 10004.499999999978,
+  "folds": 5,
+  "max_drawdown": 0.004540575418360838,
+  "research_only": true,
+  "signals": 10245,
+  "symbol": "EURUSD",
+  "total_return": 0.000449999999997841,
+  "trades": 75,
+  "win_rate": 0.36
+}

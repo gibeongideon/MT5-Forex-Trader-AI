@@ -41,6 +41,7 @@ def run_strict_walk_forward(
     cfg: PipelineConfig,
     *,
     model_factory: Callable[[str], object] | None = None,
+    max_folds: int | None = None,
 ) -> StrictWalkForwardResult:
     """Run strict fold-local feature fitting, model training, and signal output."""
 
@@ -55,6 +56,8 @@ def run_strict_walk_forward(
     fit_records: list[dict] = []
 
     for window in windows:
+        if max_folds is not None and len(fold_results) >= max_folds:
+            break
         train_raw, test_raw = window.slice(df_raw)
         if len(train_raw) == 0 or len(test_raw) == 0:
             continue

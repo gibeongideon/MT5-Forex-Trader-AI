@@ -94,3 +94,26 @@ def test_strict_walk_forward_records_encoder_only_when_enabled():
     assert "feature_scaler" in components
     assert "classifier" in components
     assert "encoder" not in components
+
+
+def test_strict_walk_forward_can_limit_folds_for_smoke_runs():
+    cfg = PipelineConfig(
+        model_type="recording",
+        encoder_enabled=False,
+        scale=True,
+        label_horizon=2,
+        label_threshold=0.0001,
+        wf_train_days=70,
+        wf_test_days=20,
+        bt_threshold=0.6,
+    )
+
+    result = run_strict_walk_forward(
+        _ohlcv(),
+        cfg,
+        model_factory=lambda _: RecordingModel(),
+        max_folds=1,
+    )
+
+    assert len(result.folds) == 1
+    assert {record["fold"] for record in result.fit_records} == {0}

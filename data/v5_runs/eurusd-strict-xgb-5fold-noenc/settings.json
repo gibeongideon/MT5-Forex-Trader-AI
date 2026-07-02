@@ -1,0 +1,78 @@
+{
+  "broker_rules": {
+    "commission_pips": 0.5,
+    "entry_delay_bars": 1,
+    "lot_step": 0.01,
+    "max_lot": 0.5,
+    "min_lot": 0.01,
+    "pip_size": 0.0001,
+    "slippage_pips": 0.3,
+    "spread_pips": 1.0
+  },
+  "data_path": "data/EURUSD_M15.csv",
+  "initial_balance": 10000.0,
+  "max_folds": 5,
+  "pipeline": {
+    "artifacts_dir": "data/models/pipeline",
+    "bt_balance": 10000.0,
+    "bt_pip_size": 0.0001,
+    "bt_risk_pct": 0.01,
+    "bt_sl_pips": 30.0,
+    "bt_spread": 1.0,
+    "bt_threshold": 0.4,
+    "bt_tp_pips": 60.0,
+    "bt_use_regime": false,
+    "candle_tokenizer_clusters": 32,
+    "candle_tokenizer_enabled": false,
+    "data_path": "data/EURUSD_M15.csv",
+    "encoder_batch": 4096,
+    "encoder_contrastive_temp": 0.1,
+    "encoder_d_model": 32,
+    "encoder_enabled": false,
+    "encoder_epochs": 30,
+    "encoder_forecast_horizons": 8,
+    "encoder_latent_dim": 8,
+    "encoder_lr": 0.001,
+    "encoder_mode": "supervised",
+    "encoder_multitask_alpha": 0.3,
+    "encoder_n_heads": 4,
+    "encoder_n_layers": 2,
+    "encoder_patience": 0,
+    "encoder_proj_dim": 32,
+    "encoder_window": 50,
+    "fractal_enabled": true,
+    "fractal_max_win": 60,
+    "fractal_min_win": 6,
+    "label_horizon": 4,
+    "label_threshold": 0.0003,
+    "model_type": "xgboost",
+    "rm_tiers": [
+      [
+        0.75,
+        0.02
+      ],
+      [
+        0.65,
+        0.015
+      ],
+      [
+        0.55,
+        0.0075
+      ],
+      [
+        0.4,
+        0.005
+      ]
+    ],
+    "scale": true,
+    "train_frac": 0.8,
+    "wf_cache_dir": "data/models/pipeline_wf_cache",
+    "wf_test_days": 30,
+    "wf_train_days": 180,
+    "wf_window_type": "expanding"
+  },
+  "requested_lot": 0.01,
+  "sl_pips": 30.0,
+  "symbol": "EURUSD",
+  "tp_pips": 60.0
+}

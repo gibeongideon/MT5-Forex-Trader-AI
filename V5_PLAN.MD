@@ -59,12 +59,18 @@ reconciliation.
     tokenizer fitting, classifier training, and test-signal generation.
   - Emits fit-window records for `feature_scaler`, optional `encoder`, optional
     `candle_tokenizer`, and `classifier`.
+- [x] Added `src/v5/champion_validation.py` and `scripts/v5_validate_champion.py`.
+  - Loads real symbol CSV data.
+  - Runs the strict fold-local pipeline.
+  - Replays signals through broker-realistic rules.
+  - Writes `data/v5_runs/<run_id>/` artifacts for review.
 - [x] Added focused tests:
   - `tests/test_v5_validation.py`
   - `tests/test_v5_artifacts.py`
   - `tests/test_v5_folds.py`
   - `tests/test_v5_replay.py`
   - `tests/test_v5_strict_pipeline.py`
+  - `tests/test_v5_champion_validation.py`
 
 ## Phase 1: Validation Hardening
 
@@ -79,17 +85,33 @@ reconciliation.
   - Train classifier only on fold-local training features.
   - Record per-component fit windows and pass
     `assert_fold_fit_records_are_train_only()`.
-- [ ] Run strict fold-local champion validations on the real EURUSD/USDJPY
-  artifacts/data and compare against the documented leaderboard.
-- [ ] Add clean reproduction scripts for current documented champions:
+- [x] Add a strict champion validation script that writes review artifacts.
+- [ ] Run strict fold-local champion validations on real EURUSD/USDJPY data and
+  compare against the documented leaderboard.
+- [ ] Add exact reproduction modes for current documented champions:
   - EURUSD `candle_trail`
   - USDJPY `candle_trail`
   - EURUSD hybrid v2
   - USDJPY hybrid v2
-- [ ] Save every reproduction run under `data/v5_runs/<run_id>/` using
+- [x] Save strict validation runs under `data/v5_runs/<run_id>/` using
   `V5ArtifactWriter`.
 - [ ] Mark the old global-feature walk-forward numbers as research-only until
   strict fold-local results exist.
+
+### Strict Validation Evidence
+
+These are bounded smoke/diagnostic runs, not final champion claims.
+
+| Run ID | Symbol | Mode | Folds | Signals | Trades | Final Equity | Return | MaxDD | Win Rate | Verdict |
+| ------ | ------ | ---- | ----- | ------- | ------ | ------------ | ------ | ----- | -------- | ------- |
+| `eurusd-strict-smoke` | EURUSD | XGBoost, no encoder, 30d/10d, 1 fold | 1 | 675 | 1 | 10005.82 | +0.058% | 0.00% | 100.0% | smoke only |
+| `eurusd-strict-xgb-5fold-noenc` | EURUSD | XGBoost, no encoder, 180d/30d, 5 folds | 5 | 10245 | 75 | 10004.50 | +0.045% | 0.45% | 36.0% | flat baseline |
+| `usdjpy-strict-xgb-5fold-noenc` | USDJPY | XGBoost, no encoder, 180d/30d, 5 folds | 5 | 10240 | 270 | 9996.40 | -0.036% | 0.78% | 35.2% | weak baseline |
+
+Interpretation: strict fold-local XGBoost without the encoder does not reproduce
+the leaderboard edge. This is expected if the real edge depends on enc8 and/or
+candle feature injection. Next validations must test encoder-enabled and hybrid
+paths before judging the champion claims.
 
 ## Phase 2: Broker-Realistic Simulation
 
@@ -165,7 +187,10 @@ reconciliation.
 ## Commands
 
 ```bash
-pytest tests/test_v5_validation.py tests/test_v5_artifacts.py tests/test_v5_folds.py tests/test_v5_replay.py tests/test_v5_strict_pipeline.py -q
+pytest tests/test_v5_validation.py tests/test_v5_artifacts.py tests/test_v5_folds.py tests/test_v5_replay.py tests/test_v5_strict_pipeline.py tests/test_v5_champion_validation.py -q
+conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv --run-id eurusd-strict-smoke --no-enc --train-days 30 --test-days 10 --model xgboost --max-folds 1
+conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv --run-id eurusd-strict-xgb-5fold-noenc --no-enc --train-days 180 --test-days 30 --model xgboost --max-folds 5
+conda run -n envmt5 python scripts/v5_validate_champion.py --symbol USDJPY --data data/USDJPY_M15.csv --run-id usdjpy-strict-xgb-5fold-noenc --no-enc --train-days 180 --test-days 30 --model xgboost --max-folds 5
 ```
 
 Future heavier validation commands should be added here as they are built, with

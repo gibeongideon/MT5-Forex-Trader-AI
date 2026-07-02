@@ -1,0 +1,2 @@
+signal_time,entry_time,direction,confidence,volume,entry_price,sl,tp,sl_pips,tp_pips,exit_time,exit_price,exit_reason,pnl_pips,pnl_dollars
+2024-02-13 19:15:00,2024-02-13 19:30:00,buy,0.40476513789778173,0.01,1.07192,1.06892,1.07792,30.0,60.0,2024-02-15 16:30:00,1.07792,tp,58.2,5.82
