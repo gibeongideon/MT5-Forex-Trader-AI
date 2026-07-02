@@ -104,9 +104,9 @@ reconciliation.
   - Record per-component fit windows and pass
     `assert_fold_fit_records_are_train_only()`.
 - [x] Add a strict champion validation script that writes review artifacts.
-- [ ] Run strict fold-local champion validations on real EURUSD/USDJPY data and
+- [x] Run strict fold-local baseline validations on real EURUSD/USDJPY data and
   compare against the documented leaderboard.
-- [ ] Add exact reproduction modes for current documented champions:
+- [x] Add exact reproduction modes for current documented champions:
   - EURUSD `candle_trail`
   - USDJPY `candle_trail`
   - EURUSD hybrid v2
@@ -125,11 +125,47 @@ These are bounded smoke/diagnostic runs, not final champion claims.
 | `eurusd-strict-smoke` | EURUSD | XGBoost, no encoder, 30d/10d, 1 fold | 1 | 675 | 1 | 10005.82 | +0.058% | 0.00% | 100.0% | smoke only |
 | `eurusd-strict-xgb-5fold-noenc` | EURUSD | XGBoost, no encoder, 180d/30d, 5 folds | 5 | 10245 | 75 | 10004.50 | +0.045% | 0.45% | 36.0% | flat baseline |
 | `usdjpy-strict-xgb-5fold-noenc` | USDJPY | XGBoost, no encoder, 180d/30d, 5 folds | 5 | 10240 | 270 | 9996.40 | -0.036% | 0.78% | 35.2% | weak baseline |
+| `eurusd-candle-trail-v5` | EURUSD | Candle-trail replay from OOS candle probabilities | n/a | n/a | 996 | 10490.15 | +4.902% | 0.056% | 77.8% | promising, research-only |
+| `usdjpy-candle-trail-v5` | USDJPY | Candle-trail replay from OOS candle probabilities | n/a | n/a | 3000 | 12138.55 | +21.386% | 0.083% | 75.0% | promising, research-only |
 
 Interpretation: strict fold-local XGBoost without the encoder does not reproduce
 the leaderboard edge. This is expected if the real edge depends on enc8 and/or
 candle feature injection. Next validations must test encoder-enabled and hybrid
 paths before judging the champion claims.
+
+Latest candle-trail interpretation: the primary candle-trail candidate remains
+profitable under the V5 artifact/replay path, but this still consumes existing
+OOS candle probability files. It is not deployable until the candle probability
+generation itself is re-audited fold-by-fold, broker session behavior is matched,
+and dry-run/demo reconciliation passes.
+
+### Candle OOS Audit Evidence
+
+The existing `scripts/verify_candle_oos.py` audit was run for both symbols. It
+reloads cached CatBoost fold models and predicts each fold's OOS window only.
+This supports that the CatBoost fold models are OOS, but it is not a complete
+leakage clearance because the script loads the final deployed encoder, which was
+trained on all data.
+
+| Symbol | Cached Folds | Verified Sharpe | Reported v3 WF Sharpe | Trades | Win Rate | MaxDD | Net PnL | Verdict |
+| ------ | ------------ | --------------- | --------------------- | ------ | -------- | ----- | ------- | ------- |
+| EURUSD | 13 | +12.887 | +7.118 | 1,092 | 78.3% | 5.7% | +56,145.9% | CatBoost OOS confirmed, encoder overlap inflates |
+| USDJPY | 13 | +18.602 | +14.414 | 3,241 | 71.2% | 18.5% | extremely inflated | CatBoost OOS confirmed, encoder overlap inflates |
+
+Next audit requirement: rebuild candle OOS probability generation with
+fold-local scaler and fold-local encoder fitting, then re-run candle-trail replay
+from that regenerated signal file.
+
+Implementation status: `src/v5/candle_oos.py` and
+`scripts/v5_build_candle_oos.py` now provide the fold-local candle OOS generation
+path. The next evidence run should generate `data/features/candle_signal_v5_*`
+with encoder enabled, then replay `candle_trail` against those regenerated
+signals.
+
+Hybrid-v2 status: the runner is implemented, but local full/fold diagnostics were
+interrupted because XGBoost/encoder training was too slow for the interactive
+turn. Run hybrid-v2 as a longer job or add a faster validation profile before
+using hybrid claims as evidence.
 
 ## Phase 2: Broker-Realistic Simulation
 
@@ -213,6 +249,8 @@ conda run -n envmt5 python scripts/v5_validate_champion.py --mode hybrid-v2 --sy
 conda run -n envmt5 python scripts/v5_validate_champion.py --mode hybrid-v2 --symbol USDJPY --data data/USDJPY_M15.csv --candle-features data/features/candle_signal_USDJPY.parquet --run-id usdjpy-hybrid-v2-strict --train-days 180 --test-days 30 --model xgboost --max-folds 5
 conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail --symbol EURUSD --data data/EURUSD_M15.csv --signals data/features/candle_signal_EURUSD.parquet --run-id eurusd-candle-trail-v5 --threshold 0.60 --sl-pips 10 --tp-pips 30
 conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail --symbol USDJPY --data data/USDJPY_M15.csv --signals data/features/candle_signal_USDJPY.parquet --run-id usdjpy-candle-trail-v5 --threshold 0.60 --sl-pips 10 --tp-pips 30
+conda run -n envmt5 python scripts/v5_build_candle_oos.py --symbol EURUSD --data data/EURUSD_M15.csv --out data/features/candle_signal_v5_EURUSD.parquet --train-days 120 --test-days 60
+conda run -n envmt5 python scripts/v5_build_candle_oos.py --symbol USDJPY --data data/USDJPY_M15.csv --out data/features/candle_signal_v5_USDJPY.parquet --train-days 120 --test-days 60
 ```
 
 Future heavier validation commands should be added here as they are built, with

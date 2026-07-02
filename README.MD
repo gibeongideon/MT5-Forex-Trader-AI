@@ -14,6 +14,7 @@ pytest tests/test_v5_validation.py tests/test_v5_artifacts.py tests/test_v5_fold
 conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv --run-id eurusd-strict-xgb-5fold-noenc --no-enc --train-days 180 --test-days 30 --model xgboost --max-folds 5
 conda run -n envmt5 python scripts/v5_validate_champion.py --mode hybrid-v2 --symbol EURUSD --data data/EURUSD_M15.csv --candle-features data/features/candle_signal_EURUSD.parquet --run-id eurusd-hybrid-v2-strict --train-days 180 --test-days 30 --model xgboost --max-folds 5
 conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail --symbol EURUSD --data data/EURUSD_M15.csv --signals data/features/candle_signal_EURUSD.parquet --run-id eurusd-candle-trail-v5 --threshold 0.60 --sl-pips 10 --tp-pips 30
+conda run -n envmt5 python scripts/v5_build_candle_oos.py --symbol EURUSD --data data/EURUSD_M15.csv --out data/features/candle_signal_v5_EURUSD.parquet --train-days 120 --test-days 60
 ```
 
 ## Kept Entry Points
@@ -21,6 +22,7 @@ conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail -
 - `V5_PLAN.MD`: coordination plan and evidence log.
 - `src/v5/`: strict folds, replay, artifacts, and champion validation.
 - `scripts/v5_validate_champion.py`: V5 validation command.
+- `scripts/v5_build_candle_oos.py`: fold-local candle probability generation.
 - `src/pipeline.py`: current predictor pipeline used by validation/live paths.
 - `src/bots/pipeline_bot.py`: existing MT5 live runner, kept during adapter-first migration.
 - `scripts/build_candle_features.py`, `scripts/train_candle_model.py`,
