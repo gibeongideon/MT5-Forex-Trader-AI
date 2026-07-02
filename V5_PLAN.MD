@@ -162,6 +162,21 @@ path. The next evidence run should generate `data/features/candle_signal_v5_*`
 with encoder enabled, then replay `candle_trail` against those regenerated
 signals.
 
+Fast fold-local encoder audit (`encoder_epochs=3`) completed on 2026-07-03.
+This run fits scaler, encoder, and candle classifier inside each fold before
+emitting OOS candle probabilities. It is not the final 30-epoch champion setting,
+but it removes the known full-data encoder overlap from the prior audit.
+
+| Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Verdict |
+| ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------- |
+| `eurusd-candle-trail-v5-enc3` | EURUSD | `data/features/candle_signal_v5_EURUSD_enc3.parquet` | 12 | 48,941 | 176 | 149 | 10177.87 | +1.779% | 0.023% | 79.9% | survives clean fast audit |
+| `usdjpy-candle-trail-v5-enc3` | USDJPY | `data/features/candle_signal_v5_USDJPY_enc3.parquet` | 12 | 48,936 | 384 | 353 | 10673.93 | +6.739% | 0.035% | 80.5% | survives clean fast audit |
+
+Interpretation: removing the full-data encoder overlap reduces the apparent
+edge sharply, but the candle-trail candidate remains profitable in the fast
+fold-local audit. The next evidence step is the same run with the intended
+30-epoch encoder, followed by sensitivity tests on spread/slippage/threshold.
+
 Hybrid-v2 status: the runner is implemented, but local full/fold diagnostics were
 interrupted because XGBoost/encoder training was too slow for the interactive
 turn. Run hybrid-v2 as a longer job or add a faster validation profile before

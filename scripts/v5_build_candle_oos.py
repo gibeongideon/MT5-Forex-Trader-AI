@@ -58,7 +58,22 @@ def main() -> None:
     )
 
     raw = _load_ohlcv(data_path)
-    result = generate_candle_oos_predictions(raw, cfg)
+    def progress(event: str, payload: dict) -> None:
+        if event == "fold_start":
+            print(
+                "fold {fold} start train={train_start:%Y-%m-%d}->{train_end:%Y-%m-%d} "
+                "test={test_start:%Y-%m-%d}->{test_end:%Y-%m-%d} "
+                "rows={train_rows}/{test_rows}".format(**payload),
+                flush=True,
+            )
+        elif event == "fold_done":
+            print(
+                "fold {fold} done train_rows={train_rows} "
+                "predictions={prediction_rows}".format(**payload),
+                flush=True,
+            )
+
+    result = generate_candle_oos_predictions(raw, cfg, progress_callback=progress)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     result.predictions.to_parquet(out_path)
     print(f"V5 candle OOS predictions: {out_path}")

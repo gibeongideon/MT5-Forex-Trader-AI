@@ -44,6 +44,7 @@ def generate_candle_oos_predictions(
     cfg: V5CandleOOSConfig,
     *,
     model_factory: Callable[[str], object] | None = None,
+    progress_callback: Callable[[str, dict], None] | None = None,
 ) -> V5CandleOOSResult:
     """Train candle models inside each fold and emit OOS probabilities.
 
@@ -67,6 +68,19 @@ def generate_candle_oos_predictions(
         train_raw, test_raw = window.slice(raw)
         if len(train_raw) == 0 or len(test_raw) == 0:
             continue
+        if progress_callback is not None:
+            progress_callback(
+                "fold_start",
+                {
+                    "fold": window.fold,
+                    "train_start": window.train_start,
+                    "train_end": window.train_end,
+                    "test_start": window.test_start,
+                    "test_end": window.test_end,
+                    "train_rows": len(train_raw),
+                    "test_rows": len(test_raw),
+                },
+            )
 
         X_train, y_train, X_test = _build_candle_features(train_raw, test_raw, cfg)
         y_train = y_train.reindex(X_train.index).dropna()
@@ -96,6 +110,16 @@ def generate_candle_oos_predictions(
         )
         frames.append(fold_predictions)
         used_folds.append(window)
+        if progress_callback is not None:
+            progress_callback(
+                "fold_done",
+                {
+                    "fold": window.fold,
+                    "train_rows": len(X_train),
+                    "test_rows": len(X_test),
+                    "prediction_rows": len(fold_predictions),
+                },
+            )
 
     predictions = (
         pd.concat(frames).sort_index()

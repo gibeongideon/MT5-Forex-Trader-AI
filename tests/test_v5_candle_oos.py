@@ -47,6 +47,7 @@ def _m15(n=900):
 
 def test_generate_candle_oos_predictions_are_fold_local_and_auditable():
     models = []
+    progress = []
 
     def model_factory(model_type):
         model = RecordingCandleModel()
@@ -82,3 +83,13 @@ def test_generate_candle_oos_predictions_are_fold_local_and_auditable():
     for fold, model in zip(result.folds, models):
         assert model.train_index.min() >= fold.train_start
         assert model.train_index.max() < fold.train_end
+
+    generate_candle_oos_predictions(
+        _m15(),
+        cfg,
+        model_factory=model_factory,
+        progress_callback=lambda event, payload: progress.append((event, payload["fold"])),
+    )
+
+    assert ("fold_start", 0) in progress
+    assert ("fold_done", 0) in progress
