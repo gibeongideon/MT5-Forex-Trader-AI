@@ -34,6 +34,13 @@ reconciliation.
 
 ## Implemented V5 Foundation
 
+- [x] Simplified the `V5-lumibot` branch entrypoints.
+  - Removed obvious root clutter and tracked CatBoost scratch files.
+  - Removed old compare/backtest/train/probe scripts that were research
+    experiments rather than V5/Lumibot-style workflow.
+  - Kept only the V5 validator, candle champion utilities, current live runner
+    helpers, and retraining/evaluation scripts that still support the adapter
+    first path.
 - [x] Added `src/v5/validation.py`.
   - Past-only feature builder guard.
   - Forward-return label guard.

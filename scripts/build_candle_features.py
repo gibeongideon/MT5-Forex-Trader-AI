@@ -8,8 +8,8 @@ Output: data/features/candle_signal_{SYMBOL}.parquet
   columns: candle_p_buy, candle_p_hold, candle_p_sell
   index: DatetimeIndex (same as the OHLCV CSV)
 
-These parquets are then injected as features into the main XGBoost pipeline
-(retrain_champion.py and compare_candle_features.py).
+These parquets are then injected as features into the main champion pipeline
+and validated through the V5 strict replay path.
 
 Usage:
     conda run -n envmt5 python scripts/build_candle_features.py
@@ -165,8 +165,8 @@ def main() -> None:
 
     print(f"\n{'='*72}")
     print(f"  Done. Use these parquets as features in the main champion pipeline:")
-    print(f"    conda run -n envmt5 python scripts/compare_candle_features.py")
     print(f"    conda run -n envmt5 python scripts/retrain_champion.py")
+    print(f"    conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD")
     print(f"{'='*72}\n")
 
 
