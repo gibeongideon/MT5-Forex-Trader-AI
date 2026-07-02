@@ -45,20 +45,42 @@ reconciliation.
   - Writes Lumibot-style run bundles:
     `settings.json`, `stats.json`, `trades.csv`, `equity.csv`, `folds.csv`,
     and `reconciliation.json`.
+- [x] Added `src/v5/folds.py`.
+  - Defines strict half-open expanding fold windows.
+  - Skips partial final test windows so champion reruns compare like-for-like
+    folds.
+  - Emits fit-window records that feed the train-only validation guard.
+- [x] Added `src/v5/replay.py`.
+  - Replays an explicit signal frame with broker-realistic entry delay, spread,
+    commission, slippage, SL/TP, lot rounding, and max-lot rules.
+  - Produces trades, equity, and settings ready for `V5ArtifactWriter`.
+- [x] Added `src/v5/strict_pipeline.py`.
+  - Runs fold-local feature fitting, optional encoder fitting, optional candle
+    tokenizer fitting, classifier training, and test-signal generation.
+  - Emits fit-window records for `feature_scaler`, optional `encoder`, optional
+    `candle_tokenizer`, and `classifier`.
 - [x] Added focused tests:
   - `tests/test_v5_validation.py`
   - `tests/test_v5_artifacts.py`
+  - `tests/test_v5_folds.py`
+  - `tests/test_v5_replay.py`
+  - `tests/test_v5_strict_pipeline.py`
 
 ## Phase 1: Validation Hardening
 
 - [x] Establish reusable validation helpers.
-- [ ] Add strict fold-local pipeline execution for the champion path:
+- [x] Add strict fold-window scaffolding for the champion path:
+  - Use half-open train/test fold windows.
+  - Record component fit windows for scaler/encoder/classifier audits.
+- [x] Add strict fold-local pipeline execution scaffold for the champion path:
   - Fit `FeaturePipeline` scaler only on each fold training window.
   - Fit `LatentEncoder` only on each fold training window.
   - Generate test features by transform-only behavior inside the fold.
   - Train classifier only on fold-local training features.
   - Record per-component fit windows and pass
     `assert_fold_fit_records_are_train_only()`.
+- [ ] Run strict fold-local champion validations on the real EURUSD/USDJPY
+  artifacts/data and compare against the documented leaderboard.
 - [ ] Add clean reproduction scripts for current documented champions:
   - EURUSD `candle_trail`
   - USDJPY `candle_trail`
@@ -71,8 +93,8 @@ reconciliation.
 
 ## Phase 2: Broker-Realistic Simulation
 
-- [ ] Add one-bar entry delay support to V5 replay.
-- [ ] Apply realistic broker costs:
+- [x] Add one-bar entry delay support to V5 replay.
+- [x] Apply reusable broker cost and lot rules:
   - spread pips
   - commission pips
   - slippage pips
@@ -143,7 +165,7 @@ reconciliation.
 ## Commands
 
 ```bash
-pytest tests/test_v5_validation.py tests/test_v5_artifacts.py -q
+pytest tests/test_v5_validation.py tests/test_v5_artifacts.py tests/test_v5_folds.py tests/test_v5_replay.py tests/test_v5_strict_pipeline.py -q
 ```
 
 Future heavier validation commands should be added here as they are built, with
