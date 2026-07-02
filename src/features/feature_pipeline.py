@@ -13,7 +13,7 @@ Design rules:
      future returns are always available for every labelled row.
 
 Usage:
-    from src.feature_pipeline import FeaturePipeline
+    from src.features.feature_pipeline import FeaturePipeline
 
     pipeline = FeaturePipeline()
 

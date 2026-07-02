@@ -103,7 +103,7 @@ def add_cross_market_cols(
         path = data_dir / f"{sym}_{timeframe}.csv"
         if not path.exists():
             print(f"  [CrossMarket] {path.name} not found — skipping {sym}. "
-                  f"Run: python scripts/download_crossmarket.py")
+                  f"Provide the required cross-market CSV first.")
             continue
 
         try:
@@ -135,7 +135,7 @@ def add_cross_market_cols(
 
     if loaded == 0:
         print("  [CrossMarket] WARNING: No cross-market CSVs found. "
-              "Run scripts/download_crossmarket.py first.")
+              "Provide the required cross-market CSV first.")
     else:
         added = [c for c in result.columns if c not in df_eurusd.columns]
         print(f"  [CrossMarket] Total new columns: {len(added)}  ({', '.join(added)})")

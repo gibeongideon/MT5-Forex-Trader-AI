@@ -124,7 +124,7 @@ MT5 via rpyc bridge (mt5linux)  →  live_trades.db (SQLite journal)
 | `scripts/train_candle_model.py` | Train + WF validate CatBoost candle model |
 | `scripts/retrain_champion.py` | Retrain XGBoost champion on all data (auto-injects candle features) |
 | `scripts/build_candle_features.py` | Generate OOS candle signal parquet (13 fold models) |
-| `scripts/compare_candle_features.py` | WF A/B comparison: with vs without candle features |
+| `scripts/v5_validate_champion.py` | Strict fold-local champion validation with V5 artifacts |
 | `scripts/backtest_candle_trail.py` | Bar-by-bar candle_trail backtest |
 | `scripts/tune_candle_trail.py` | Grid search for optimal candle_trail params |
 | `scripts/verify_candle_oos.py` | Independent OOS Sharpe verification of candle model |
@@ -153,7 +153,7 @@ class PipelineConfig:
     # ... risk manager fields
 ```
 
-`bt_pip_size` MUST be set correctly per symbol when running `compare_candle_features.py` or any script that calls `_make_backtest_cfg()`. Wrong value causes SL/TP to be in wrong price units → garbage trade counts and −100% MaxDD.
+`bt_pip_size` MUST be set correctly per symbol when running validation or any script that calls `_make_backtest_cfg()`. Wrong value causes SL/TP to be in wrong price units and invalid trade counts.
 
 ---
 
@@ -215,8 +215,8 @@ sig = self.pipe.predict(ohlcv, candle_signal=candle_sig)
 2. Add column to `src/features/feature_pipeline.py::build()` — append after existing columns
 3. Update `_FEATURE_NAMES` list if it exists in that file
 4. Delete WF cache: `rm -rf data/models/wf_cache_*`
-5. Run comparison: `scripts/compare_candle_features.py --symbol EURUSD`
-6. If improvement confirmed, retrain champion: `scripts/retrain_champion.py`
+5. Run strict validation: `scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv`
+6. If improvement survives strict validation, retrain champion: `scripts/retrain_champion.py`
 
 Do NOT add features derived from OHLCV alone — the Saturation Principle (22 confirmed experiments) shows enc8 has absorbed all OHLCV signal. Only features from genuinely different sources (model outputs, external data, deterministic regime rules) can improve enc8.
 

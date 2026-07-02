@@ -7,7 +7,7 @@ Design rules:
   - `compute(df, spec)` is the single entry point for feature engineering.
 
 Usage:
-    from src.indicators import compute, sma, rsi, atr
+    from src.features.indicators import compute, sma, rsi, atr
 
     # Add individual indicators to a DataFrame:
     df["sma_20"]  = sma(df["close"], 20)

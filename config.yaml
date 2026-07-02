@@ -300,7 +300,8 @@ rule_bot:
 #
 # Training:  conda run -n envmt5 python scripts/train_autoencoder.py
 # Merging:   conda run -n envmt5 python scripts/build_latent_features.py
-# Comparing: conda run -n envmt5 python scripts/compare_latent_vs_baseline.py
+# Compare model variants through scripts/v5_validate_champion.py and record
+# the resulting artifacts under data/v5_runs/.
 latent_encoder:
   enabled: false                              # set true to use extended feature matrix
   window_size: 50                             # OHLCV bars per input window (bars t-W to t-1)

@@ -11,7 +11,7 @@ Usage:
     python src/backtest.py --data data/GBPUSD_H1.csv --fast 20 --slow 50 --sl 40 --tp 80
 
 Download data first:
-    python scripts/download_data.py --symbol EURUSD --timeframe M15 --bars 50000
+    provide a local OHLCV CSV such as data/EURUSD_M15.csv
 """
 
 import argparse
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     csv = Path(args.data)
     if not csv.exists():
         print(f"ERROR: {csv} not found.")
-        print("Download data first:  python scripts/download_data.py")
+        print("Provide a local OHLCV CSV first, for example data/EURUSD_M15.csv")
         sys.exit(1)
 
     print(f"Loading {csv}...")

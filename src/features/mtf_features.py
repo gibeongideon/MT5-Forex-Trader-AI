@@ -13,7 +13,6 @@ import numpy as np
 import pandas as pd
 
 from src.cta.signals import ewmac
-from scripts.backtest_champion_baseline import _load_raw
 
 TAG = {"2h": "h2", "1h": "h1", "30min": "m30", "15min": "m15"}
 
@@ -66,3 +65,15 @@ def _load_raw_m15(sym: str) -> pd.DataFrame:
     root = Path(__file__).resolve().parent.parent.parent
     df = _load_raw(root / "data" / f"{sym}_M15_long.csv")
     return df[["open", "high", "low", "close", "tick_volume", "spread"]].copy()
+
+
+def _load_raw(path) -> pd.DataFrame:
+    df = pd.read_csv(path)
+    df.columns = [str(c).lower() for c in df.columns]
+    time_col = next((c for c in df.columns if "time" in c or c in {"date", "datetime"}), None)
+    if time_col:
+        df[time_col] = pd.to_datetime(df[time_col])
+        df = df.set_index(time_col)
+    else:
+        df.index = pd.to_datetime(df.index)
+    return df.sort_index()

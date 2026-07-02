@@ -41,6 +41,14 @@ reconciliation.
   - Kept only the V5 validator, candle champion utilities, current live runner
     helpers, and retraining/evaluation scripts that still support the adapter
     first path.
+- [x] Removed legacy compatibility shims and stale research docs.
+  - Top-level `src/*.py` compatibility shims were removed; imports now use the
+    package paths directly.
+  - Old research notes and data-side experiment summaries were removed from the
+    branch root so `README.MD`, `ARCHITECTURE.MD`, and this plan remain the
+    main documentation surface.
+  - The old live MT5 bridge test was removed from the default test suite because
+    it requires a running external MT5/Wine service.
 - [x] Added `src/v5/validation.py`.
   - Past-only feature builder guard.
   - Forward-return label guard.

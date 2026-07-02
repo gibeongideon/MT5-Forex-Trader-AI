@@ -257,7 +257,7 @@ if __name__ == "__main__":
     if args.backtest:
         csv = Path(args.data)
         if not csv.exists():
-            print(f"ERROR: {csv} not found.  Run: python scripts/download_data.py")
+            print(f"ERROR: {csv} not found. Provide a local OHLCV CSV first.")
             sys.exit(1)
 
         print(f"Loading {csv}...")

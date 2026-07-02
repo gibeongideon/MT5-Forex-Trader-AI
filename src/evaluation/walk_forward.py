@@ -8,8 +8,8 @@ A proper walk-forward engine that:
   - Uses Backtester for trade simulation (unified cost model)
   - Aggregates per-fold equity curves into a single out-of-sample equity curve
 
-This replaces / supersedes scripts/walk_forward.py which was the Phase 4/5
-prototype.  The prototype is kept for backward compatibility.
+This supersedes the old Phase 4/5 script prototype that was removed from the
+V5 branch.
 
 Usage:
     from src.evaluation.walk_forward import WalkForwardValidator, WalkForwardConfig
