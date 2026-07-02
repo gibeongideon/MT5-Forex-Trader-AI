@@ -117,3 +117,45 @@ def test_strict_walk_forward_can_limit_folds_for_smoke_runs():
 
     assert len(result.folds) == 1
     assert {record["fold"] for record in result.fit_records} == {0}
+
+
+def test_strict_walk_forward_injects_oos_candle_features_into_hybrid_model():
+    models = []
+
+    def model_factory(model_type):
+        model = RecordingModel()
+        models.append(model)
+        return model
+
+    raw = _ohlcv()
+    candle = pd.DataFrame(
+        {
+            "candle_p_buy": np.linspace(0.2, 0.8, len(raw)),
+            "candle_p_sell": np.linspace(0.8, 0.2, len(raw)),
+        },
+        index=raw.index,
+    )
+    cfg = PipelineConfig(
+        model_type="recording",
+        encoder_enabled=False,
+        scale=True,
+        label_horizon=2,
+        label_threshold=0.0001,
+        wf_train_days=70,
+        wf_test_days=20,
+        bt_threshold=0.6,
+    )
+
+    result = run_strict_walk_forward(
+        raw,
+        cfg,
+        model_factory=model_factory,
+        oos_candle_features=candle,
+    )
+
+    assert result.folds
+    assert all("candle_p_buy" in model.feature_columns for model in models)
+    assert all("candle_p_sell" in model.feature_columns for model in models)
+    assert {"candle_features", "classifier"}.issubset(
+        {record["component"] for record in result.fit_records}
+    )

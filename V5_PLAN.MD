@@ -77,6 +77,9 @@ reconciliation.
 - [x] Added `src/v5/champion_validation.py` and `scripts/v5_validate_champion.py`.
   - Loads real symbol CSV data.
   - Runs the strict fold-local pipeline.
+  - Supports `strict`, `hybrid-v2`, and `candle-trail` validation modes.
+  - Injects OOS candle feature parquet files for hybrid v2 validation.
+  - Replays OOS candle probability signals through a V5 candle-trail validator.
   - Replays signals through broker-realistic rules.
   - Writes `data/v5_runs/<run_id>/` artifacts for review.
 - [x] Added focused tests:
@@ -206,6 +209,10 @@ pytest tests/test_v5_validation.py tests/test_v5_artifacts.py tests/test_v5_fold
 conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv --run-id eurusd-strict-smoke --no-enc --train-days 30 --test-days 10 --model xgboost --max-folds 1
 conda run -n envmt5 python scripts/v5_validate_champion.py --symbol EURUSD --data data/EURUSD_M15.csv --run-id eurusd-strict-xgb-5fold-noenc --no-enc --train-days 180 --test-days 30 --model xgboost --max-folds 5
 conda run -n envmt5 python scripts/v5_validate_champion.py --symbol USDJPY --data data/USDJPY_M15.csv --run-id usdjpy-strict-xgb-5fold-noenc --no-enc --train-days 180 --test-days 30 --model xgboost --max-folds 5
+conda run -n envmt5 python scripts/v5_validate_champion.py --mode hybrid-v2 --symbol EURUSD --data data/EURUSD_M15.csv --candle-features data/features/candle_signal_EURUSD.parquet --run-id eurusd-hybrid-v2-strict --train-days 180 --test-days 30 --model xgboost --max-folds 5
+conda run -n envmt5 python scripts/v5_validate_champion.py --mode hybrid-v2 --symbol USDJPY --data data/USDJPY_M15.csv --candle-features data/features/candle_signal_USDJPY.parquet --run-id usdjpy-hybrid-v2-strict --train-days 180 --test-days 30 --model xgboost --max-folds 5
+conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail --symbol EURUSD --data data/EURUSD_M15.csv --signals data/features/candle_signal_EURUSD.parquet --run-id eurusd-candle-trail-v5 --threshold 0.60 --sl-pips 10 --tp-pips 30
+conda run -n envmt5 python scripts/v5_validate_champion.py --mode candle-trail --symbol USDJPY --data data/USDJPY_M15.csv --signals data/features/candle_signal_USDJPY.parquet --run-id usdjpy-candle-trail-v5 --threshold 0.60 --sl-pips 10 --tp-pips 30
 ```
 
 Future heavier validation commands should be added here as they are built, with

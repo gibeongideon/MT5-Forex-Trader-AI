@@ -41,6 +41,7 @@ def run_strict_walk_forward(
     cfg: PipelineConfig,
     *,
     model_factory: Callable[[str], object] | None = None,
+    oos_candle_features: pd.DataFrame | None = None,
     max_folds: int | None = None,
 ) -> StrictWalkForwardResult:
     """Run strict fold-local feature fitting, model training, and signal output."""
@@ -62,7 +63,12 @@ def run_strict_walk_forward(
         if len(train_raw) == 0 or len(test_raw) == 0:
             continue
 
-        X_train, y_train, X_test = _build_fold_features(train_raw, test_raw, cfg)
+        X_train, y_train, X_test = _build_fold_features(
+            train_raw,
+            test_raw,
+            cfg,
+            oos_candle_features=oos_candle_features,
+        )
         if len(X_train) == 0 or len(X_test) == 0:
             continue
 
@@ -88,6 +94,8 @@ def run_strict_walk_forward(
             components.append("encoder")
         if cfg.candle_tokenizer_enabled:
             components.append("candle_tokenizer")
+        if oos_candle_features is not None:
+            components.append("candle_features")
         components.append("classifier")
         fit_records.extend(component_fit_records(window, components))
 
@@ -108,6 +116,8 @@ def _build_fold_features(
     train_raw: pd.DataFrame,
     test_raw: pd.DataFrame,
     cfg: PipelineConfig,
+    *,
+    oos_candle_features: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
     fp = FeaturePipeline(
         label_horizon=cfg.label_horizon,
@@ -152,6 +162,11 @@ def _build_fold_features(
         X_train = _join_extra(X_train, clusters)
         X_test = _join_extra(X_test, clusters)
 
+    if oos_candle_features is not None:
+        candle = _normalize_candle_features(oos_candle_features)
+        X_train = _join_extra(X_train, candle)
+        X_test = _join_extra(X_test, candle)
+
     y_train = y_train.reindex(X_train.index)
     X_test = X_test.reindex(columns=X_train.columns)
     return X_train, y_train, X_test
@@ -165,6 +180,16 @@ def _join_latent(X: pd.DataFrame, latent: pd.DataFrame) -> pd.DataFrame:
 def _join_extra(X: pd.DataFrame, extra: pd.DataFrame) -> pd.DataFrame:
     shared = X.index.intersection(extra.index)
     return pd.concat([X.loc[shared], extra.loc[shared]], axis=1)
+
+
+def _normalize_candle_features(candle: pd.DataFrame) -> pd.DataFrame:
+    required = ["candle_p_buy", "candle_p_sell"]
+    missing = [col for col in required if col not in candle.columns]
+    if missing:
+        raise ValueError(f"missing OOS candle feature columns: {missing}")
+    out = candle[required].copy()
+    out.index = pd.to_datetime(out.index)
+    return out.sort_index()
 
 
 def _predict_signals(model, X_test: pd.DataFrame, *, threshold: float) -> pd.DataFrame:

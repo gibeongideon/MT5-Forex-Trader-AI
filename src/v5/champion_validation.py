@@ -31,6 +31,7 @@ class V5ChampionValidationConfig:
     tp_pips: float
     pipeline: PipelineConfig
     broker_rules: BrokerExecutionRules
+    candle_features_path: str | Path | None = None
     initial_balance: float = 10_000.0
     max_folds: int | None = None
 
@@ -49,10 +50,16 @@ def run_champion_validation(
     model_factory: Callable[[str], object] | None = None,
 ) -> V5ChampionValidationResult:
     raw = load_ohlcv(cfg.data_path)
+    candle_features = (
+        load_candle_features(cfg.candle_features_path)
+        if cfg.candle_features_path is not None
+        else None
+    )
     strict = run_strict_walk_forward(
         raw,
         cfg.pipeline,
         model_factory=model_factory,
+        oos_candle_features=candle_features,
         max_folds=cfg.max_folds,
     )
     replay_signals = strict.signals.copy()
@@ -99,6 +106,25 @@ def load_ohlcv(path: str | Path) -> pd.DataFrame:
     return frame.sort_index()
 
 
+def load_candle_features(path: str | Path) -> pd.DataFrame:
+    path = Path(path)
+    frame = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
+    frame.columns = [c.lower() for c in frame.columns]
+    time_col = next((c for c in frame.columns if "time" in c or c in {"date", "datetime"}), None)
+    if time_col is not None:
+        frame[time_col] = pd.to_datetime(frame[time_col])
+        frame = frame.set_index(time_col)
+    else:
+        frame.index = pd.to_datetime(frame.index)
+    rename = {
+        "p_buy": "candle_p_buy",
+        "p_sell": "candle_p_sell",
+        "p_hold": "candle_p_hold",
+    }
+    frame = frame.rename(columns={k: v for k, v in rename.items() if k in frame.columns})
+    return frame.sort_index()
+
+
 def default_broker_rules_for_symbol(symbol: str) -> BrokerExecutionRules:
     pip_size = 0.01 if symbol.upper().endswith("JPY") or symbol.upper() == "XAUUSD" else 0.0001
     return BrokerExecutionRules(
@@ -123,6 +149,7 @@ def _settings(cfg: V5ChampionValidationConfig) -> dict:
         "initial_balance": cfg.initial_balance,
         "pipeline": asdict(cfg.pipeline),
         "broker_rules": asdict(cfg.broker_rules),
+        "candle_features_path": str(cfg.candle_features_path) if cfg.candle_features_path else None,
         "max_folds": cfg.max_folds,
     }
 
