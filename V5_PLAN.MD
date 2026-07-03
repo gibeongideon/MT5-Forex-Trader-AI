@@ -358,21 +358,28 @@ the local MT5 bridge on `localhost:18812` from this sandbox and reports:
 `Cannot connect to mt5linux bridge ... [Errno 1] Operation not permitted`.
 
 After starting `./start_mt5.sh`, the same dry-run command was rerun with
-elevated local bridge access. The bot connected to account `54910316` on
-`HFMarketsKE-Live2`, resolved `USDJPY` to the tradable broker symbol `USDJPYr`,
-and evaluated two M15 bars:
+elevated local bridge access. One diagnostic run connected to account `54910316`
+on `HFMarketsKE-Live2` and resolved `USDJPY` to `USDJPYr`. The next bounded
+paper-gate run connected to demo account `57462638` on `HFMarketsKE-Demo2` and
+resolved `USDJPY` to `USDJPY.Z`, which matches the primary `.Z` broker-profile
+artifact.
 
-- `2026-07-03 15:15:00`: `HOLD`, confidence `4.8%`;
-- `2026-07-03 15:30:00`: `HOLD`, confidence `2.4%`.
+Latest demo dry-run evidence:
+
+- `2026-07-03 20:00:00`: `HOLD`, confidence `5.1%`;
+- `2026-07-03 20:15:00`: `HOLD`, confidence `17.3%`.
 
 No dry-run order-intent rows were written because both bars were holds, so the
-reconciliation still reports `dry_run_mismatch`, `matched_orders=0/553`.
+current live dry-run validation reports `waiting_for_live_dry_run_order`.
+The historical replay reconciliation still reports `dry_run_mismatch`,
+`matched_orders=0/553`; this is expected because live July 2026 journal rows
+cannot timestamp-match historical 2024-2026 replay entries.
 
-Decision: bridge access works when run outside the sandbox restriction, but the
-offline HFM broker-profile assumption used `USDJPY.Z` while live resolution chose
-`USDJPYr`. Before demo-live, regenerate the HFM-profile replay/proof with
-`broker_symbol=USDJPYr`, then keep the dry-run running until an actionable
-candle-trail signal occurs and reconcile again.
+Decision: bridge access works when run outside the sandbox restriction. For the
+current demo account, keep using the `USDJPY.Z` HFM artifact and run id
+`usdjpy-candle-trail-v5-enc30-hfm`. Keep dry-run running until an actionable
+candle-trail signal occurs, then validate current live dry-run rows with
+`live_dry_run_validation.json` before demo-live.
 
 Dry-run command to produce journal rows for the primary candidate:
 
@@ -393,12 +400,19 @@ conda run -n envmt5 --no-capture-output python src/bots/pipeline_bot.py \
   --max-lot 0.01
 ```
 
-Reconciliation command after dry-run rows exist:
+Live-current validation command after dry-run rows exist:
 
 ```bash
 conda run -n envmt5 --no-capture-output python scripts/v5_reconcile_dry_run.py \
+  --live-current \
   --run-dir data/v5_runs/usdjpy-candle-trail-v5-enc30-hfm \
-  --journal data/live_trades.db
+  --journal data/live_trades.db \
+  --run-id usdjpy-candle-trail-v5-enc30-hfm \
+  --broker-symbol USDJPY.Z \
+  --magic 20260103 \
+  --expected-sl-pips 10 \
+  --expected-tp-pips 30 \
+  --max-lot 0.01
 ```
 
 ## Phase 5: Migration Decision

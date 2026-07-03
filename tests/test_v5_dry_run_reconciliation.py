@@ -12,6 +12,7 @@ from src.core.trade_journal import TradeJournal
 from src.v5.dry_run_reconciliation import (
     DryRunReconciliationError,
     reconcile_dry_run_journal,
+    validate_live_dry_run_journal,
 )
 
 
@@ -161,3 +162,90 @@ def test_reconcile_dry_run_journal_can_report_mismatch_without_raising(tmp_path)
     assert report["status"] == "dry_run_mismatch"
     assert report["unmatched_expected"] == 2
     assert report["matched_orders"] == 0
+
+
+def test_validate_live_dry_run_journal_accepts_current_order_intents():
+    journal = pd.DataFrame(
+        [
+            {
+                "symbol": "USDJPYr",
+                "direction": "buy",
+                "entry_time": "2026-07-03 16:00:00",
+                "model": "candle_trail",
+                "confidence": 0.72,
+                "entry_reason": "trail:buy",
+                "exit_reason": "dry_run_open",
+                "volume": 0.01,
+                "sl_pips": 10.0,
+                "tp_pips": 30.0,
+                "magic": 20260103,
+                "run_id": "usdjpy-live",
+                "dry_run": 1,
+            }
+        ]
+    )
+
+    report = validate_live_dry_run_journal(
+        journal=journal,
+        run_id="usdjpy-live",
+        broker_symbol="USDJPYr",
+        magic_number=20260103,
+        expected_sl_pips=10.0,
+        expected_tp_pips=30.0,
+        max_lot=0.01,
+    )
+
+    assert report["status"] == "live_dry_run_validated"
+    assert report["checked_orders"] == 1
+    assert report["checks"]["symbol"] == "pass"
+    assert report["checks"]["magic"] == "pass"
+    assert report["checks"]["dry_run"] == "pass"
+
+
+def test_validate_live_dry_run_journal_reports_waiting_when_no_orders():
+    report = validate_live_dry_run_journal(
+        journal=pd.DataFrame(columns=["run_id"]),
+        run_id="usdjpy-live",
+        broker_symbol="USDJPYr",
+        magic_number=20260103,
+        expected_sl_pips=10.0,
+        expected_tp_pips=30.0,
+        max_lot=0.01,
+        fail_on_missing=False,
+    )
+
+    assert report["status"] == "waiting_for_live_dry_run_order"
+    assert report["checked_orders"] == 0
+
+
+def test_validate_live_dry_run_journal_rejects_wrong_symbol():
+    journal = pd.DataFrame(
+        [
+            {
+                "symbol": "USDJPY.Z",
+                "direction": "buy",
+                "entry_time": "2026-07-03 16:00:00",
+                "model": "candle_trail",
+                "confidence": 0.72,
+                "entry_reason": "trail:buy",
+                "exit_reason": "dry_run_open",
+                "volume": 0.01,
+                "sl_pips": 10.0,
+                "tp_pips": 30.0,
+                "magic": 20260103,
+                "run_id": "usdjpy-live",
+                "dry_run": 1,
+            }
+        ]
+    )
+
+    with pytest.raises(DryRunReconciliationError, match="symbol"):
+        validate_live_dry_run_journal(
+            journal=journal,
+            run_id="usdjpy-live",
+            broker_symbol="USDJPYr",
+            magic_number=20260103,
+            expected_sl_pips=10.0,
+            expected_tp_pips=30.0,
+            max_lot=0.01,
+        )

@@ -77,6 +77,82 @@ def write_reconciliation_report(report: dict, out_path: str | Path) -> Path:
     return path
 
 
+def validate_live_dry_run_journal(
+    *,
+    journal: pd.DataFrame | str | Path,
+    run_id: str,
+    broker_symbol: str,
+    magic_number: int,
+    expected_sl_pips: float,
+    expected_tp_pips: float,
+    max_lot: float,
+    min_confidence: float = 0.0,
+    fail_on_missing: bool = True,
+) -> dict:
+    """Validate current live dry-run order-intent rows for paper-gate readiness."""
+
+    frame = _load_journal(journal)
+    if "run_id" not in frame.columns:
+        frame["run_id"] = ""
+    rows = frame[frame["run_id"].astype(str) == str(run_id)].copy()
+    checks = {
+        "symbol": "pass",
+        "magic": "pass",
+        "dry_run": "pass",
+        "model": "pass",
+        "volume": "pass",
+        "sl_tp": "pass",
+        "confidence": "pass",
+    }
+    report = {
+        "status": "live_dry_run_validated",
+        "run_id": run_id,
+        "broker_symbol": broker_symbol,
+        "magic_number": int(magic_number),
+        "checked_orders": int(len(rows)),
+        "checks": checks,
+    }
+    if rows.empty:
+        report["status"] = "waiting_for_live_dry_run_order"
+        if fail_on_missing:
+            raise DryRunReconciliationError(f"no dry-run order rows for run_id={run_id}")
+        return report
+
+    _require_live_columns(rows)
+    failures: list[str] = []
+    if (rows["symbol"].astype(str) != broker_symbol).any():
+        checks["symbol"] = "fail"
+        failures.append("symbol")
+    if (pd.to_numeric(rows["magic"], errors="coerce").astype("Int64") != int(magic_number)).any():
+        checks["magic"] = "fail"
+        failures.append("magic")
+    if (pd.to_numeric(rows["dry_run"], errors="coerce").fillna(0).astype(int) != 1).any():
+        checks["dry_run"] = "fail"
+        failures.append("dry_run")
+    if (rows["model"].astype(str) != "candle_trail").any():
+        checks["model"] = "fail"
+        failures.append("model")
+    if (pd.to_numeric(rows["volume"], errors="coerce") > max_lot).any():
+        checks["volume"] = "fail"
+        failures.append("volume")
+    sl = pd.to_numeric(rows["sl_pips"], errors="coerce")
+    tp = pd.to_numeric(rows["tp_pips"], errors="coerce")
+    if ((sl - expected_sl_pips).abs() > 1e-9).any() or ((tp - expected_tp_pips).abs() > 1e-9).any():
+        checks["sl_tp"] = "fail"
+        failures.append("sl_tp")
+    if (pd.to_numeric(rows["confidence"], errors="coerce") < min_confidence).any():
+        checks["confidence"] = "fail"
+        failures.append("confidence")
+
+    report["first_order_time"] = str(rows["entry_time"].min()) if "entry_time" in rows else None
+    report["last_order_time"] = str(rows["entry_time"].max()) if "entry_time" in rows else None
+    if failures:
+        report["status"] = "live_dry_run_mismatch"
+        report["failures"] = failures
+        raise DryRunReconciliationError(f"live dry-run validation failed: {', '.join(failures)}")
+    return report
+
+
 def _load_expected(run_dir: Path) -> pd.DataFrame:
     trades = pd.read_csv(run_dir / "trades.csv")
     settings = json.loads((run_dir / "settings.json").read_text())
@@ -88,6 +164,25 @@ def _load_expected(run_dir: Path) -> pd.DataFrame:
         if column in trades.columns:
             trades[column] = pd.to_datetime(trades[column])
     return trades
+
+
+def _require_live_columns(frame: pd.DataFrame) -> None:
+    missing = [
+        column
+        for column in [
+            "symbol",
+            "magic",
+            "dry_run",
+            "model",
+            "volume",
+            "sl_pips",
+            "tp_pips",
+            "confidence",
+        ]
+        if column not in frame.columns
+    ]
+    if missing:
+        raise DryRunReconciliationError(f"missing live dry-run columns: {missing}")
 
 
 def _load_journal(journal: pd.DataFrame | str | Path) -> pd.DataFrame:
