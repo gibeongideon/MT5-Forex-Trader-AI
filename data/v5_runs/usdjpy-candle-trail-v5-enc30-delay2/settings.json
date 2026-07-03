@@ -1,0 +1,29 @@
+{
+  "artifact_root": "/home/rock/Desktop/2026_Projects/Trader36/MT5/data/v5_runs",
+  "broker_rules": {
+    "commission_pips": 0.5,
+    "entry_delay_bars": 2,
+    "lot_step": 0.01,
+    "max_lot": 0.5,
+    "min_lot": 0.01,
+    "pip_size": 0.01,
+    "slippage_pips": 0.3,
+    "spread_pips": 1.0
+  },
+  "data_path": "data/USDJPY_M15.csv",
+  "dollars_per_pip_per_lot": 10.0,
+  "initial_balance": 10000.0,
+  "max_bars_high": 4,
+  "max_bars_low": 1,
+  "max_bars_med": 2,
+  "mode": "candle_trail",
+  "requested_lot": 0.01,
+  "run_id": "usdjpy-candle-trail-v5-enc30-delay2",
+  "signals_path": "data/features/candle_signal_v5_USDJPY_enc30.parquet",
+  "sl_pips": 10.0,
+  "symbol": "USDJPY",
+  "threshold": 0.6,
+  "tp_pips": 30.0,
+  "trail_activation_pips": 15.0,
+  "trail_pips_behind": 10.0
+}

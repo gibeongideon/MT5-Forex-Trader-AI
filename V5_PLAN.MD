@@ -84,6 +84,11 @@ reconciliation.
   - Supports CLI overrides for spread, commission, slippage, entry delay, and
     max lot so sensitivity runs are reproducible.
   - Writes `data/v5_runs/<run_id>/` artifacts for review.
+- [x] Fixed candle-trail replay to actually honor `entry_delay_bars`.
+  - Earlier candle-trail artifacts recorded entry delay in settings but opened
+    positions on the signal bar.
+  - The current enc30 and sensitivity tables below were regenerated after the
+    fix.
 - [x] Added focused tests:
   - `tests/test_v5_validation.py`
   - `tests/test_v5_artifacts.py`
@@ -186,12 +191,13 @@ encoder, and candle classifier fold-local.
 
 | Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
 | ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
-| `eurusd-candle-trail-v5-enc30` | EURUSD | `data/features/candle_signal_v5_EURUSD_enc30.parquet` | 12 | 48,941 | 254 | 235 | 10180.43 | +1.804% | 0.035% | 71.9% | 4.026 | 4.195 | survives full clean audit |
-| `usdjpy-candle-trail-v5-enc30` | USDJPY | `data/features/candle_signal_v5_USDJPY_enc30.parquet` | 12 | 48,936 | 703 | 667 | 10679.59 | +6.796% | 0.084% | 72.1% | 6.265 | 5.886 | survives full clean audit |
+| `eurusd-candle-trail-v5-enc30` | EURUSD | `data/features/candle_signal_v5_EURUSD_enc30.parquet` | 12 | 48,941 | 254 | 202 | 10082.01 | +0.820% | 0.071% | 57.4% | 2.152 | 2.504 | survives full clean audit, thinner edge |
+| `usdjpy-candle-trail-v5-enc30` | USDJPY | `data/features/candle_signal_v5_USDJPY_enc30.parquet` | 12 | 48,936 | 703 | 553 | 10352.48 | +3.525% | 0.085% | 62.9% | 4.469 | 4.305 | survives full clean audit |
 
 Enc30 vs enc3: enc30 increases signal/trade count and slightly improves final
-equity on both pairs, while lowering win rate. The edge remains positive after
-removing the known full-data encoder overlap.
+equity before delayed-entry correction, while lowering win rate. After the
+delayed-entry correction, the edge remains positive but materially smaller,
+especially for EURUSD.
 
 Hybrid-v2 status: the runner is implemented, but local full/fold diagnostics were
 interrupted because XGBoost/encoder training was too slow for the interactive
@@ -225,9 +231,9 @@ using hybrid claims as evidence.
   - worse spread
   - worse slippage
   - higher confidence threshold
+- [x] Run delayed-entry sensitivity with two-bar entry delay.
 - [ ] Run remaining sensitivity checks:
   - lower confidence thresholds
-  - delayed entry
   - disabled candle feature injection fallback
 
 ### Phase 2 Sensitivity Evidence
@@ -235,20 +241,24 @@ using hybrid claims as evidence.
 All runs use fold-local enc30 candle probabilities and the V5 candle-trail
 replay path. The `costx` runs use spread `2.0` pips and slippage `0.5` pips.
 The `th065` runs use threshold `0.65` with default broker costs.
+The `delay2` runs use a two-bar entry delay. Baseline uses the configured
+one-bar entry delay.
 
 | Run ID | Symbol | Stress | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
 | ------ | ------ | ------ | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
-| `eurusd-candle-trail-v5-enc30` | EURUSD | baseline | 235 | 10180.43 | +1.804% | 0.035% | 71.9% | 4.026 | 4.195 | baseline survives |
-| `eurusd-candle-trail-v5-enc30-costx` | EURUSD | spread/slippage worse | 236 | 10128.64 | +1.286% | 0.044% | 62.3% | 2.996 | 3.355 | survives, compressed edge |
-| `eurusd-candle-trail-v5-enc30-th065` | EURUSD | threshold 0.65 | 132 | 10146.23 | +1.462% | 0.023% | 78.0% | 3.527 | 3.672 | fewer trades, still positive |
-| `usdjpy-candle-trail-v5-enc30` | USDJPY | baseline | 667 | 10679.59 | +6.796% | 0.084% | 72.1% | 6.265 | 5.886 | baseline survives |
-| `usdjpy-candle-trail-v5-enc30-costx` | USDJPY | spread/slippage worse | 674 | 10517.60 | +5.176% | 0.149% | 66.8% | 4.928 | 4.934 | survives, compressed edge |
-| `usdjpy-candle-trail-v5-enc30-th065` | USDJPY | threshold 0.65 | 393 | 10579.54 | +5.795% | 0.058% | 79.1% | 5.679 | 5.306 | fewer trades, still strong |
+| `eurusd-candle-trail-v5-enc30` | EURUSD | baseline, delay 1 | 202 | 10082.01 | +0.820% | 0.071% | 57.4% | 2.152 | 2.504 | survives, thin edge |
+| `eurusd-candle-trail-v5-enc30-costx` | EURUSD | spread/slippage worse | 203 | 10029.97 | +0.300% | 0.166% | 45.8% | 0.801 | 1.152 | barely survives |
+| `eurusd-candle-trail-v5-enc30-th065` | EURUSD | threshold 0.65 | 117 | 10090.96 | +0.910% | 0.069% | 63.2% | 2.310 | 2.460 | better EURUSD filter |
+| `eurusd-candle-trail-v5-enc30-delay2` | EURUSD | delay 2 | 191 | 10006.46 | +0.065% | 0.173% | 46.6% | 0.223 | 0.032 | effectively flat |
+| `usdjpy-candle-trail-v5-enc30` | USDJPY | baseline, delay 1 | 553 | 10352.48 | +3.525% | 0.085% | 62.9% | 4.469 | 4.305 | baseline survives |
+| `usdjpy-candle-trail-v5-enc30-costx` | USDJPY | spread/slippage worse | 553 | 10211.45 | +2.115% | 0.278% | 56.8% | 2.769 | 2.929 | survives, compressed edge |
+| `usdjpy-candle-trail-v5-enc30-th065` | USDJPY | threshold 0.65 | 338 | 10296.30 | +2.963% | 0.060% | 68.0% | 4.144 | 4.303 | fewer trades, cleaner |
+| `usdjpy-candle-trail-v5-enc30-delay2` | USDJPY | delay 2 | 522 | 10077.31 | +0.773% | 0.115% | 53.1% | 1.520 | 1.403 | still positive, heavily reduced |
 
-Interpretation: both candidates remain positive after the first broker-cost and
-threshold pressure tests. USDJPY still has the stronger edge, but it also needs
-closer MT5/HFM replay checks because higher trade count makes fill assumptions
-more important.
+Interpretation: after fixing delayed-entry execution, both candidates remain
+positive at one-bar delay, but the edge is much smaller than the immediate-entry
+artifact implied. USDJPY is still the stronger candidate. EURUSD should be
+treated as fragile unless threshold filtering or broker replay improves it.
 
 ## Phase 3: Lumibot Bridge, Adapter First
 

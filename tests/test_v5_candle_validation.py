@@ -10,9 +10,11 @@ sys.path.insert(0, str(ROOT))
 
 from src.v5.candle_validation import (
     V5CandleTrailValidationConfig,
+    replay_candle_trail,
     run_candle_trail_validation,
 )
 from src.v5.champion_validation import default_broker_rules_for_symbol
+from src.v5.validation import BrokerExecutionRules
 
 
 def _prices(n=24):
@@ -71,3 +73,45 @@ def test_candle_trail_validation_writes_lumibot_style_artifacts(tmp_path):
     assert settings["mode"] == "candle_trail"
     assert reconciliation["status"] == "research_replay_only"
     assert len(trades) == result.stats["trades"]
+
+
+def test_candle_trail_replay_applies_entry_delay():
+    prices = _prices(8)
+    signals = pd.DataFrame(
+        {
+            "P_buy": [0.90] + [0.0] * 7,
+            "P_hold": [0.05] * 8,
+            "P_sell": [0.05] * 8,
+        },
+        index=prices.index,
+    )
+    rules = BrokerExecutionRules(
+        pip_size=0.0001,
+        spread_pips=0.0,
+        commission_pips=0.0,
+        slippage_pips=0.0,
+        entry_delay_bars=2,
+        min_lot=0.01,
+        lot_step=0.01,
+        max_lot=0.50,
+    )
+
+    replay = replay_candle_trail(
+        prices,
+        signals,
+        rules,
+        threshold=0.60,
+        requested_lot=0.01,
+        sl_pips=10,
+        tp_pips=30,
+        trail_activation_pips=40,
+        trail_pips_behind=10,
+        max_bars_low=1,
+        max_bars_med=2,
+        max_bars_high=4,
+    )
+
+    first_trade = replay["trades"][0]
+    assert first_trade["signal_time"] == prices.index[0]
+    assert first_trade["entry_time"] == prices.index[2]
+    assert first_trade["entry_price"] == prices.iloc[2]["close"]

@@ -1,12 +1,12 @@
 {
-  "daily_sharpe": 3.6720018191195645,
-  "final_equity": 10146.23000000001,
-  "max_drawdown": 0.00023412303562346485,
+  "daily_sharpe": 2.459833241211081,
+  "final_equity": 10090.959999999994,
+  "max_drawdown": 0.0006889071002298507,
   "mode": "candle_trail",
   "research_only": true,
-  "sharpe": 3.527199899751,
+  "sharpe": 2.3100722927320176,
   "symbol": "EURUSD",
-  "total_return": 0.01462300000000094,
-  "trades": 132,
-  "win_rate": 0.7803030303030303
+  "total_return": 0.009095999999999327,
+  "trades": 117,
+  "win_rate": 0.6324786324786325
 }

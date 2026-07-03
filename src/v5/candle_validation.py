@@ -109,6 +109,7 @@ def replay_candle_trail(
     equity_points: list[float] = []
     trades: list[dict] = []
     open_trade: dict | None = None
+    pending: dict | None = None
     volume = rules.normalize_lot(requested_lot)
 
     for i, (ts, row) in enumerate(prices.iterrows()):
@@ -134,26 +135,51 @@ def replay_candle_trail(
                 trades.append(open_trade)
                 open_trade = None
 
+        if open_trade is None and pending is not None and i >= pending["entry_index"]:
+            open_trade = _open_trade(
+                pending["signal_time"],
+                ts,
+                close,
+                pending["direction"],
+                pending["confidence"],
+                volume,
+                rules,
+                sl_pips,
+                tp_pips,
+                pending["max_bars"],
+            )
+            pending = None
+
         equity_points.append(balance)
 
-        if open_trade is not None or volume <= 0:
+        if open_trade is not None or pending is not None or volume <= 0:
             continue
         sig = signals.loc[ts]
         direction = _direction(sig, threshold)
         if direction is None:
             continue
         confidence = float(max(sig["P_buy"], sig["P_sell"]))
-        open_trade = _open_trade(
-            ts,
-            close,
-            direction,
-            confidence,
-            volume,
-            rules,
-            sl_pips,
-            tp_pips,
-            _max_bars(confidence, max_bars_low, max_bars_med, max_bars_high),
-        )
+        pending = {
+            "signal_time": ts,
+            "entry_index": i + rules.entry_delay_bars,
+            "direction": direction,
+            "confidence": confidence,
+            "max_bars": _max_bars(confidence, max_bars_low, max_bars_med, max_bars_high),
+        }
+        if pending["entry_index"] <= i:
+            open_trade = _open_trade(
+                pending["signal_time"],
+                ts,
+                close,
+                pending["direction"],
+                pending["confidence"],
+                volume,
+                rules,
+                sl_pips,
+                tp_pips,
+                pending["max_bars"],
+            )
+            pending = None
 
     if open_trade is not None and len(prices) > 0:
         balance += _close(
@@ -172,7 +198,8 @@ def replay_candle_trail(
 
 
 def _open_trade(
-    ts,
+    signal_time,
+    entry_time,
     close: float,
     direction: str,
     confidence: float,
@@ -193,8 +220,8 @@ def _open_trade(
         sl = entry + sl_pips * rules.pip_size
         tp = entry - tp_pips * rules.pip_size
     return {
-        "signal_time": ts,
-        "entry_time": ts,
+        "signal_time": signal_time,
+        "entry_time": entry_time,
         "direction": direction,
         "confidence": confidence,
         "volume": volume,
