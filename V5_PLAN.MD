@@ -368,8 +368,11 @@ Latest demo dry-run evidence:
 
 - `2026-07-03 20:00:00`: `HOLD`, confidence `5.1%`;
 - `2026-07-03 20:15:00`: `HOLD`, confidence `17.3%`.
+- `2026-07-03 20:45:00`: `HOLD`, confidence `17.5%`;
+- `2026-07-03 21:00:00`: `HOLD`, confidence `10.2%`;
+- `2026-07-03 21:15:00`: `HOLD`, confidence `4.4%`.
 
-No dry-run order-intent rows were written because both bars were holds, so the
+No dry-run order-intent rows were written because all observed bars were holds, so the
 current live dry-run validation reports `waiting_for_live_dry_run_order`.
 The historical replay reconciliation still reports `dry_run_mismatch`,
 `matched_orders=0/553`; this is expected because live July 2026 journal rows
