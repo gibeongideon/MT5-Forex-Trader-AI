@@ -1,7 +1,7 @@
 # V5 MT5 + Lumibot Profitability Plan
 
 > Coordination document for the V5 profitability track.
-> Last updated: 2026-07-02
+> Last updated: 2026-07-03
 > Status: Active implementation plan
 
 ## Goal
@@ -81,6 +81,8 @@ reconciliation.
   - Injects OOS candle feature parquet files for hybrid v2 validation.
   - Replays OOS candle probability signals through a V5 candle-trail validator.
   - Replays signals through broker-realistic rules.
+  - Supports CLI overrides for spread, commission, slippage, entry delay, and
+    max lot so sensitivity runs are reproducible.
   - Writes `data/v5_runs/<run_id>/` artifacts for review.
 - [x] Added focused tests:
   - `tests/test_v5_validation.py`
@@ -89,6 +91,7 @@ reconciliation.
   - `tests/test_v5_replay.py`
   - `tests/test_v5_strict_pipeline.py`
   - `tests/test_v5_champion_validation.py`
+  - `tests/test_v5_validate_champion_cli.py`
 
 ## Phase 1: Validation Hardening
 
@@ -177,6 +180,19 @@ edge sharply, but the candle-trail candidate remains profitable in the fast
 fold-local audit. The next evidence step is the same run with the intended
 30-epoch encoder, followed by sensitivity tests on spread/slippage/threshold.
 
+Full fold-local encoder audit (`encoder_epochs=30`) completed on 2026-07-03.
+This uses the intended candle encoder training length while keeping scaler,
+encoder, and candle classifier fold-local.
+
+| Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
+| ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
+| `eurusd-candle-trail-v5-enc30` | EURUSD | `data/features/candle_signal_v5_EURUSD_enc30.parquet` | 12 | 48,941 | 254 | 235 | 10180.43 | +1.804% | 0.035% | 71.9% | 4.026 | 4.195 | survives full clean audit |
+| `usdjpy-candle-trail-v5-enc30` | USDJPY | `data/features/candle_signal_v5_USDJPY_enc30.parquet` | 12 | 48,936 | 703 | 667 | 10679.59 | +6.796% | 0.084% | 72.1% | 6.265 | 5.886 | survives full clean audit |
+
+Enc30 vs enc3: enc30 increases signal/trade count and slightly improves final
+equity on both pairs, while lowering win rate. The edge remains positive after
+removing the known full-data encoder overlap.
+
 Hybrid-v2 status: the runner is implemented, but local full/fold diagnostics were
 interrupted because XGBoost/encoder training was too slow for the interactive
 turn. Run hybrid-v2 as a longer job or add a faster validation profile before
@@ -193,18 +209,46 @@ using hybrid claims as evidence.
   - lot minimum
   - lot step
   - max lot
+- [x] Expose broker realism overrides in `scripts/v5_validate_champion.py`:
+  - `--spread-pips`
+  - `--commission-pips`
+  - `--slippage-pips`
+  - `--entry-delay-bars`
+  - `--max-lot`
 - [ ] Match MT5/HFM behavior as closely as possible:
   - symbol suffix resolution
   - SL/TP levels
   - volume rounding
   - magic-number isolation
   - session rules
-- [ ] Run sensitivity checks:
+- [x] Run first candle-trail sensitivity checks:
   - worse spread
   - worse slippage
+  - higher confidence threshold
+- [ ] Run remaining sensitivity checks:
   - lower confidence thresholds
   - delayed entry
   - disabled candle feature injection fallback
+
+### Phase 2 Sensitivity Evidence
+
+All runs use fold-local enc30 candle probabilities and the V5 candle-trail
+replay path. The `costx` runs use spread `2.0` pips and slippage `0.5` pips.
+The `th065` runs use threshold `0.65` with default broker costs.
+
+| Run ID | Symbol | Stress | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
+| ------ | ------ | ------ | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
+| `eurusd-candle-trail-v5-enc30` | EURUSD | baseline | 235 | 10180.43 | +1.804% | 0.035% | 71.9% | 4.026 | 4.195 | baseline survives |
+| `eurusd-candle-trail-v5-enc30-costx` | EURUSD | spread/slippage worse | 236 | 10128.64 | +1.286% | 0.044% | 62.3% | 2.996 | 3.355 | survives, compressed edge |
+| `eurusd-candle-trail-v5-enc30-th065` | EURUSD | threshold 0.65 | 132 | 10146.23 | +1.462% | 0.023% | 78.0% | 3.527 | 3.672 | fewer trades, still positive |
+| `usdjpy-candle-trail-v5-enc30` | USDJPY | baseline | 667 | 10679.59 | +6.796% | 0.084% | 72.1% | 6.265 | 5.886 | baseline survives |
+| `usdjpy-candle-trail-v5-enc30-costx` | USDJPY | spread/slippage worse | 674 | 10517.60 | +5.176% | 0.149% | 66.8% | 4.928 | 4.934 | survives, compressed edge |
+| `usdjpy-candle-trail-v5-enc30-th065` | USDJPY | threshold 0.65 | 393 | 10579.54 | +5.795% | 0.058% | 79.1% | 5.679 | 5.306 | fewer trades, still strong |
+
+Interpretation: both candidates remain positive after the first broker-cost and
+threshold pressure tests. USDJPY still has the stronger edge, but it also needs
+closer MT5/HFM replay checks because higher trade count makes fill assumptions
+more important.
 
 ## Phase 3: Lumibot Bridge, Adapter First
 

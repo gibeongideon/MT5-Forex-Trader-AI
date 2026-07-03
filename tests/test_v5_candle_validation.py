@@ -61,6 +61,8 @@ def test_candle_trail_validation_writes_lumibot_style_artifacts(tmp_path):
     assert result.run_dir == tmp_path / "runs" / "unit-candle-trail"
     assert result.stats["mode"] == "candle_trail"
     assert result.stats["trades"] > 0
+    assert "sharpe" in result.stats
+    assert "daily_sharpe" in result.stats
     assert (result.run_dir / "trades.csv").exists()
     settings = json.loads((result.run_dir / "settings.json").read_text())
     reconciliation = json.loads((result.run_dir / "reconciliation.json").read_text())

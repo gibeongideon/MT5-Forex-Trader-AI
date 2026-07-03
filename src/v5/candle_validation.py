@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+import math
 from pathlib import Path
 
 import pandas as pd
@@ -326,11 +327,15 @@ def _load_signals(path: str | Path) -> pd.DataFrame:
 def _stats(cfg: V5CandleTrailValidationConfig, trades: list[dict], equity: pd.Series) -> dict:
     pnl = [float(t.get("pnl_pips", 0.0)) for t in trades]
     wins = [x for x in pnl if x > 0]
+    sharpe = _annualized_sharpe(equity)
+    daily_sharpe = _daily_sharpe(equity)
     return {
         "symbol": cfg.symbol,
         "mode": "candle_trail",
         "trades": len(trades),
         "win_rate": len(wins) / len(pnl) if pnl else 0.0,
+        "sharpe": sharpe,
+        "daily_sharpe": daily_sharpe,
         "total_return": float(equity.iloc[-1] / equity.iloc[0] - 1.0) if len(equity) > 1 else 0.0,
         "max_drawdown": _max_drawdown(equity),
         "final_equity": float(equity.iloc[-1]) if len(equity) else cfg.initial_balance,
@@ -351,6 +356,28 @@ def _max_drawdown(equity: pd.Series) -> float:
     peak = equity.cummax()
     dd = (peak - equity) / peak.replace(0, pd.NA)
     return float(dd.fillna(0.0).max())
+
+
+def _annualized_sharpe(equity: pd.Series) -> float:
+    returns = equity.pct_change(fill_method=None).dropna()
+    if len(returns) < 2 or returns.std() == 0:
+        return 0.0
+    bars_per_year = _bars_per_year(equity)
+    return float(returns.mean() / returns.std() * math.sqrt(bars_per_year))
+
+
+def _daily_sharpe(equity: pd.Series) -> float:
+    daily = equity.resample("D").last().pct_change(fill_method=None).dropna()
+    if len(daily) < 2 or daily.std() == 0:
+        return 0.0
+    return float(daily.mean() / daily.std() * math.sqrt(252))
+
+
+def _bars_per_year(equity: pd.Series) -> float:
+    if len(equity) < 2:
+        return 252.0
+    days = max((equity.index[-1] - equity.index[0]).total_seconds() / 86_400, 1e-9)
+    return float(len(equity) / (days / 365.25))
 
 
 def _required_path(path: str | Path | None, name: str) -> str | Path:

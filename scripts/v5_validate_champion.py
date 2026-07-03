@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from dataclasses import replace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -43,6 +44,24 @@ def _pipeline_config(config_path: Path, symbol: str, data_path: Path, args) -> P
     return cfg
 
 
+def _broker_rules(symbol: str, args):
+    rules = default_broker_rules_for_symbol(symbol)
+    overrides = {}
+    for field in [
+        "spread_pips",
+        "commission_pips",
+        "slippage_pips",
+        "entry_delay_bars",
+        "max_lot",
+    ]:
+        value = getattr(args, field, None)
+        if value is not None:
+            overrides[field] = value
+    if not overrides:
+        return rules
+    return replace(rules, **overrides)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--symbol", required=True, help="Symbol, e.g. EURUSD or USDJPY")
@@ -71,12 +90,17 @@ def main() -> None:
     parser.add_argument("--max-bars-low", type=int, default=1)
     parser.add_argument("--max-bars-med", type=int, default=2)
     parser.add_argument("--max-bars-high", type=int, default=4)
+    parser.add_argument("--spread-pips", type=float, default=None)
+    parser.add_argument("--commission-pips", type=float, default=None)
+    parser.add_argument("--slippage-pips", type=float, default=None)
+    parser.add_argument("--entry-delay-bars", type=int, default=None)
+    parser.add_argument("--max-lot", type=float, default=None)
     parser.add_argument("--max-folds", type=int, default=None, help="Limit folds for quick smoke runs")
     args = parser.parse_args()
 
     symbol = args.symbol.upper()
     data_path = Path(args.data) if args.data else ROOT / "data" / f"{symbol}_M15.csv"
-    rules = default_broker_rules_for_symbol(symbol)
+    rules = _broker_rules(symbol, args)
 
     if args.mode == "candle-trail":
         signals_path = (
