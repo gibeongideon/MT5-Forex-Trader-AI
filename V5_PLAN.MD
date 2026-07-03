@@ -294,6 +294,12 @@ service magic numbers before dry-run.
 
 ## Phase 4: Paper Trading Gate
 
+- [x] Add dry-run journal reconciliation tooling.
+  - `TradeJournal` now stores `magic`, `run_id`, and `dry_run`.
+  - `PipelineBot` candle-trail writes dry-run order-intent rows with symbol,
+    side, lot, SL/TP pips, confidence, magic, and run id.
+  - `scripts/v5_reconcile_dry_run.py` compares expected V5 replay trades with
+    dry-run journal rows and writes `dry_run_reconciliation.json`.
 - [ ] Run dry-run first with a dedicated run id and artifact directory.
 - [ ] Run demo-live with small lots and a dedicated magic number.
 - [ ] Compare expected signals/orders to actual broker actions:
@@ -307,6 +313,43 @@ service magic numbers before dry-run.
 - [ ] Reconcile broker fills and realized PnL against replay within documented
   tolerance.
 - [ ] Do not risk real capital until this gate passes.
+
+### Dry-Run Gate Evidence
+
+The first dry-run reconciliation command was executed against the existing
+`data/live_trades.db` for `usdjpy-candle-trail-v5-enc30-hfm`. It produced
+`data/v5_runs/usdjpy-candle-trail-v5-enc30-hfm/dry_run_reconciliation.json`.
+
+Current result: `dry_run_mismatch`, `matched_orders=0/553`. This is expected
+because the current journal contains old live/pending rows and no rows with the
+new USDJPY HFM dry-run run id. The gate is implemented, but it has not passed.
+
+Dry-run command to produce journal rows for the primary candidate:
+
+```bash
+conda run -n envmt5 --no-capture-output python src/bots/pipeline_bot.py \
+  --dry-run \
+  --symbol USDJPY \
+  --flip-mode candle_trail \
+  --model-dir data/models/pipeline_USDJPY_v2 \
+  --candle-model-dir data/models/candle_USDJPY \
+  --magic 20260103 \
+  --journal-run-id usdjpy-candle-trail-v5-enc30-hfm \
+  --trail-activation-pips 15 \
+  --trail-pips-behind 10 \
+  --trail-max-bars-low 1 \
+  --trail-max-bars-med 2 \
+  --trail-max-bars-high 4 \
+  --max-lot 0.01
+```
+
+Reconciliation command after dry-run rows exist:
+
+```bash
+conda run -n envmt5 --no-capture-output python scripts/v5_reconcile_dry_run.py \
+  --run-dir data/v5_runs/usdjpy-candle-trail-v5-enc30-hfm \
+  --journal data/live_trades.db
+```
 
 ## Phase 5: Migration Decision
 

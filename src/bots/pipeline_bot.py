@@ -302,7 +302,8 @@ class PipelineBot(BotBase):
                  tick_interval: float | None = None,
                  profit_retrace_activation: float = 120.0,
                  profit_retrace_ratio: float = 0.5,
-                 platform: str | None = None):
+                 platform: str | None = None,
+                 journal_run_id: str = ""):
         super().__init__(
             name=f"PipelineBot-{symbol}",
             tick_interval=float(tick_interval or 60.0),
@@ -312,6 +313,7 @@ class PipelineBot(BotBase):
             self.magic = magic  # override config.yaml magic_number
         self.dry_run     = dry_run
         self.symbol      = symbol
+        self.journal_run_id = journal_run_id
         self._symbol_resolved = False   # broker-suffix auto-resolution (e.g. EURUSD→EURUSD.Z)
         # realistic hard cap on lot size (risk-% sizing on a large balance can balloon);
         # from config trading.max_lot, default 0.50 lots. Override per-bot via --max-lot.
@@ -1181,6 +1183,31 @@ class PipelineBot(BotBase):
             f"trail_behind={self._trail_pips_behind:.0f}p"
         )
 
+        try:
+            self.journal.record({
+                "bot": self.name,
+                "symbol": self.symbol,
+                "direction": direction,
+                "entry_time": str(bar_time),
+                "entry_price": price,
+                "exit_time": None,
+                "exit_price": None,
+                "pnl_pips": 0.0,
+                "pnl_dollars": 0.0,
+                "model": "candle_trail",
+                "confidence": confidence,
+                "entry_reason": f"trail:{direction}",
+                "exit_reason": "dry_run_open" if self.dry_run else "open",
+                "volume": lot,
+                "sl_pips": eff_sl,
+                "tp_pips": self._candle_tp_pips,
+                "magic": self.magic,
+                "run_id": self.journal_run_id,
+                "dry_run": bool(self.dry_run),
+            })
+        except Exception:
+            pass
+
         if self.dry_run:
             # Track in dry-run so bar counting works
             self._trail_ticket      = -1   # sentinel
@@ -1589,6 +1616,8 @@ def main() -> None:
                    help="profit_retrace: close when profit falls to this share of peak (default 0.5)")
     p.add_argument("--platform", default=None, choices=["mt5", "mt4"],
                    help="trading platform (default: config trading.platform or mt5)")
+    p.add_argument("--journal-run-id", default="",
+                   help="Run id recorded in live_trades.db for dry-run/paper reconciliation")
     args = p.parse_args()
     PipelineBot(
         platform              = args.platform,
@@ -1611,6 +1640,7 @@ def main() -> None:
         tick_interval         = args.tick_interval,
         profit_retrace_activation = args.profit_retrace_activation,
         profit_retrace_ratio      = args.profit_retrace_ratio,
+        journal_run_id             = args.journal_run_id,
     ).run()
 
 

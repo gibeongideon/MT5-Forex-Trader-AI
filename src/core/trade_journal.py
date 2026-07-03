@@ -59,6 +59,9 @@ CREATE TABLE IF NOT EXISTS trades (
     volume        REAL    DEFAULT 0,
     sl_pips       REAL    DEFAULT 0,
     tp_pips       REAL    DEFAULT 0,
+    magic         INTEGER,
+    run_id        TEXT    DEFAULT '',
+    dry_run       INTEGER DEFAULT 0,
     created_at    TEXT    DEFAULT (datetime('now'))
 )
 """
@@ -83,6 +86,7 @@ class TradeJournal:
             "model", "confidence",
             "entry_reason", "exit_reason",
             "volume", "sl_pips", "tp_pips",
+            "magic", "run_id", "dry_run",
         ]
         values = [trade.get(c) for c in cols]
         placeholders = ", ".join(["?"] * len(cols))
@@ -137,6 +141,19 @@ class TradeJournal:
     def _init_db(self) -> None:
         with self._connect() as conn:
             conn.execute(_CREATE_TABLE)
+            self._ensure_columns(conn)
+
+    @staticmethod
+    def _ensure_columns(conn) -> None:
+        existing = {row[1] for row in conn.execute("PRAGMA table_info(trades)").fetchall()}
+        migrations = {
+            "magic": "ALTER TABLE trades ADD COLUMN magic INTEGER",
+            "run_id": "ALTER TABLE trades ADD COLUMN run_id TEXT DEFAULT ''",
+            "dry_run": "ALTER TABLE trades ADD COLUMN dry_run INTEGER DEFAULT 0",
+        }
+        for column, sql in migrations.items():
+            if column not in existing:
+                conn.execute(sql)
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self.db_path)
