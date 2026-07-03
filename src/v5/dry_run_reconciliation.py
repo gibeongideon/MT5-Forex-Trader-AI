@@ -115,7 +115,8 @@ def _filter_observed(observed: pd.DataFrame, expected: pd.DataFrame) -> pd.DataF
         frame = frame[frame["symbol"].astype(str).isin(symbols)]
     if "magic" in frame.columns and expected["magic"].notna().any():
         magics = set(expected["magic"].dropna().astype("int64"))
-        frame = frame[frame["magic"].fillna(-1).astype("int64").isin(magics)]
+        observed_magic = pd.to_numeric(frame["magic"], errors="coerce").fillna(-1).astype("int64")
+        frame = frame[observed_magic.isin(magics)]
     return frame
 
 

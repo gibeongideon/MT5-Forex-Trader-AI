@@ -1,13 +1,13 @@
 {
   "confidence_tolerance": 0.05,
   "expected_orders": 553,
-  "journal_orders": 649,
+  "journal_orders": 0,
   "lot_tolerance": 1e-09,
   "matched_orders": 0,
   "matches": [],
   "status": "dry_run_mismatch",
   "tolerance_seconds": 60,
-  "unexpected_journal": 649,
+  "unexpected_journal": 0,
   "unmatched": [
     {
       "entry_time": "2024-05-15 16:15:00",

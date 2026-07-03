@@ -278,6 +278,33 @@ service magic numbers before dry-run.
 | `usdjpy-candle-trail-v5-enc30-hfm` | USDJPY | `USDJPY.Z` | 20260103 | 0.60 | 553 | +3.525% | 4.469 | symbol, magic, volume, SL/TP distance pass | primary paper candidate |
 | `eurusd-candle-trail-v5-enc30-hfm` | EURUSD | `EURUSD.Z` | 20260102 | 0.65 | 117 | +0.910% | 2.310 | symbol, magic, volume, SL/TP distance pass | secondary/fragile |
 
+### Leakage/Sharpe Proof Evidence
+
+`data/v5_runs/usdjpy-candle-trail-v5-enc30-hfm/leakage_proof.json` was generated
+for the primary USDJPY candidate.
+
+Checks passed:
+
+- OOS candle probability metadata validates with
+  `assert_candle_predictions_are_oos()`.
+- Signal file hash:
+  `b4a0adffbab3cc2e89275a83d47bebc7b3051fee6545147e4cfeb2ec16ccca72`.
+- 48,936 OOS probability rows across 12 folds.
+- No duplicate prediction timestamps.
+- Every prediction timestamp is inside its fold's test window and outside its
+  train window.
+- Reported Sharpe `4.469232139163544` recomputes from `equity.csv` as
+  `4.4692321391635295` with delta `1.42e-14`.
+- Stress evidence remains positive:
+  - cost stress Sharpe `2.769`, return `+2.115%`;
+  - threshold 0.65 Sharpe `4.144`, return `+2.963%`;
+  - two-bar delay Sharpe `1.520`, return `+0.773%`.
+
+Interpretation: this supports that the USDJPY Sharpe is coming from fold-local
+out-of-sample candle probabilities and the persisted replay equity curve, not
+from a full-data encoder or in-sample candle prediction file. It is still not a
+live-profit claim until dry-run and demo-live reconciliation pass.
+
 ## Phase 3: Lumibot Bridge, Adapter First
 
 - [ ] Add a thin strategy lifecycle wrapper around the existing MT5 strategy
@@ -323,6 +350,12 @@ The first dry-run reconciliation command was executed against the existing
 Current result: `dry_run_mismatch`, `matched_orders=0/553`. This is expected
 because the current journal contains old live/pending rows and no rows with the
 new USDJPY HFM dry-run run id. The gate is implemented, but it has not passed.
+
+A bounded 120-second dry-run attempt loaded the USDJPY pipeline and candle
+models successfully, then timed out without writing rows for
+`usdjpy-candle-trail-v5-enc30-hfm`. Current journal row count for that run id:
+`0`. The dry-run needs to be left running through at least one actionable M15
+candle-trail signal before reconciliation can pass.
 
 Dry-run command to produce journal rows for the primary candidate:
 
