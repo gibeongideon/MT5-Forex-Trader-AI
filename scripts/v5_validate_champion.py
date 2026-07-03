@@ -62,6 +62,16 @@ def _broker_rules(symbol: str, args):
     return replace(rules, **overrides)
 
 
+def _broker_symbol(symbol: str, args) -> str | None:
+    explicit = getattr(args, "broker_symbol", None)
+    if explicit:
+        return explicit
+    suffix = getattr(args, "broker_symbol_suffix", "")
+    if suffix:
+        return f"{symbol}{suffix}"
+    return None
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--symbol", required=True, help="Symbol, e.g. EURUSD or USDJPY")
@@ -95,6 +105,10 @@ def main() -> None:
     parser.add_argument("--slippage-pips", type=float, default=None)
     parser.add_argument("--entry-delay-bars", type=int, default=None)
     parser.add_argument("--max-lot", type=float, default=None)
+    parser.add_argument("--broker-symbol", default=None)
+    parser.add_argument("--broker-symbol-suffix", default="")
+    parser.add_argument("--magic", type=int, default=None)
+    parser.add_argument("--min-stop-distance-pips", type=float, default=0.0)
     parser.add_argument("--max-folds", type=int, default=None, help="Limit folds for quick smoke runs")
     args = parser.parse_args()
 
@@ -125,6 +139,9 @@ def main() -> None:
             max_bars_low=args.max_bars_low,
             max_bars_med=args.max_bars_med,
             max_bars_high=args.max_bars_high,
+            broker_symbol=_broker_symbol(symbol, args),
+            magic_number=args.magic,
+            min_stop_distance_pips=args.min_stop_distance_pips,
         )
         result = run_candle_trail_validation(cfg)
         print(f"V5 candle-trail artifacts: {result.run_dir}")

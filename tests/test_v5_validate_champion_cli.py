@@ -5,7 +5,7 @@ from types import SimpleNamespace
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from scripts.v5_validate_champion import _broker_rules
+from scripts.v5_validate_champion import _broker_rules, _broker_symbol
 
 
 def _args(**overrides):
@@ -15,6 +15,8 @@ def _args(**overrides):
         "slippage_pips": None,
         "entry_delay_bars": None,
         "max_lot": None,
+        "broker_symbol": None,
+        "broker_symbol_suffix": "",
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -51,3 +53,11 @@ def test_broker_rules_apply_cli_sensitivity_overrides():
     assert rules.max_lot == 0.25
     assert rules.min_lot == 0.01
     assert rules.lot_step == 0.01
+
+
+def test_broker_symbol_uses_explicit_value_before_suffix():
+    assert _broker_symbol("USDJPY", _args(broker_symbol="USDJPY.Z", broker_symbol_suffix=".pro")) == "USDJPY.Z"
+
+
+def test_broker_symbol_can_apply_suffix():
+    assert _broker_symbol("EURUSD", _args(broker_symbol_suffix=".Z")) == "EURUSD.Z"

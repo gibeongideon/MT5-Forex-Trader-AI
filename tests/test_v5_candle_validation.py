@@ -47,6 +47,9 @@ def test_candle_trail_validation_writes_lumibot_style_artifacts(tmp_path):
         run_id="unit-candle-trail",
         artifact_root=tmp_path / "runs",
         broker_rules=default_broker_rules_for_symbol("EURUSD"),
+        broker_symbol="EURUSD.Z",
+        magic_number=20260102,
+        min_stop_distance_pips=5,
         threshold=0.60,
         requested_lot=0.01,
         sl_pips=10,
@@ -72,7 +75,12 @@ def test_candle_trail_validation_writes_lumibot_style_artifacts(tmp_path):
 
     assert settings["mode"] == "candle_trail"
     assert reconciliation["status"] == "research_replay_only"
+    assert reconciliation["broker_profile"]["status"] == "broker_profile_checked"
+    assert reconciliation["broker_profile"]["broker_symbol"] == "EURUSD.Z"
+    assert reconciliation["broker_profile"]["magic_number"] == 20260102
     assert len(trades) == result.stats["trades"]
+    assert set(trades["symbol"]) == {"EURUSD.Z"}
+    assert set(trades["magic"]) == {20260102}
 
 
 def test_candle_trail_replay_applies_entry_delay():

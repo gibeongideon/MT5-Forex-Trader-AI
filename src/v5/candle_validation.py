@@ -9,6 +9,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.v5.artifacts import V5ArtifactWriter
+from src.v5.broker_checks import BrokerProfile, build_broker_reconciliation, resolve_broker_symbol
 from src.v5.champion_validation import load_ohlcv
 from src.v5.validation import BrokerExecutionRules
 
@@ -28,6 +29,9 @@ class V5CandleTrailValidationConfig:
     max_bars_low: int = 1
     max_bars_med: int = 2
     max_bars_high: int = 4
+    broker_symbol: str | None = None
+    magic_number: int | None = None
+    min_stop_distance_pips: float = 0.0
     initial_balance: float = 10_000.0
     dollars_per_pip_per_lot: float = 10.0
     data_path: str | Path | None = None
@@ -66,6 +70,23 @@ def run_candle_trail_validation(
         initial_balance=cfg.initial_balance,
         dollars_per_pip_per_lot=cfg.dollars_per_pip_per_lot,
     )
+    broker_profile = BrokerProfile(
+        base_symbol=cfg.symbol,
+        broker_symbol=cfg.broker_symbol,
+        magic_number=cfg.magic_number,
+        min_stop_distance_pips=cfg.min_stop_distance_pips,
+    )
+    broker_symbol = resolve_broker_symbol(broker_profile)
+    _annotate_trades(
+        replay["trades"],
+        symbol=broker_symbol,
+        magic_number=cfg.magic_number,
+    )
+    broker_report = build_broker_reconciliation(
+        broker_profile,
+        replay["trades"],
+        cfg.broker_rules,
+    )
     stats = _stats(cfg, replay["trades"], replay["equity"])
     run_dir = V5ArtifactWriter(cfg.artifact_root).write_run(
         run_id=cfg.run_id,
@@ -77,6 +98,7 @@ def run_candle_trail_validation(
         reconciliation={
             "status": "research_replay_only",
             "note": "Candle-trail replay over supplied OOS candle probabilities; not paper/live reconciled.",
+            "broker_profile": broker_report,
         },
     )
     return V5CandleTrailValidationResult(
@@ -197,6 +219,12 @@ def replay_candle_trail(
     return {"trades": trades, "equity": equity}
 
 
+def _annotate_trades(trades: list[dict], *, symbol: str, magic_number: int | None) -> None:
+    for trade in trades:
+        trade["symbol"] = symbol
+        trade["magic"] = magic_number
+
+
 def _open_trade(
     signal_time,
     entry_time,
@@ -228,6 +256,8 @@ def _open_trade(
         "entry_price": entry,
         "sl": sl,
         "tp": tp,
+        "initial_sl": sl,
+        "initial_tp": tp,
         "sl_pips": sl_pips,
         "tp_pips": tp_pips,
         "max_bars": max_bars,

@@ -89,6 +89,12 @@ reconciliation.
     positions on the signal bar.
   - The current enc30 and sensitivity tables below were regenerated after the
     fix.
+- [x] Added offline MT5/HFM broker-profile checks.
+  - Resolve intended broker symbol/suffix before artifact writing.
+  - Annotate replay trades with broker symbol and magic number.
+  - Validate symbol, magic-number isolation, volume bounds/step, and initial
+    SL/TP distance.
+  - Write broker-profile results into `reconciliation.json`.
 - [x] Added focused tests:
   - `tests/test_v5_validation.py`
   - `tests/test_v5_artifacts.py`
@@ -221,11 +227,12 @@ using hybrid claims as evidence.
   - `--slippage-pips`
   - `--entry-delay-bars`
   - `--max-lot`
-- [ ] Match MT5/HFM behavior as closely as possible:
+- [x] Match first-pass MT5/HFM replay behavior:
   - symbol suffix resolution
   - SL/TP levels
   - volume rounding
   - magic-number isolation
+- [ ] Match remaining MT5/HFM behavior:
   - session rules
 - [x] Run first candle-trail sensitivity checks:
   - worse spread
@@ -259,6 +266,17 @@ Interpretation: after fixing delayed-entry execution, both candidates remain
 positive at one-bar delay, but the edge is much smaller than the immediate-entry
 artifact implied. USDJPY is still the stronger candidate. EURUSD should be
 treated as fragile unless threshold filtering or broker replay improves it.
+
+### MT5/HFM Broker-Profile Evidence
+
+These are still research replays, not paper/live reconciliation. They prove the
+replay artifacts can be mapped to the intended HFM-style broker symbol and
+service magic numbers before dry-run.
+
+| Run ID | Symbol | Broker Symbol | Magic | Threshold | Trades | Return | Sharpe | Checks | Verdict |
+| ------ | ------ | ------------- | ----- | --------- | ------ | ------ | ------ | ------ | ------- |
+| `usdjpy-candle-trail-v5-enc30-hfm` | USDJPY | `USDJPY.Z` | 20260103 | 0.60 | 553 | +3.525% | 4.469 | symbol, magic, volume, SL/TP distance pass | primary paper candidate |
+| `eurusd-candle-trail-v5-enc30-hfm` | EURUSD | `EURUSD.Z` | 20260102 | 0.65 | 117 | +0.910% | 2.310 | symbol, magic, volume, SL/TP distance pass | secondary/fragile |
 
 ## Phase 3: Lumibot Bridge, Adapter First
 
