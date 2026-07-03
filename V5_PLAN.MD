@@ -351,11 +351,16 @@ Current result: `dry_run_mismatch`, `matched_orders=0/553`. This is expected
 because the current journal contains old live/pending rows and no rows with the
 new USDJPY HFM dry-run run id. The gate is implemented, but it has not passed.
 
-A bounded 120-second dry-run attempt loaded the USDJPY pipeline and candle
-models successfully, then timed out without writing rows for
-`usdjpy-candle-trail-v5-enc30-hfm`. Current journal row count for that run id:
-`0`. The dry-run needs to be left running through at least one actionable M15
-candle-trail signal before reconciliation can pass.
+A bounded 16-minute dry-run attempt loaded the USDJPY pipeline and candle models
+successfully, but wrote `0` rows for `usdjpy-candle-trail-v5-enc30-hfm`. A short
+unbuffered diagnostic run showed the blocker clearly: the bot cannot connect to
+the local MT5 bridge on `localhost:18812` from this sandbox and reports:
+`Cannot connect to mt5linux bridge ... [Errno 1] Operation not permitted`.
+
+Decision: dry-run reconciliation must be run from an environment where
+`./start_mt5.sh` has started the bridge and the bot can reach it, or the bridge
+must be exposed to this shell. Until then, the paper gate remains blocked by
+environment access, not by the V5 validation/replay logic.
 
 Dry-run command to produce journal rows for the primary candidate:
 
