@@ -23,6 +23,12 @@ resampling now labels higher-timeframe closes at completed bar times. All V5
 candle OOS artifacts generated before this fix are research-only and must be
 regenerated before any Sharpe claim is trusted.
 
+The first regenerated USDJPY enc30 candle-trail run after the fix failed:
+`usdjpy-candle-trail-v5-post-mtf-fix-enc30` produced Sharpe `-1.188`, daily
+Sharpe `-0.931`, return `-0.436%`, 421 trades, and win rate `41.3%`. The timing
+proof passed, so the negative result is the current best evidence, not a tooling
+failure.
+
 ## Branch Research Timeline
 
 ### v4-externaldata
@@ -151,14 +157,23 @@ Required before any strategy is called profitable:
 - Run open-market dry-run, then strict live-current reconciliation.
 - Only then decide whether demo-live is justified.
 
+Current post-fix evidence:
+
+| Run ID | Symbol | Folds | OOS Rows | Signal Rows | Trades | Return | Sharpe | Verdict |
+| ------ | ------ | ----- | -------- | ----------- | ------ | ------ | ------ | ------- |
+| `usdjpy-candle-trail-v5-post-mtf-fix-enc30` | USDJPY | 12 | 48,936 | 541 | 421 | -0.436% | -1.188 | USDJPY candle-trail fails after MTF fix |
+
 ## Prioritized Roadmap
 
 High priority:
 
-1. Regenerate EURUSD and USDJPY candle OOS files with the fixed MTF alignment.
-2. Replay USDJPY candle-trail and compare against the old pre-fix result.
-3. Rebuild `leakage_proof.json` only if regenerated Sharpe remains positive.
-4. Resume dry-run/live-current gate when the FX market is open.
+1. Regenerate EURUSD candle OOS files with the fixed MTF alignment for
+   completeness.
+2. Treat USDJPY candle-trail as failed unless a new post-fix variant proves
+   otherwise.
+3. Convert the v4 CTA champion into a V5 artifact-producing validation runner.
+4. Resume dry-run/live-current gate only for a candidate that remains positive
+   after the completed-bar MTF fix.
 
 Medium priority:
 
@@ -188,3 +203,6 @@ Do not pursue:
   signal file.
 - Update `V5_PLAN.MD` with the regenerated result, even if Sharpe collapses.
 - If regenerated results remain positive, continue the open-market dry-run gate.
+
+Status: USDJPY was regenerated and replayed; Sharpe collapsed to `-1.188`, so
+do not continue the USDJPY candle-trail paper gate from the old artifacts.

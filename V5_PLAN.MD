@@ -209,6 +209,18 @@ comparison points, but they are no longer accepted as leakage-cleared proof.
 Regenerate the candle OOS signal files and all derived replays before promoting
 any Sharpe claim.
 
+USDJPY regeneration after the completed-bar MTF fix was run on 2026-07-04:
+
+| Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
+| ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
+| `usdjpy-candle-trail-v5-post-mtf-fix-enc30` | USDJPY | `data/features/candle_signal_v5_USDJPY_post_mtf_fix_enc30.parquet` | 12 | 48,936 | 541 | 421 | 9956.35 | -0.436% | 0.722% | 41.3% | -1.188 | -0.931 | fails after MTF fix |
+
+Interpretation: the previous USDJPY candle-trail edge does not survive the
+completed-bar MTF correction. The paper/live gate for USDJPY candle-trail should
+not proceed unless a newly regenerated variant passes stricter validation. The
+next research path is either EURUSD post-fix regeneration for completeness or
+the CTA portfolio track from `V5_RESEARCH_AUDIT.MD`.
+
 | Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
 | ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
 | `eurusd-candle-trail-v5-enc30` | EURUSD | `data/features/candle_signal_v5_EURUSD_enc30.parquet` | 12 | 48,941 | 254 | 202 | 10082.01 | +0.820% | 0.071% | 57.4% | 2.152 | 2.504 | survives full clean audit, thinner edge |

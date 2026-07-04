@@ -1,0 +1,12 @@
+{
+  "daily_sharpe": -0.9311218397578638,
+  "final_equity": 9956.350000000162,
+  "max_drawdown": 0.007215237464570556,
+  "mode": "candle_trail",
+  "research_only": true,
+  "sharpe": -1.1881845215459172,
+  "symbol": "USDJPY",
+  "total_return": -0.004364999999983743,
+  "trades": 421,
+  "win_rate": 0.41330166270783847
+}
