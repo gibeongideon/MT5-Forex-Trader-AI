@@ -1,7 +1,7 @@
 # V5 MT5 + Lumibot Profitability Plan
 
 > Coordination document for the V5 profitability track.
-> Last updated: 2026-07-03
+> Last updated: 2026-07-04
 > Status: Active implementation plan
 
 ## Goal
@@ -242,6 +242,12 @@ using hybrid claims as evidence.
 - [ ] Run remaining sensitivity checks:
   - lower confidence thresholds
   - disabled candle feature injection fallback
+- [x] Add a live dry-run gate watcher for the USDJPY candidate.
+  - `scripts/v5_watch_live_gate.py` waits for the first journaled dry-run
+    order intent for a run id.
+  - Once an intent exists, it runs strict `--live-current` validation through
+    `scripts/v5_reconcile_dry_run.py`.
+  - This prevents manual terminal watching from becoming part of the V5 gate.
 
 ### Phase 2 Sensitivity Evidence
 
@@ -327,7 +333,13 @@ live-profit claim until dry-run and demo-live reconciliation pass.
     side, lot, SL/TP pips, confidence, magic, and run id.
   - `scripts/v5_reconcile_dry_run.py` compares expected V5 replay trades with
     dry-run journal rows and writes `dry_run_reconciliation.json`.
-- [ ] Run dry-run first with a dedicated run id and artifact directory.
+- [x] Add live-current dry-run watcher tooling.
+  - `scripts/v5_watch_live_gate.py` waits for a journal row for the dedicated
+    run id.
+  - When the row exists, it calls strict live-current reconciliation without
+    `--allow-mismatch`.
+- [ ] Run dry-run first with a dedicated run id and artifact directory during
+  open market hours.
 - [ ] Run demo-live with small lots and a dedicated magic number.
 - [ ] Compare expected signals/orders to actual broker actions:
   - symbol
@@ -383,6 +395,27 @@ current demo account, keep using the `USDJPY.Z` HFM artifact and run id
 `usdjpy-candle-trail-v5-enc30-hfm`. Keep dry-run running until an actionable
 candle-trail signal occurs, then validate current live dry-run rows with
 `live_dry_run_validation.json` before demo-live.
+
+Weekend status on 2026-07-04: the FX market is closed, so no fresh actionable
+USDJPY candle-trail BUY/SELL should be expected today. Do not count weekend
+HOLD output or missing journal rows as a failed live gate. Resume this gate when
+the market is open and the MT5 bridge is connected.
+
+Preferred open-market watcher command:
+
+```bash
+conda run -n envmt5 --no-capture-output python scripts/v5_watch_live_gate.py \
+  --run-dir data/v5_runs/usdjpy-candle-trail-v5-enc30-hfm \
+  --journal data/live_trades.db \
+  --run-id usdjpy-candle-trail-v5-enc30-hfm \
+  --broker-symbol USDJPY.Z \
+  --magic 20260103 \
+  --expected-sl-pips 10 \
+  --expected-tp-pips 30 \
+  --max-lot 0.01 \
+  --poll-seconds 30 \
+  --max-polls 240
+```
 
 Dry-run command to produce journal rows for the primary candidate:
 
