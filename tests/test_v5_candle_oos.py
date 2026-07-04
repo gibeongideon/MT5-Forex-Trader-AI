@@ -7,7 +7,11 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from src.v5.candle_oos import V5CandleOOSConfig, generate_candle_oos_predictions
+from src.v5.candle_oos import (
+    V5CandleOOSConfig,
+    add_candle_extra_features,
+    generate_candle_oos_predictions,
+)
 from src.v5.validation import assert_candle_predictions_are_oos
 
 
@@ -93,3 +97,25 @@ def test_generate_candle_oos_predictions_are_fold_local_and_auditable():
 
     assert ("fold_start", 0) in progress
     assert ("fold_done", 0) in progress
+
+
+def test_candle_extra_features_do_not_use_incomplete_higher_timeframe_future():
+    raw = _m15(96)
+    prediction_time = pd.Timestamp("2026-01-01 01:15:00")
+    X = pd.DataFrame({"base": [1.0]}, index=[prediction_time])
+
+    baseline = add_candle_extra_features(raw, X)
+
+    mutated = raw.copy()
+    future_mask = (mutated.index > prediction_time) & (
+        mutated.index < pd.Timestamp("2026-01-01 04:00:00")
+    )
+    mutated.loc[future_mask, "close"] = mutated.loc[future_mask, "close"] * 1.25
+    changed = add_candle_extra_features(mutated, X)
+
+    higher_tf_cols = ["ema_1h_ratio", "ema_1h_slope", "ema_4h_ratio", "ema_4h_slope"]
+    pd.testing.assert_series_equal(
+        baseline.loc[prediction_time, higher_tf_cols],
+        changed.loc[prediction_time, higher_tf_cols],
+        check_names=False,
+    )

@@ -222,7 +222,7 @@ def add_candle_extra_features(df_raw: pd.DataFrame, X: pd.DataFrame) -> pd.DataF
     extra["hour_sin"] = np.sin(2 * np.pi * hour / 24)
     extra["hour_cos"] = np.cos(2 * np.pi * hour / 24)
 
-    close_1h = df_raw["close"].resample("1h").last().ffill()
+    close_1h = _completed_higher_timeframe_close(df_raw["close"], "1h")
     ema_1h = close_1h.ewm(span=20, adjust=False).mean()
     ema_1h_m15 = ema_1h.reindex(df_raw.index, method="ffill")
     extra["ema_1h_ratio"] = (
@@ -230,7 +230,7 @@ def add_candle_extra_features(df_raw: pd.DataFrame, X: pd.DataFrame) -> pd.DataF
     ).reindex(idx).fillna(0)
     extra["ema_1h_slope"] = (ema_1h_m15.diff(4) / df_raw["close"]).reindex(idx).fillna(0)
 
-    close_4h = df_raw["close"].resample("4h").last().ffill()
+    close_4h = _completed_higher_timeframe_close(df_raw["close"], "4h")
     ema_4h = close_4h.ewm(span=50, adjust=False).mean()
     ema_4h_m15 = ema_4h.reindex(df_raw.index, method="ffill")
     extra["ema_4h_ratio"] = (
@@ -239,6 +239,12 @@ def add_candle_extra_features(df_raw: pd.DataFrame, X: pd.DataFrame) -> pd.DataF
     extra["ema_4h_slope"] = (ema_4h_m15.diff(16) / df_raw["close"]).reindex(idx).fillna(0)
 
     return pd.concat([X, extra.reindex(idx).fillna(0)], axis=1)
+
+
+def _completed_higher_timeframe_close(close: pd.Series, rule: str) -> pd.Series:
+    """Return closes labeled when the higher-timeframe bar is complete."""
+
+    return close.resample(rule, label="right", closed="right").last().ffill()
 
 
 def _join_extra(X: pd.DataFrame, extra: pd.DataFrame) -> pd.DataFrame:

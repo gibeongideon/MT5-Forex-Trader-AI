@@ -4,6 +4,11 @@
 > Last updated: 2026-07-04
 > Status: Active implementation plan
 
+> 2026-07-04 audit correction: `V5_RESEARCH_AUDIT.MD` found and fixed a
+> remaining multi-timeframe candle feature look-ahead in V5 fold-local candle
+> OOS generation. Candle-trail Sharpe artifacts generated before this fix are
+> research-only and must be regenerated before being used as proof.
+
 ## Goal
 
 Create a working profitable strategy from the existing MT5 research stack while
@@ -103,6 +108,9 @@ reconciliation.
   - `tests/test_v5_strict_pipeline.py`
   - `tests/test_v5_champion_validation.py`
   - `tests/test_v5_validate_champion_cli.py`
+- [x] Added a completed-bar causality test for V5 candle extra features.
+  - Mutating future M15 rows inside the same 1H/4H bin no longer changes the
+    current candle feature row.
 
 ## Phase 1: Validation Hardening
 
@@ -194,6 +202,12 @@ fold-local audit. The next evidence step is the same run with the intended
 Full fold-local encoder audit (`encoder_epochs=30`) completed on 2026-07-03.
 This uses the intended candle encoder training length while keeping scaler,
 encoder, and candle classifier fold-local.
+
+Audit correction on 2026-07-04: these enc30 results were generated before the
+completed-bar MTF candle feature fix. They remain useful as historical
+comparison points, but they are no longer accepted as leakage-cleared proof.
+Regenerate the candle OOS signal files and all derived replays before promoting
+any Sharpe claim.
 
 | Run ID | Symbol | Signal File | Folds | OOS Rows | Signal Rows | Trades | Final Equity | Return | MaxDD | Win Rate | Sharpe | Daily Sharpe | Verdict |
 | ------ | ------ | ----------- | ----- | -------- | ----------- | ------ | ------------ | ------ | ----- | -------- | ------ | ------------ | ------- |
