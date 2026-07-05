@@ -629,6 +629,71 @@ run id `v5-h4-day`), idempotent per bar, no order-send path. Config:
 Live cadence needs fresh H4 CSVs each bar — the MT5-bridge H4 refresher is
 the remaining prerequisite (same gap as the D1 refresh for the basket).
 
+## Standalone XAUUSD H4 Trade Engine — Pre-Registration (2026-07-05)
+
+Registered BEFORE any run. Signal = the validated H4 EWMAC forecast (the
+`h4-cta-v5` family; XAUUSD leg Sharpe ~0.77 continuous), converted to
+discrete trades in `src/v5/xau_trend.py`. Pre-registered parameters (enter
+0.50, flip 1.00, ATR14, SL 2 ATR, trail 2 ATR after 1 ATR, TP 6 ATR, risk
+1%/trade, next-bar-open fills, half-spread + 1 pip slippage, SL-first
+intrabar) are in the module docstring. Variant grid (all six reported):
+exit {flip, trail, sltp} x flip-mode {confidence, always}. Stress on any
+promoted cell: spread x2, entry delay 2. Eval 2017+, equity0 $3,000.
+
+Round 2 (registered 2026-07-05 after the grid, before running): ONE
+additional variant — confidence-scaled risk {low 0.5%, med 1.0%, high 1.5%}
+on the `trail`/`confidence` cell, restoring signal-strength-proportional
+sizing that fixed-risk discretization discards. No other parameter changes.
+
+v4 hedge-mode note (requested review): v4's `hedge_loss`/`hedge_exit`/
+`zone_recovery` numbers came from the contaminated signal stack
+(`data/HONEST_VALIDATION.md` on v4-externaldata) and are not evidence;
+double-sided hedges also double margin for zero net exposure. The
+confidence-flip requested here is implemented as netting (close + reverse),
+which is the honest equivalent.
+
+### XAUUSD Trade Engine Results (2026-07-05)
+
+Eval 2017+ on $3,000, all runs under `data/v5_runs/xau-trend-*`:
+
+| Run | Sharpe | CI 95% | CAGR | MaxDD | Trades | Win | PF |
+| --- | ------ | ------ | ---- | ----- | ------ | --- | -- |
+| flip/confidence | 0.360 | [-0.19, 1.01] | 5.7% | 43% | 10 | 30% | 3.22 |
+| flip/always | 0.434 | [-0.10, 1.10] | 10.1% | 35% | 17 | 35% | 3.68 |
+| trail/confidence | 0.389 | [-0.22, 1.13] | 5.9% | 31% | 911 | 40% | 1.19 |
+| trail/always | 0.389 | (identical) | 5.9% | 31% | 911 | 40% | 1.19 |
+| sltp/confidence | 0.336 | [-0.28, 1.06] | 5.5% | 32% | 976 | 40% | 1.16 |
+| sltp/always | 0.336 | (identical) | 5.5% | 32% | 976 | 40% | 1.16 |
+| **trail/conf + conf-risk (round 2, PROMOTED)** | **0.571** | [-0.01, 1.25] | 8.9% | 27% | 896 | 40% | 1.29 |
+| promoted, spread x2 | 0.535 | [-0.03, 1.20] | 8.2% | 28% | 887 | 39% | 1.29 |
+| promoted, delay 2 | 0.792 | [0.21, 1.46] | 10.3% | 20% | 806 | 41% | 1.40 |
+
+Findings (honest):
+
+1. Discretizing the continuous signal to fixed-risk trade tickets loses
+   about half the edge (0.34-0.43 vs 0.77 continuous MTM). Restoring
+   signal-strength via confidence-scaled risk recovers much of it (0.571).
+2. TP hurts (sltp < trail in every cell) — classic trend-following result;
+   the promoted config has NO take-profit, exits are trailing stops.
+3. The confidence-flip rule rarely binds with the slow validated signal:
+   trail/confidence == trail/always because positions are trail-stopped
+   before opposite forecasts reach strength 1.0. The rule is implemented
+   and tested, but with this signal family most exits are stops, not flips.
+4. Delay-2 IMPROVING the result (0.792) is read strictly as
+   "not execution-fragile", not as a config change — promoting a lucky
+   stress cell would be sweep-and-report-best.
+5. Statistical caveat: the promoted CI still grazes zero. Single-symbol
+   Sharpe ~0.57 over 9.5y is real-looking but weaker evidence than the
+   basket (0.935, CI excludes zero) — size accordingly.
+
+Runner: `scripts/v5_xau_runner.py --equity 3000` replays the deterministic
+engine over history so live state (position, trail level, pending flip) is
+byte-identical to the validated backtest; prints the ticket + next-open
+action, journals dry-run intents (magic 360520, run id `v5-xau-trend`).
+Config: `configs/v5_xau_trader.json`. Tests: `tests/test_v5_xau_trend.py`
+(engine/ATR causality, SL-first intrabar ordering, flip-threshold ordering,
+cost monotonicity, equity reconciliation). Suite: 196 passed.
+
 ### Universe Ablation Commands
 
 ```bash

@@ -1,0 +1,18 @@
+{
+  "validated_by_run_ids": ["xau-trend-trail-conf-riskscaled",
+                           "xau-trend-riskscaled-costx2",
+                           "xau-trend-riskscaled-delay2"],
+  "promoted_on": "2026-07-05",
+  "expected_sharpe": 0.571,
+  "symbol": "XAUUSD",
+  "timeframe": "H4",
+  "exit_mode": "trail",
+  "flip_mode": "confidence",
+  "params": {
+    "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
+  },
+  "default_equity": 3000.0,
+  "magic": 360520,
+  "run_id": "v5-xau-trend",
+  "note": "trade-ticket engine on the validated H4 EWMAC gold forecast; flips only on opposite |forecast|>=1.0; most exits are ATR trail stops."
+}
