@@ -576,6 +576,59 @@ conda run -n envmt5 python scripts/v5_basket_runner.py --equity 10000 --live  # 
 conda run -n envmt5 python scripts/v5_basket_runner.py --validate     # Sharpe re-check vs promoted run
 ```
 
+## Minimal-Capital H4 Day Book (2026-07-05)
+
+A small-account variant of the validated H4 book (`h4-cta-v5`, EURUSD/
+GBPUSD/USDJPY/XAUUSD, continuous Sharpe 0.634). Positions update on
+completed 4H bars and are held across bars — a slow intraday-managed book,
+NOT a scalper (fast intraday signals are the class the audit showed dying
+after costs).
+
+The small-account risk is lot quantization, so it was measured, not
+guessed: `src/v5/h4_discrete.py` replays the same positions as broker
+0.01-lot steps with compounding equity (strictly sequential, causality-
+tested). Pre-registered grid: equity {500..10k} x vol target {10%, 20%},
+acceptance = discrete Sharpe >= 0.8x continuous. Artifacts:
+`data/v5_runs/h4-capital-sweep/`.
+
+| Vol target | Equity | Discrete Sharpe | Retention | MaxDD | Verdict |
+| ---------- | ------ | --------------- | --------- | ----- | ------- |
+| 10% | $500 | 0.08 | 13% | 10% | distorted |
+| 10% | $1,000 | 0.68 | 106% | 20% | lottery (see note) |
+| 10% | $2,000 | 0.35 | 55% | 24% | distorted |
+| 10% | $3,000 | 0.78 | 124% | 17% | viable |
+| 10% | $5,000 | 0.62 | 98% | 19% | viable |
+| 10% | $10,000 | 0.66 | 105% | 15% | viable |
+| 20% | $500 | 0.78 | 123% | 33% | lottery (see note) |
+| 20% | $2,000 | 0.70 | 110% | 32% | viable |
+| 20% | $5,000 | 0.65 | 102% | 31% | viable |
+
+Interpretation (honest):
+
+1. Below ~$3k the outcome is a QUANTIZATION LOTTERY: retention is
+   non-monotonic ($1k passes, $2k fails) because whether the minimum lot
+   chunk happens to align with the target is path luck, not edge.
+   Retentions above 100% are the same phenomenon working in our favor and
+   must not be treated as improvement.
+2. Recommended floor: **$3,000 at 10% vol** (aggressive), **$5,000
+   comfortable**. $500-2k only at 20% vol accepting 30-40% drawdowns and
+   chunk-dominated sizing.
+3. Forward-looking caveat the historical sweep cannot show: gold now
+   trades ~$4,356/oz, so the minimum XAUUSD chunk (1 oz) exceeds a $3k
+   account outright — the gold leg (the H4 book's main engine) activates
+   only at high conviction on small accounts today. Practical answer:
+   fund $5k+, or accept the book being FX-led between strong gold signals.
+
+Runner: `scripts/v5_h4_runner.py --equity 3000` — quantized lot targets
+per completed 4H bar, lot-delta dry-run intents journaled (magic 360510,
+run id `v5-h4-day`), idempotent per bar, no order-send path. Config:
+`configs/v5_h4_day_trader.json`. Tests: `tests/test_v5_h4_discrete.py`
+(quantization, costs, ruin-freeze, future-mutation causality). Suite:
+187 passed.
+
+Live cadence needs fresh H4 CSVs each bar — the MT5-bridge H4 refresher is
+the remaining prerequisite (same gap as the D1 refresh for the basket).
+
 ### Universe Ablation Commands
 
 ```bash
