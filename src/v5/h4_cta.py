@@ -71,12 +71,12 @@ def load_h4_panel(data_dir: str | Path = "data", symbols=SYMBOLS):
 
 
 def cluster_inv_vol(signals: pd.DataFrame, returns: pd.DataFrame, classes: dict,
-                    target: float, halflife: int) -> pd.DataFrame:
+                    target: float, halflife: int, ann: float = ANN) -> pd.DataFrame:
     """Cluster-equal risk budget, inverse-vol within class. Past-only (shift(1)).
 
-    H4-aware port of src.cta.portfolio.cluster_risk_weights (that module
+    Frequency-aware port of src.cta.portfolio.cluster_risk_weights (that module
     hardcodes daily annualization and stays untouched as the locked daily
-    champion).
+    champion). `ann` = sqrt(periods per year) of the bar frequency.
     """
     sigma = returns.shift(1).ewm(halflife=halflife, min_periods=120).std()
     active = signals.replace(0.0, np.nan).notna() & sigma.notna()
@@ -87,16 +87,17 @@ def cluster_inv_vol(signals: pd.DataFrame, returns: pd.DataFrame, classes: dict,
     budget = pd.DataFrame(index=signals.index, columns=signals.columns, dtype=float)
     for a in signals.columns:
         k = kc[classes[a]].replace(0, np.nan)
-        budget[a] = (target / ANN) / (np.sqrt(n_classes) * k)
+        budget[a] = (target / ann) / (np.sqrt(n_classes) * k)
     pos = signals.mul(budget) / sigma
     return pos.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
 
 def vol_target_h4(positions: pd.DataFrame, returns: pd.DataFrame,
-                  target: float, halflife: int, max_lev: float = 3.0) -> pd.DataFrame:
+                  target: float, halflife: int, max_lev: float = 3.0,
+                  ann: float = ANN) -> pd.DataFrame:
     """Scale the book so trailing realized portfolio vol ~= target. Past-only."""
     port_ret = (positions.shift(1) * returns).sum(axis=1)
-    realized = port_ret.ewm(halflife=halflife, min_periods=120).std().shift(1) * ANN
+    realized = port_ret.ewm(halflife=halflife, min_periods=120).std().shift(1) * ann
     k = (target / realized).clip(upper=max_lev)
     k = k.replace([np.inf, -np.inf], np.nan).fillna(0.0)
     return positions.mul(k, axis=0)
@@ -149,6 +150,36 @@ def h4_pnl(positions: pd.DataFrame, close: pd.DataFrame, spread: pd.DataFrame,
     turnover = (positions - positions.shift(1)).abs()
     pips = pd.Series(PIP_SIZE).reindex(positions.columns)
     spread_frac = spread.mul(pips, axis=1) / close * spread_cost_mult
+    cost = (turnover * spread_frac).sum(axis=1)
+    per_symbol_net = pos_lag * returns - turnover * spread_frac
+    out = pd.DataFrame({"gross": gross, "net": gross - cost,
+                        "cost": cost, "turnover": turnover.sum(axis=1)})
+    return pd.concat([out, per_symbol_net.add_prefix("net_")], axis=1)
+
+
+def cta_positions(close: pd.DataFrame, classes: dict, speeds, target_vol: float,
+                  vol_halflife: int, buffer_frac: float, ann: float) -> pd.DataFrame:
+    """Universe/frequency-generic version of h4_positions (same construction)."""
+    returns = close.pct_change(fill_method=None)
+    trend = ewmac(close, speeds=speeds)
+    raw = cluster_inv_vol(trend, returns, classes, target_vol, vol_halflife, ann=ann)
+    pos = vol_target_h4(raw, returns, target_vol, vol_halflife, ann=ann)
+    return buffer_band_causal(pos, buffer_frac)
+
+
+def mtm_pnl_price_units(positions: pd.DataFrame, close: pd.DataFrame,
+                        spread_price: pd.DataFrame, entry_delay_bars: int = 1,
+                        spread_cost_mult: float = 1.0) -> pd.DataFrame:
+    """Mark-to-market P&L where `spread_price` is already in PRICE units
+    (the D1 panel convention from src.cta.panel: spread = cost_bps/1e4 * close).
+    Same anti-lookahead shift as h4_pnl."""
+    if entry_delay_bars < 1:
+        raise ValueError("entry_delay_bars must be >= 1 to avoid lookahead")
+    returns = close.pct_change(fill_method=None)
+    pos_lag = positions.shift(entry_delay_bars)
+    gross = (pos_lag * returns).sum(axis=1)
+    turnover = (positions - positions.shift(1)).abs()
+    spread_frac = spread_price / close * spread_cost_mult
     cost = (turnover * spread_frac).sum(axis=1)
     per_symbol_net = pos_lag * returns - turnover * spread_frac
     out = pd.DataFrame({"gross": gross, "net": gross - cost,

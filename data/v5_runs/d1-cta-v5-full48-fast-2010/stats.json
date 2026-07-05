@@ -1,0 +1,51 @@
+{
+  "ann_cost_drag_pct": 1.099,
+  "ann_turnover": 69.74,
+  "avg_gross_exposure": 3.178,
+  "cagr_pct": 2.847,
+  "eval_end": "2026-06-16 00:00:00",
+  "eval_start": "2010-01-04 00:00:00",
+  "final_equity": 15867.78,
+  "max_drawdown_pct": 35.043,
+  "n_instruments": 48,
+  "per_class_sharpe": {
+    "AG": -0.171,
+    "CRYPTO": 0.883,
+    "ENERGY": 0.113,
+    "EQ_INDEX": -0.157,
+    "FX_CROSS": -0.022,
+    "FX_USD": -0.109,
+    "METAL": 0.092,
+    "RATES": 0.228
+  },
+  "sharpe_ci95": [
+    -0.164,
+    0.824
+  ],
+  "sharpe_daily_ann": 0.321,
+  "sharpe_resampled": -0.197,
+  "sortino": -0.276,
+  "speeds": "fast",
+  "tier": "full48",
+  "total_return_pct": 58.68,
+  "yearly_net_return_pct": {
+    "2010": 7.19,
+    "2011": -8.61,
+    "2012": -11.01,
+    "2013": 10.86,
+    "2014": 5.23,
+    "2015": 1.38,
+    "2016": 4.82,
+    "2017": 18.99,
+    "2018": -0.52,
+    "2019": -3.67,
+    "2020": 30.45,
+    "2021": 9.97,
+    "2022": 13.33,
+    "2023": -15.78,
+    "2024": -7.34,
+    "2025": 0.15,
+    "2026": 1.36
+  },
+  "years": 16.45
+}
