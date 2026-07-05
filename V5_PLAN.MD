@@ -1,7 +1,7 @@
 # V5 MT5 + Lumibot Profitability Plan
 
 > Coordination document for the V5 profitability track.
-> Last updated: 2026-07-04
+> Last updated: 2026-07-05
 > Status: Active implementation plan
 
 > 2026-07-04 audit correction: `V5_RESEARCH_AUDIT.MD` found and fixed a
@@ -336,6 +336,69 @@ Interpretation: this supports that the USDJPY Sharpe is coming from fold-local
 out-of-sample candle probabilities and the persisted replay equity curve, not
 from a full-data encoder or in-sample candle prediction file. It is still not a
 live-profit claim until dry-run and demo-live reconciliation pass.
+
+## H4 CTA Track (2026-07-05)
+
+After the USDJPY candle-trail edge failed the post-MTF-fix regeneration, the
+audit's top-priority alternate path was implemented: a vol-targeted EWMAC
+trend portfolio on H4 bars for EURUSD, GBPUSD, USDJPY, XAUUSD.
+
+- Code: `src/v5/h4_cta.py` (strategy), `scripts/v5_h4_cta_backtest.py`
+  (runner + artifacts), `tests/test_v5_h4_cta.py` (leakage/cost guards).
+- No fitted components (no scaler/encoder/classifier), so there is no
+  train/test boundary to leak across. The lookahead surface is guarded by
+  causality tests that mutate future bars and require bit-identical positions
+  and P&L before the cutoff.
+- Config was pre-registered before the first run (module docstring):
+  Carver EWMAC speeds scaled to H4 bars (daily (8,32)..(64,256) x 6),
+  cluster-equal risk across {fx, metal}, 10% vol target, causal no-trade
+  buffer 0.10, `positions.shift(1)` execution, full per-bar spread (floored
+  at symbol median) charged per unit turnover.
+- Evaluation window pre-registered as 2017-01-01 onward (2015-2016 is EWMAC
+  warm-up).
+
+### H4 CTA Evidence
+
+All runs: 2017-01-01 to 2026-06-15 (9.45 years) unless noted, initial equity
+10,000, artifacts under `data/v5_runs/<run_id>/`.
+
+| Run ID | Stress | Return | CAGR | Bar Sharpe | Daily Sharpe | Daily Sharpe 95% CI | MaxDD | Cost Drag/yr |
+| ------ | ------ | ------ | ---- | ---------- | ------------ | ------------------- | ----- | ------------ |
+| `h4-cta-v5` | baseline | +76.6% | 6.21% | 0.634 | 0.450 | [-0.124, +1.064] | 16.8% | 0.41% |
+| `h4-cta-v5-costx2` | spread x2 | +69.8% | 5.77% | 0.594 | 0.413 | [-0.161, +1.029] | ~same | 0.83% |
+| `h4-cta-v5-delay2` | entry delay 2 bars | +74.2% | 6.05% | 0.618 | 0.435 | [-0.142, +1.053] | ~same | 0.41% |
+| `h4-cta-v5-recent` | 2021+ subsample | +62.4% | 9.32% | 0.915 | 0.660 | [-0.099, +1.415] | - | - |
+
+Per-symbol net Sharpe (baseline): EURUSD +0.11, GBPUSD -0.08, USDJPY +0.14,
+XAUUSD +0.77. Yearly net returns range -12.8% (2017) to +28.4% (2025); 6 of
+10 calendar years positive.
+
+Interpretation:
+
+- The edge survives the stresses that killed prior candidates: doubling costs
+  moves Sharpe only 0.63 to 0.59, and an extra execution bar moves it only to
+  0.62 (the pre-fix candle-trail collapsed 4.47 to 1.52 under the same delay
+  test). That decay profile is what a real slow edge looks like.
+- The bootstrap CI still includes zero: a Sharpe ~0.6 needs longer than 9.5
+  years for 95% significance. This matches the v4 48-instrument CTA result
+  (+0.65, CI [+0.18, +1.12]) — the CI there excluded zero only because 48
+  instruments diversify; with 4 instruments the same engine is noisier.
+- The edge is gold-dominated. The three FX legs are near-zero standalone but
+  add diversification. Widening the universe (the v4 CTA basket) is the
+  known fix and remains the next research step.
+- Verdict: first V5 candidate with a positive, stress-stable, leakage-guarded
+  Sharpe. Research-grade, not yet deployable — needs the dry-run/paper gate
+  and lot-sizing checks (`src/cta/sizing.py`) before live consideration.
+
+### H4 CTA Commands
+
+```bash
+conda run -n envmt5 python -m pytest tests/test_v5_h4_cta.py -q
+conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5
+conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-costx2 --spread-mult 2.0
+conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-delay2 --entry-delay-bars 2
+conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-recent --eval-start 2021-01-01
+```
 
 ## Phase 3: Lumibot Bridge, Adapter First
 

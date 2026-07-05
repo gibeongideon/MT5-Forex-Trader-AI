@@ -1,0 +1,17 @@
+{
+  "buffer_frac": 0.1,
+  "entry_delay_bars": 1,
+  "eval_start": "2021-01-01",
+  "initial_equity": 10000.0,
+  "spread_cost_mult": 1.0,
+  "strategy": "h4_cta_ewmac_voltarget",
+  "symbols": [
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "XAUUSD"
+  ],
+  "target_vol": 0.1,
+  "timeframe": "H4",
+  "vol_halflife": 252
+}

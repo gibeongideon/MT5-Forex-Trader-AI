@@ -206,3 +206,10 @@ Do not pursue:
 
 Status: USDJPY was regenerated and replayed; Sharpe collapsed to `-1.188`, so
 do not continue the USDJPY candle-trail paper gate from the old artifacts.
+
+Update 2026-07-05: the CTA alternate path was implemented as a V5
+artifact-producing H4 strategy (`src/v5/h4_cta.py`,
+`scripts/v5_h4_cta_backtest.py`) on EURUSD/GBPUSD/USDJPY/XAUUSD with
+pre-registered config, no fitted components, causality tests, and stress
+runs. Baseline bar Sharpe `+0.634` (daily `+0.450`, CI `[-0.124, +1.064]`),
+stable under 2x costs and 2-bar delay. See `V5_PLAN.MD` "H4 CTA Track".
