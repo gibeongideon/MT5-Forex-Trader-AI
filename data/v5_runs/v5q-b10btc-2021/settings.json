@@ -1,0 +1,32 @@
+{
+  "buffer_frac": 0.4,
+  "carry": false,
+  "carry_w": 0.5,
+  "entry_delay_bars": 1,
+  "eval_start": "2021-01-01",
+  "initial_equity": 10000.0,
+  "instruments": [
+    "GOLD",
+    "SILVER",
+    "UST10Y",
+    "UST30Y",
+    "SPX",
+    "DAX",
+    "WTI",
+    "BRENT",
+    "EURUSD",
+    "USDJPY",
+    "BTC"
+  ],
+  "ml_combine": false,
+  "ml_min_rows": 2500,
+  "rebalance": "monthly",
+  "regime": "none",
+  "sleeve": "combined",
+  "speeds": "slow",
+  "spread_cost_mult": 1.0,
+  "strategy": "d1_cta_ewmac_voltarget",
+  "target_vol": 0.1,
+  "tier": "basket10-btc",
+  "timeframe": "D1"
+}

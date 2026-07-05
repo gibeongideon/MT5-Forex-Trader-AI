@@ -223,3 +223,13 @@ causal engine: full48 `+0.697` CI `[+0.19, +1.21]`, basket5
 costs and 2-bar delay and positive in 2017+/2021+ subsamples. This closes
 the roadmap item "Convert the v4 CTA champion into a V5 artifact-producing
 validation runner" and makes basket5 the primary paper-gate candidate.
+
+Update 2026-07-05 (lever round + overlay): a pre-registered 13-run lever
+matrix (`src/v5/levers.py`) promoted `basket10-btc` (11 instruments, 6
+classes) at Sharpe `+0.935`, CI `[+0.45, +1.42]`, stress-stable. Regime
+gates, FX carry, and Ridge ml-combine all failed to improve the champion
+and are documented dead ends. A Lumibot-pattern AI agent risk overlay
+(`src/v5/agents.py`, scale-only, fail-open, forward-A/B'd via
+`scripts/v5_basket_runner.py --overlay`) is live-smoke-tested; it makes no
+backtest claims because LLM pretraining makes LLM backtests unleakproofable.
+See `V5_PLAN.MD` "Phase A Lever Results" and "Champion Live Runner".

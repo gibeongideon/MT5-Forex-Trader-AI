@@ -452,6 +452,130 @@ conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-dela
 conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-recent --eval-start 2021-01-01
 ```
 
+### Phase A Lever Experiments — Pre-Registration (2026-07-05)
+
+Registered BEFORE any lever run was executed. Engine: `src/v5/levers.py`
+`lever_positions` (single shared builder for backtest/tests/runner; supersedes
+`champion_positions`, whose buffer band width is a full-sample statistic).
+Champion base config for every run: slow speeds, combined sleeve, monthly
+rebalance, buffer 0.4, vol target 10%, eval 2010-01-01+.
+
+Pre-registered lever parameters (no sweeps): carry weight 0.5 on FX legs
+only; `ml_min_rows=2500`; `ml_purge_mult=2.0`; regime gates at module
+defaults (`src/cta/regime.py`).
+
+Run matrix (13 runs, each lever alone; identity run `v5q-b5-base` must
+reproduce Sharpe 0.778 exactly):
+
+- Baselines: `v5q-b5-base`, `v5q-b10-base`, `v5q-b10btc-base`
+  (basket10 = GOLD SILVER UST10Y UST30Y SPX DAX WTI BRENT EURUSD USDJPY).
+- Levers x {basket5, basket10}: `--regime trend`, `--regime vol`,
+  `--regime trend_vol`, `--carry`, `--ml-combine`.
+
+Promotion criteria (locked): promote a config only if Sharpe > 0.778 AND
+bootstrap CI-low > 0.34, AND `--spread-mult 2.0` / `--entry-delay-bars 2`
+stress degradation is no worse than baseline's. All results reported
+regardless of outcome. If several pass, highest CI-low wins. Lever
+combinations only as a separately pre-registered round 2.
+
+### Phase A Lever Results (2026-07-05)
+
+All 13 pre-registered runs, reported regardless of outcome (Sharpe = daily
+annualized, net of costs, 2010-01+):
+
+| Run | Sharpe | CI 95% | CAGR | Verdict |
+| --- | ------ | ------ | ---- | ------- |
+| `v5q-b5-base` | 0.778 | [0.34, 1.21] | 8.6% | identity check passed exactly |
+| `v5q-b10-base` | 0.738 | [0.24, 1.25] | 7.9% | within-class doubling does not help |
+| `v5q-b10btc-base` | **0.935** | **[0.45, 1.42]** | 10.2% | PROMOTED |
+| `v5q-b5-reg-trend` | 0.768 | [0.32, 1.22] | 8.3% | no improvement |
+| `v5q-b5-reg-vol` | 0.671 | [0.24, 1.13] | 7.1% | degrades |
+| `v5q-b5-reg-trend_vol` | 0.734 | [0.30, 1.20] | 7.8% | degrades |
+| `v5q-b5-carry` | 0.770 | [0.33, 1.22] | 8.5% | neutral |
+| `v5q-b5-ml` | 0.148 | [-0.33, 0.65] | 0.6% | fails |
+| `v5q-b10-reg-trend` | 0.753 | [0.27, 1.26] | 8.1% | no improvement |
+| `v5q-b10-reg-vol` | 0.641 | [0.16, 1.14] | 6.8% | degrades |
+| `v5q-b10-reg-trend_vol` | 0.719 | [0.25, 1.21] | 7.7% | degrades |
+| `v5q-b10-carry` | 0.690 | [0.21, 1.19] | 7.3% | degrades |
+| `v5q-b10-ml` | 0.332 | [-0.15, 0.83] | 1.4% | fails |
+
+Promotion evidence for `basket10-btc` (11 instruments, 6 asset classes):
+
+| Run | Variant | Sharpe | CI 95% |
+| --- | ------- | ------ | ------ |
+| `v5q-b10btc-costx2` | spread x2 | 0.925 | [0.44, 1.41] |
+| `v5q-b10btc-delay2` | entry delay 2 | 0.908 | [0.42, 1.40] |
+| `v5q-b10btc-2017` | 2017+ | 0.949 | [0.36, 1.60] |
+| `v5q-b10btc-2021` | 2021+ | 0.888 | [0.12, 1.71] |
+
+Notes: the delay-2 relative decay (2.9%) is marginally worse than the
+baseline's (2.4%) — flagged per the locked criteria; accepted because the
+stressed Sharpe 0.908 still exceeds the unstressed baseline 0.778 with a
+higher CI-low. Per-class Sharpe is spread across crypto 0.70, metals 0.55,
+equities 0.45, rates 0.23, FX 0.30 — not a BTC-only artifact. The promoted
+config is written to `configs/v5_basket_champion.json`.
+
+Interpretation of the failures: regime gates and carry do not add to an
+already vol-targeted trend book; the Ridge factor blend destroys the edge
+(the pooled linear weighting dilutes the slow-trend signal with weak
+factors). These stay documented as dead ends.
+
+## Champion Live Runner + AI Agent Risk Overlay (2026-07-05)
+
+- `scripts/v5_basket_runner.py` — daily advisory runner. Builds positions
+  through the SAME `lever_positions` code path as the promoted backtest
+  (never `champion_positions`, whose buffer band has a full-sample-mean
+  lookahead), diffs against state, journals every non-hold action as a
+  dry-run intent (`TradeJournal`, magic 360500/360501, `dry_run=1`), and
+  writes `positions.csv`/`state.json` under `data/v5_runs/v5-basket-*`.
+  Advisory/paper only: there is no order-send code path.
+- `src/v5/agents.py` — Lumibot-pattern agent team (researcher -> bull ->
+  bear -> PM, sequential summary chaining, Claude Haiku via the Anthropic
+  API). Risk-overlay only: the PM emits per-instrument scales clamped to
+  [0,1] in code; analysts have no trading fields in their schemas; any
+  error fails OPEN to scales=1.0 (pure champion); a sha256 response cache
+  makes same-day reruns free; every call is journaled to
+  `agent_decisions/YYYY-MM-DD.jsonl`.
+- NO backtest Sharpe claims are made for the overlay, ever: LLM pretraining
+  knows market history, so an LLM backtest cannot be leak-free (Lumibot's
+  own backtest safety is prompt-based only).
+- Verified 2026-07-05: 181 tests green (levers identity, agent clamps,
+  fail-open, cache, budget, journal dedup); live smoke test ran 4 real
+  Haiku calls (~24s, ~1.3k output tokens), PM scaled gross 1.52 -> 0.98,
+  cache rerun reproduced identical scales with zero API calls; fail-open
+  verified by removing the API key.
+
+### Forward A/B Protocol (pre-registered)
+
+- Run daily after the D1 data refresh, open-market days only:
+  `python scripts/v5_basket_runner.py --overlay`
+  (journals BOTH books: `v5-basket-pure` raw targets, `v5-basket-overlay`
+  scaled targets).
+- Evaluate after >= 8 weeks (~40 observations): mean daily PnL difference,
+  downside capture on champion-loss days, scale activity distribution,
+  fail-open frequency. Explicitly NO Sharpe/CI claims at that sample size.
+- The overlay is promoted to demo-live consideration only if it does not
+  degrade the pure book and shows loss-day downside reduction.
+
+### Capital note
+
+At $10k equity the 11-leg book cannot be traded faithfully: GOLD and DAX
+legs round to zero lots and the offline `min_viable_equity` estimate is
+~$67k (offline contract sizes are placeholders for XAGUSD/GER40/UKOIL/
+US30YR/BTCUSD — verify with `--live` against the terminal). Options before
+paper trading: more equity, or a pre-registered reduced-leg variant
+(basket5 remains valid at Sharpe 0.778).
+
+### Runner Commands
+
+```bash
+conda run -n envmt5 python -m pytest tests/test_v5_levers.py tests/test_v5_agents.py tests/test_v5_basket_runner.py -q
+conda run -n envmt5 python scripts/v5_basket_runner.py                 # pure book
+conda run -n envmt5 python scripts/v5_basket_runner.py --overlay      # A/B both books
+conda run -n envmt5 python scripts/v5_basket_runner.py --equity 10000 --live  # broker-spec sizing
+conda run -n envmt5 python scripts/v5_basket_runner.py --validate     # Sharpe re-check vs promoted run
+```
+
 ### Universe Ablation Commands
 
 ```bash

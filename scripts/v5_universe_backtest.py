@@ -33,20 +33,11 @@ from src.cta.panel import asset_classes, build_panels
 from src.cta.universe import UNIVERSE
 from src.evaluation.metrics import max_drawdown, sharpe_ratio, sortino_ratio
 from src.v5.artifacts import V5ArtifactWriter
-from src.cta.signals import combine, xsmom
-from src.cta.strategy import rebalance_hold
-from src.v5.h4_cta import (buffer_band_causal, cluster_inv_vol,
-                           mtm_pnl_price_units, vol_target_h4)
+from src.v5.h4_cta import mtm_pnl_price_units
+from src.v5.levers import SPEED_SETS, lever_positions
 
 PERIODS_PER_YEAR = 252
 ANN = np.sqrt(PERIODS_PER_YEAR)
-# "fast" = the pre-registered H4 engine set; "slow" = the v4 locked champion set
-# (src/cta/strategy.py TREND_SPEEDS) for reproducing the v4 CTA evidence.
-SPEED_SETS = {
-    "fast": ((8, 32), (16, 64), (32, 128), (64, 256)),
-    "slow": ((32, 128), (64, 256)),
-}
-SPEEDS = SPEED_SETS["fast"]
 EVAL_START = "2010-01-01"
 
 FX = [a for a, v in UNIVERSE.items() if v["asset_class"].startswith("FX")]
@@ -61,6 +52,12 @@ TIERS = {
     "full48": list(UNIVERSE),
     # v4 locked SMALL_BASKET (src/cta/strategy.py): one instrument per class
     "basket5": ["GOLD", "UST10Y", "SPX", "WTI", "EURUSD"],
+    # Phase A widening: 2 instruments per asset class (BTC kept separate so the
+    # clean 2-per-class result is not entangled with crypto)
+    "basket10": ["GOLD", "SILVER", "UST10Y", "UST30Y", "SPX", "DAX",
+                 "WTI", "BRENT", "EURUSD", "USDJPY"],
+    "basket10-btc": ["GOLD", "SILVER", "UST10Y", "UST30Y", "SPX", "DAX",
+                     "WTI", "BRENT", "EURUSD", "USDJPY", "BTC"],
 }
 
 
@@ -72,6 +69,13 @@ def main() -> None:
     ap.add_argument("--sleeve", choices=["trend", "combined"], default="trend",
                     help="combined = 50/50 EWMAC + cross-sectional momentum (v4 champion sleeve)")
     ap.add_argument("--rebalance", choices=["daily", "weekly", "monthly"], default="daily")
+    ap.add_argument("--regime", choices=["none", "trend", "vol", "trend_vol"], default="none")
+    ap.add_argument("--carry", action="store_true",
+                    help="blend FX carry 50/50 into FX-leg signals (pre-registered weight)")
+    ap.add_argument("--carry-weight", type=float, default=0.5)
+    ap.add_argument("--ml-combine", action="store_true",
+                    help="replace the signal sleeve with walk-forward Ridge factor blend")
+    ap.add_argument("--ml-min-rows", type=int, default=2500)
     ap.add_argument("--eval-start", default=EVAL_START)
     ap.add_argument("--spread-mult", type=float, default=1.0)
     ap.add_argument("--entry-delay-bars", type=int, default=1)
@@ -82,16 +86,12 @@ def main() -> None:
 
     close, spread, kept = build_panels(TIERS[args.tier], tf="D1")
     classes = asset_classes(kept)
-    speeds = SPEED_SETS[args.speeds]
-    from src.cta.signals import ewmac
-    returns = close.pct_change(fill_method=None)
-    sig = ewmac(close, speeds=speeds)
-    if args.sleeve == "combined":
-        sig = combine(sig, xsmom(close))
-    raw = cluster_inv_vol(sig, returns, classes, args.target_vol, 42, ann=ANN)
-    positions = vol_target_h4(raw, returns, args.target_vol, 42, ann=ANN)
-    positions = rebalance_hold(positions, args.rebalance)
-    positions = buffer_band_causal(positions, args.buffer_frac)
+    lever_cfg = dict(speeds=args.speeds, sleeve=args.sleeve,
+                     rebalance=args.rebalance, buffer_frac=args.buffer_frac,
+                     target_vol=args.target_vol, regime=args.regime,
+                     carry=args.carry, carry_w=args.carry_weight,
+                     ml_combine=args.ml_combine, ml_min_rows=args.ml_min_rows)
+    positions = lever_positions(close, kept, classes, lever_cfg)
     pnl = mtm_pnl_price_units(positions, close, spread,
                               entry_delay_bars=args.entry_delay_bars,
                               spread_cost_mult=args.spread_mult)
@@ -119,6 +119,9 @@ def main() -> None:
         "speeds": args.speeds,
         "sleeve": args.sleeve,
         "rebalance": args.rebalance,
+        "regime": args.regime,
+        "carry": args.carry,
+        "ml_combine": args.ml_combine,
         "n_instruments": len(kept),
         "eval_start": str(pnl.index[0]), "eval_end": str(pnl.index[-1]),
         "years": round(years, 2),
@@ -146,12 +149,10 @@ def main() -> None:
 
     settings = {"strategy": "d1_cta_ewmac_voltarget", "tier": args.tier,
                 "instruments": kept, "timeframe": "D1",
-                "speeds": [list(x) for x in speeds],
-                "eval_start": args.eval_start, "target_vol": args.target_vol,
-                "buffer_frac": args.buffer_frac,
+                "eval_start": args.eval_start,
                 "entry_delay_bars": args.entry_delay_bars,
                 "spread_cost_mult": args.spread_mult,
-                "initial_equity": args.initial_equity}
+                "initial_equity": args.initial_equity, **lever_cfg}
     run_dir = V5ArtifactWriter().write_run(
         run_id=args.run_id, settings=settings, trades=trades, equity=equity,
         stats=stats,

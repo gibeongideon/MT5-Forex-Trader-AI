@@ -40,7 +40,8 @@ def build_features(close, returns):
 
 
 def ml_forecast(close, returns, horizon: int = 21, alpha: float = 10.0,
-                min_train_rows: int = 8000, retrain: str = "ME") -> pd.DataFrame:
+                min_train_rows: int = 8000, retrain: str = "ME",
+                purge_mult: float = 1.6) -> pd.DataFrame:
     """Walk-forward ridge combination → forecast panel (held between monthly retrains)."""
     feats = build_features(close, returns)
     names = list(feats)
@@ -53,7 +54,7 @@ def ml_forecast(close, returns, horizon: int = 21, alpha: float = 10.0,
     ddates = long.index.get_level_values(0)
 
     fc = pd.DataFrame(index=close.index, columns=close.columns, dtype=float)
-    purge = pd.Timedelta(days=int(horizon * 1.6))                  # exclude unrealized targets
+    purge = pd.Timedelta(days=int(horizon * purge_mult))           # exclude unrealized targets
     for t in close.resample(retrain).last().index:
         cut = t - purge
         tr = long[ddates <= cut]
