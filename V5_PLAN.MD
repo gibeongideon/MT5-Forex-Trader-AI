@@ -686,6 +686,67 @@ Findings (honest):
    Sharpe ~0.57 over 9.5y is real-looking but weaker evidence than the
    basket (0.935, CI excludes zero) — size accordingly.
 
+### XAUUSD Meta-Labeling Experiment — Pre-Registration (2026-07-05)
+
+Registered BEFORE any run. Goal: improve the promoted XAUUSD engine with an
+XGBoost (+ encoder) predictor. Per the audit, ML must NOT replace the
+validated signal (fold-local directional XGBoost/enc was flat on strict
+validation; "new single-symbol directional model families" is
+do-not-prioritize). The approved shape is META-LABELING (Lopez de Prado):
+the validated engine decides direction and timing; a fold-local XGBoost
+predicts whether each engine trade will win and only skips or resizes it.
+Labels are the engine's own trade outcomes — execution-matched by
+construction.
+
+- Trades: promoted config (`trail`/`confidence` + conf-risk).
+- Features at the DECISION bar (fill bar - 1, past-only): |forecast|, sign,
+  ATR/price, ATR 1y percentile, 5/21/63-bar returns in ATR units, distance
+  from 200-bar SMA in ATRs, spread, day-of-week, hour, prior-5-trade mean R.
+- Label: trade R > 0. Purge: training uses only trades CLOSED before the
+  test window starts.
+- Folds: expanding, yearly refit (first test year 2018).
+- XGBoost fixed (no tuning): max_depth 3, 200 trees, lr 0.05, subsample 0.8.
+- Variants (all reported): A skip if p<0.4; B risk x clamp(p mapped
+  [0.2,0.8]->[0.5,1.5]); C = B + 8 fold-local autoencoder latents from the
+  bar-feature matrix (epochs 20, seed 42).
+- Metric: compounding equity from R x risk_frac per trade, daily Sharpe +
+  bootstrap CI, computed IDENTICALLY for baseline and variants.
+- Promotion: Sharpe AND CI-low above the identically-computed baseline;
+  fold-mean OOS AUC > 0.5 required for the model to be considered real.
+
+Meta-labeling results (2026-07-05, `scripts/v5_xau_meta.py`,
+`data/v5_runs/xau-meta-xgb/`; R-based equity metric, eval 2018+, identical
+for all rows — not comparable to the engine's floating-equity Sharpe):
+
+| Variant | Sharpe | CI 95% | Return | MaxDD | OOS AUC |
+| ------- | ------ | ------ | ------ | ----- | ------- |
+| baseline (all trades) | 0.852 | [0.32, 1.36] | +220% | 21.2% | - |
+| A: skip p<0.4 | 0.682 | [0.20, 1.13] | +95% | 11.3% | 0.511 |
+| B: risk x p | 0.880 | [0.36, 1.38] | +101% | 12.1% | 0.511 |
+| C: risk x p + enc8 | 0.854 | [0.32, 1.36] | +94% | 12.3% | 0.503 |
+| CONTROL: constant 0.545x risk | 0.853 | [0.32, 1.36] | +93% | 12.1% | - |
+
+VERDICT: NOT PROMOTED. Fold OOS AUCs are coin flips (0.44-0.61, mean
+0.511 xgb / 0.503 with encoder). Variant B nominally passed the letter of
+the criteria, but the constant-multiplier control reproduces almost all of
+it — the XGBoost's true information content is +0.027 Sharpe, noise at this
+sample size. Skipping trades (A) actively hurts. This matches the repo's
+entire history: ML per-trade/directional prediction on this data adds
+nothing once leakage is removed. The XAUUSD engine stays ML-free; the only
+honest risk knob it exposed is that HALVING per-trade risk halves DD
+(21%->12%) at unchanged Sharpe — a sizing preference, not an edge.
+
+Agent overlay on the gold ticket (2026-07-05): `v5_xau_runner.py --overlay`
+runs the same researcher->bull->bear->PM team (src/v5/agents.py, unchanged)
+on a single-instrument evidence pack extended with the live ticket
+(forecast, position, SL, pending action). Same guarantees: scale-only
+[0,1], fail-open verified, sha256 cache, decisions journaled under
+`v5-xau-overlay` (magic 360521) beside the pure book (360520) for forward
+A/B. First live decision: engine pending SELL at forecast -0.59; PM scaled
+0.65x citing weak 5d momentum and 87th-percentile vol. NO backtest claims
+— LLM pretraining knows gold's history; evaluation is forward-only, same
+protocol as the basket overlay.
+
 Runner: `scripts/v5_xau_runner.py --equity 3000` replays the deterministic
 engine over history so live state (position, trail level, pending flip) is
 byte-identical to the validated backtest; prints the ticket + next-open

@@ -34,6 +34,9 @@ def main() -> None:
     ap.add_argument("--journal", default=str(ROOT / "data" / "live_trades.db"))
     ap.add_argument("--data", default=str(ROOT / "data" / "XAUUSD_H4_long.csv"))
     ap.add_argument("--equity", type=float, default=None)
+    ap.add_argument("--overlay", action="store_true",
+                    help="AI agent risk overlay: scales the ticket in [0,1], "
+                         "fail-open to pure engine; forward A/B via second run id")
     ap.add_argument("--force", action="store_true")
     args = ap.parse_args()
 
@@ -68,6 +71,39 @@ def main() -> None:
           f"({'buy' if sig > 0 else 'sell'} bias, "
           f"{'actionable' if abs(sig) >= 0.5 else 'below entry threshold'})")
 
+    overlay_scale, overlay_meta = None, None
+    if args.overlay:
+        from src.v5.agents import build_evidence_pack, run_overlay
+        sym = cfg["symbol"]
+        target = (pos["dir"] * pos["lots"] if pos is not None else
+                  (float(pending["dir"]) if pending is not None else 0.0))
+        evidence = build_evidence_pack(
+            date=bar_str.split()[0], targets={sym: target},
+            prev_positions={sym: state.get("position", {}).get("lots", 0.0)
+                            if state.get("position") else 0.0},
+            actions={sym: ("flip" if (pos is not None and pending is not None)
+                           else "OPEN" if pending is not None
+                           else "hold" if pos is not None else "flat")},
+            close=df[["close"]].rename(columns={"close": sym}), kept=[sym])
+        evidence["ticket"] = {
+            "forecast": round(sig, 3),
+            "position": ({"dir": pos["dir"], "lots": pos["lots"],
+                          "entry": pos["entry"], "sl": round(pos["sl"], 2),
+                          "trailing": pos["trail_on"], "confidence": pos["conf"]}
+                         if pos is not None else None),
+            "pending_next_open": ({"dir": pending["dir"],
+                                   "strength": round(pending["strength"], 3)}
+                                  if pending is not None else None),
+            "engine_note": "validated trend engine; you may only scale risk "
+                           "in [0,1], never flip or add",
+        }
+        overlay_dir = ROOT / "data" / "v5_runs" / cfg["run_id_overlay"]
+        scales, overlay_meta = run_overlay(evidence, overlay_dir)
+        overlay_scale = scales[sym]
+        print(f"  [overlay] scale={overlay_scale:.2f}  "
+              f"reason={overlay_meta.get('reason')}  "
+              f"{overlay_meta.get('rationale', '')[:90]}")
+
     intents = []
     if pos is not None:
         print(f"  POSITION: {'LONG' if pos['dir'] > 0 else 'SHORT'} "
@@ -95,6 +131,15 @@ def main() -> None:
                 direction=it["direction"], entry_time=bar_str,
                 entry_reason=it["reason"], volume=it["volume"],
                 magic=cfg["magic"], run_id=cfg["run_id"], dry_run=1))
+            if overlay_scale is not None:
+                journal.record(dict(
+                    bot="v5_xau_runner", symbol=cfg["symbol"],
+                    direction=it["direction"], entry_time=bar_str,
+                    entry_reason=f"{it['reason']} x{overlay_scale:.2f}",
+                    volume=round(it["volume"] * overlay_scale, 4),
+                    confidence=overlay_scale,
+                    magic=cfg["magic_overlay"], run_id=cfg["run_id_overlay"],
+                    dry_run=1))
         state_file.write_text(json.dumps(
             {"bar": bar_str, "equity": equity, "forecast": round(sig, 3),
              "position": {k: (round(v, 4) if isinstance(v, float) else v)

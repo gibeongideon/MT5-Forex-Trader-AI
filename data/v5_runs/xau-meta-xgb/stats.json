@@ -1,0 +1,61 @@
+{
+  "note": "meta-labeling on the promoted engine's own trades; identical R-based equity metric for all rows",
+  "oos_auc": {
+    "xgb": 0.511,
+    "xgb_enc8": 0.503
+  },
+  "results": [
+    {
+      "max_dd_pct": 21.22,
+      "n_taken": 807,
+      "n_trades": 807,
+      "sharpe": 0.852,
+      "sharpe_ci95": [
+        0.322,
+        1.355
+      ],
+      "total_return_pct": 220.0,
+      "variant": "baseline",
+      "win_rate_pct": 41.9
+    },
+    {
+      "max_dd_pct": 11.28,
+      "n_taken": 361,
+      "n_trades": 807,
+      "sharpe": 0.682,
+      "sharpe_ci95": [
+        0.198,
+        1.134
+      ],
+      "total_return_pct": 95.1,
+      "variant": "A_skip_p<0.4",
+      "win_rate_pct": 43.2
+    },
+    {
+      "max_dd_pct": 12.09,
+      "n_taken": 807,
+      "n_trades": 807,
+      "sharpe": 0.88,
+      "sharpe_ci95": [
+        0.358,
+        1.376
+      ],
+      "total_return_pct": 100.6,
+      "variant": "B_risk_x_p",
+      "win_rate_pct": 41.9
+    },
+    {
+      "max_dd_pct": 12.33,
+      "n_taken": 807,
+      "n_trades": 807,
+      "sharpe": 0.854,
+      "sharpe_ci95": [
+        0.323,
+        1.359
+      ],
+      "total_return_pct": 94.0,
+      "variant": "C_risk_x_p_enc8",
+      "win_rate_pct": 41.9
+    }
+  ]
+}
