@@ -390,6 +390,58 @@ Interpretation:
   Sharpe. Research-grade, not yet deployable — needs the dry-run/paper gate
   and lot-sizing checks (`src/cta/sizing.py`) before live consideration.
 
+### Universe-Widening Ablation (2026-07-05)
+
+To measure the diversification impact, the same engine was run on nested D1
+universes from the v4 CTA data (2008-2026, cost_bps spread model), via
+`scripts/v5_universe_backtest.py`. Tiers: `core4` (EURUSD/GBPUSD/USDJPY/GOLD),
+`fx-metals` (23), `mt5-cfd` (36, +energy +indices), `full48` (+rates, ags,
+crypto), `basket5` (v4 locked small basket: GOLD/UST10Y/SPX/WTI/EURUSD).
+Sleeves: `trend` (EWMAC only, the H4 engine) and `combined` (50/50 EWMAC +
+cross-sectional momentum, the v4 champion sleeve).
+
+Evaluation 2010-01-01 to 2026-06 unless noted; all net of costs.
+
+| Run | Tier | Config | Sharpe | 95% CI | CAGR | MaxDD |
+| --- | ---- | ------ | ------ | ------ | ---- | ----- |
+| `d1-cta-v5-core4-fast-2010` | 4 | trend, fast, daily | +0.375 | [-0.13, +0.89] | 3.5% | 24.5% |
+| `d1-cta-v5-fx-metals-fast-2010` | 23 | trend, fast, daily | -0.106 | [-0.58, +0.38] | -1.6% | 50.1% |
+| `d1-cta-v5-mt5-cfd-fast-2010` | 36 | trend, fast, daily | -0.167 | [-0.65, +0.33] | -2.3% | 50.4% |
+| `d1-cta-v5-full48-fast-2010` | 48 | trend, fast, daily | +0.321 | [-0.16, +0.82] | 2.8% | 35.0% |
+| `d1-cta-v5-full48-slow-combined-monthly` | 48 | combined, slow, monthly, buf 0.4 | +0.697 | [+0.19, +1.21] | 7.2% | 23.2% |
+| `d1-cta-v5-basket5-slow-combined-monthly` | 5 | combined, slow, monthly, buf 0.4 | +0.778 | [+0.34, +1.21] | 8.6% | 18.8% |
+
+Champion subsamples and stress (basket5, combined/slow/monthly):
+
+| Run | Variant | Sharpe | 95% CI |
+| --- | ------- | ------ | ------ |
+| `d1-cta-v5-basket5-champion-2017` | 2017+ | +0.939 | [+0.41, +1.51] |
+| `d1-cta-v5-basket5-champion-2021` | 2021+ | +0.947 | [+0.28, +1.76] |
+| `d1-cta-v5-basket5-champion-costx2` | spread x2 | +0.770 | [+0.33, +1.21] |
+| `d1-cta-v5-basket5-champion-delay2` | entry delay 2 | +0.759 | [+0.32, +1.20] |
+| `d1-cta-v5-full48-champion-2017` | full48, 2017+ | +0.767 | [+0.13, +1.45] |
+
+Findings:
+
+1. Widening WITHIN FX destroys the edge: 23 FX+metal instruments score
+   -0.11 to -0.02 (FX trend has been ~zero since 2010, and 18 FX pairs with
+   shared legs are essentially one correlated bet with 18x the costs).
+2. The lift comes from adding UNCORRELATED ASSET CLASSES, not instrument
+   count: rates, equity indices, metals, and crypto each contribute positive
+   class-level Sharpe; basket5 (5 instruments, 5 classes) beats full48
+   (48 instruments, 8 classes).
+3. The v4 CTA champion REPRODUCES under the V5 causal engine (past-only
+   buffer band): +0.697 full48 vs the v4 claim of +0.65 with CI [+0.18,
+   +1.12], and +0.778 basket5 vs the v4 claim of +0.746. v4's buffer-band
+   lookahead was not load-bearing.
+4. `d1-cta-v5-basket5-*` is now the strongest validated candidate in the
+   project: bootstrap CI excludes zero on the full period AND both
+   subsamples, and it is insensitive to doubled costs and doubled execution
+   delay. The four requested pairs remain served: EURUSD trades in basket5
+   directly and the H4 core4 book (`h4-cta-v5`) can run alongside on
+   separate magics, but the FX legs should be treated as diversifiers, not
+   as the edge.
+
 ### H4 CTA Commands
 
 ```bash
@@ -398,6 +450,17 @@ conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5
 conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-costx2 --spread-mult 2.0
 conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-delay2 --entry-delay-bars 2
 conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-recent --eval-start 2021-01-01
+```
+
+### Universe Ablation Commands
+
+```bash
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier core4 --run-id d1-cta-v5-core4-fast-2010
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier fx-metals --run-id d1-cta-v5-fx-metals-fast-2010
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier full48 --speeds slow --sleeve combined --rebalance monthly --buffer-frac 0.4 --run-id d1-cta-v5-full48-slow-combined-monthly
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier basket5 --speeds slow --sleeve combined --rebalance monthly --buffer-frac 0.4 --run-id d1-cta-v5-basket5-slow-combined-monthly
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier basket5 --speeds slow --sleeve combined --rebalance monthly --buffer-frac 0.4 --spread-mult 2.0 --run-id d1-cta-v5-basket5-champion-costx2
+conda run -n envmt5 python scripts/v5_universe_backtest.py --tier basket5 --speeds slow --sleeve combined --rebalance monthly --buffer-frac 0.4 --entry-delay-bars 2 --run-id d1-cta-v5-basket5-champion-delay2
 ```
 
 ## Phase 3: Lumibot Bridge, Adapter First

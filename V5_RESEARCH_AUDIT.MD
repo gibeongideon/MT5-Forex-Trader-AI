@@ -213,3 +213,13 @@ artifact-producing H4 strategy (`src/v5/h4_cta.py`,
 pre-registered config, no fitted components, causality tests, and stress
 runs. Baseline bar Sharpe `+0.634` (daily `+0.450`, CI `[-0.124, +1.064]`),
 stable under 2x costs and 2-bar delay. See `V5_PLAN.MD` "H4 CTA Track".
+
+Update 2026-07-05 (universe widening): `scripts/v5_universe_backtest.py` ran
+the same engine over nested D1 universes. Widening within FX/metals is
+NEGATIVE (23 instruments, Sharpe -0.11); the edge comes from adding
+uncorrelated asset classes. The v4 CTA champion reproduces under the V5
+causal engine: full48 `+0.697` CI `[+0.19, +1.21]`, basket5
+(GOLD/UST10Y/SPX/WTI/EURUSD) `+0.778` CI `[+0.34, +1.21]`, stable under 2x
+costs and 2-bar delay and positive in 2017+/2021+ subsamples. This closes
+the roadmap item "Convert the v4 CTA champion into a V5 artifact-producing
+validation runner" and makes basket5 the primary paper-gate candidate.

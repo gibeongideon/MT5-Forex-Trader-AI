@@ -59,6 +59,8 @@ TIERS = {
     "fx-metals": FX + METALS,
     "mt5-cfd": FX + METALS + ENERGY + EQ,
     "full48": list(UNIVERSE),
+    # v4 locked SMALL_BASKET (src/cta/strategy.py): one instrument per class
+    "basket5": ["GOLD", "UST10Y", "SPX", "WTI", "EURUSD"],
 }
 
 
