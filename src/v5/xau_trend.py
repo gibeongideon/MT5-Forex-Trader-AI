@@ -114,7 +114,7 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
 
     Returns dict(trades=DataFrame, equity=Series, signals=Series).
     """
-    if exit_mode not in ("flip", "trail", "sltp"):
+    if exit_mode not in ("flip", "trail", "sltp", "lock"):
         raise ValueError(f"unknown exit_mode {exit_mode!r}")
     if flip_mode not in ("confidence", "always"):
         raise ValueError(f"unknown flip_mode {flip_mode!r}")
@@ -177,8 +177,10 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                     pos = dict(
                         dir=d, lots=lots, entry=entry,
                         sl=entry - d * sl_dist if exit_mode != "flip" else None,
-                        tp=entry + d * p["tp_atr"] * atr[t - 1]
-                        if exit_mode == "sltp" else None,
+                        tp=(entry + d * p["tp_atr"] * atr[t - 1]
+                            if exit_mode == "sltp"
+                            else entry + d * p.get("lock_r", 2.0) * sl_dist
+                            if exit_mode == "lock" else None),
                         peak=entry, trail_on=False,
                         atr_at_entry=atr[t - 1],
                         risk_usd=(sl_dist * contract * lots / entry
@@ -195,7 +197,16 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                 close_position(t, pos["sl"] - pos["dir"] * half_cost[t],
                                "trail_stop" if pos["trail_on"] else "stop_loss")
             elif hit_tp:
-                close_position(t, pos["tp"] - pos["dir"] * half_cost[t], "take_profit")
+                is_lock = exit_mode == "lock"
+                d_re = pos["dir"]
+                close_position(t, pos["tp"] - pos["dir"] * half_cost[t],
+                               "lock_tp" if is_lock else "take_profit")
+                # lock: bank the gain, then re-ride if the trend still holds
+                if is_lock and np.isfinite(sig[t]) \
+                        and abs(sig[t]) >= p["enter_thresh"] \
+                        and (1 if sig[t] > 0 else -1) == d_re:
+                    pending = dict(dir=d_re, strength=sig[t],
+                                   wait=p["entry_delay_bars"] - 1)
 
         # 3) trail update from the completed bar's extreme
         if pos is not None and exit_mode in ("trail", "sltp"):

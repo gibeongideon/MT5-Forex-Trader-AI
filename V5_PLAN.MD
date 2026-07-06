@@ -736,6 +736,52 @@ nothing once leakage is removed. The XAUUSD engine stays ML-free; the only
 honest risk knob it exposed is that HALVING per-trade risk halves DD
 (21%->12%) at unchanged Sharpe — a sizing preference, not an edge.
 
+### Lock-and-Reopen Exit — Pre-Registration (2026-07-06)
+
+User hypothesis: instead of riding one position with a trailing stop, close
+at a fixed profit target then REOPEN in the same direction (bank the gain,
+re-ride). New `exit_mode="lock"` in `src/v5/xau_trend.py` (additive; live
+trail/sltp/flip paths untouched): hard SL 2xATR, take-profit at
+`lock_r x R` (R = 2xATR risk), on TP close + reopen same direction next bar
+iff |forecast| still >= enter. Cells (XAUUSD H4, 2017+, $3000, conf-risk,
+identical daily-Sharpe metric + bootstrap CI), all reported:
+baseline `trail` (live logic) vs `lock` at lock_r in {1, 2, 3}. Promotion:
+Sharpe AND CI-low > baseline. Prior: fixed TP already underperformed trail
+in the sltp grid — lock adds re-entry, tested to see if banking gains helps
+Sharpe even at lower return.
+
+### Lock-and-Reopen Results (2026-07-06)
+
+XAUUSD H4, 2017+, $3000 (baseline shifted from the promoted 0.571 to 0.483
+because the H4 CSV was refreshed with live 2026 bars; all cells use the same
+current data, so the A/B is internally consistent):
+
+| Variant | Sharpe | CI 95% | Return | MaxDD | Trades | Win | PF |
+| ------- | ------ | ------ | ------ | ----- | ------ | --- | -- |
+| baseline trail | 0.483 | [-0.08, 1.19] | +97% | 26.7% | 905 | 39% | 1.23 |
+| lock 1R | 0.576 | [0.01, 1.28] | +91% | 27.4% | 1104 | 53% | 1.19 |
+| lock 2R | 0.486 | [-0.07, 1.19] | +92% | 35.3% | 599 | 38% | 1.23 |
+| lock 3R | 0.535 | [-0.04, 1.27] | +104% | 29.9% | 419 | 30% | 1.30 |
+
+lock_1R nominally met the promotion criterion (Sharpe and CI-low > baseline)
+— but the stress battery destroys it:
+
+| Stress | trail | lock_1R |
+| ------ | ----- | ------- |
+| 2x spread cost | 0.394 (ret +76%) | 0.398 (ret +48%) |
+| +1 bar entry delay | 0.711 (ret +127%) | 0.372 (ret +39%) |
+
+VERDICT: NOT PROMOTED. lock_1R's edge is a low-cost artifact: doubling
+spreads erases it (0.398 vs 0.394, a tie, with lock's return collapsing
++91%->+48% vs trail +97%->+76%), and an execution-delay bar sends them in
+opposite directions (trail improves to 0.711, lock falls to 0.372). The
+high 53% win rate is misleading — banking many small gains means many
+round-trip costs and capped winners, exactly what kills trend edges once
+costs/slippage are realistic. This confirms the earlier sltp finding: for
+this trend signal, letting winners run on a single trailing position beats
+take-profit-and-reopen. The live bot stays on trailing (E2b). `exit_mode=
+"lock"` retained in `src/v5/xau_trend.py` for the record; not deployed.
+
 ### Multi-Symbol Ticket Engine — Pre-Registration (2026-07-05)
 
 Registered BEFORE running. The promoted XAUUSD ticket config
@@ -883,6 +929,13 @@ executed on demo: the E2b engine state agreed with the live SHORT
 (ticket 111274851); second pass reported in-sync. First fresh E2b entry
 cycle (limit placement observable at the broker) occurs at the next H4
 signal. Suite 203 green.
+
+Automation (2026-07-06): user crontab entry runs the executor hourly at
+:06, Mon-Fri 01:00-23:00 local (= server time): restarts the MT5
+terminal/bridge if down (`start_mt5.sh` is idempotent), then one reconcile
+pass with `--force-min-lot --save-data --execute`. Log:
+`data/v5_runs/v5-xau-demo-cron.log`. Verified by executing the exact
+crontab command from a foreign cwd (exit 0, in-sync).
 
 Agent overlay on the gold ticket (2026-07-05): `v5_xau_runner.py --overlay`
 runs the same researcher->bull->bear->PM team (src/v5/agents.py, unchanged)
