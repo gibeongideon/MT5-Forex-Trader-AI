@@ -35,8 +35,10 @@ def load_xau(path: str = DATA) -> pd.DataFrame:
 
 def evaluate(df: pd.DataFrame, exit_mode: str, flip_mode: str,
              equity0: float, overrides: dict) -> tuple[dict, dict]:
+    ov = dict(overrides)
+    sym = ov.pop("_symbol", "XAUUSD")
     res = run_trades(df, equity0=equity0, exit_mode=exit_mode,
-                     flip_mode=flip_mode, params=overrides)
+                     flip_mode=flip_mode, params=ov, symbol=sym)
     eq = res["equity"].loc[EVAL_START:].dropna()
     trades = res["trades"]
     trades = trades[trades["close_time"] >= EVAL_START] if len(trades) else trades
@@ -73,7 +75,9 @@ def evaluate(df: pd.DataFrame, exit_mode: str, flip_mode: str,
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--run-id", default=None)
-    ap.add_argument("--data", default=DATA)
+    ap.add_argument("--symbol", default="XAUUSD",
+                    choices=["XAUUSD", "EURUSD", "GBPUSD", "USDJPY"])
+    ap.add_argument("--data", default=None)
     ap.add_argument("--equity", type=float, default=3000.0)
     ap.add_argument("--exit", choices=["flip", "trail", "sltp"], default=None)
     ap.add_argument("--flip", choices=["confidence", "always"], default=None)
@@ -83,11 +87,12 @@ def main() -> None:
                     help="round-2 variant: confidence-scaled risk 0.5/1.0/1.5%")
     args = ap.parse_args()
 
-    df = load_xau(args.data)
+    df = load_xau(args.data or f"data/{args.symbol}_H4_long.csv")
     overrides = dict(spread_cost_mult=args.spread_mult,
                      entry_delay_bars=args.entry_delay_bars)
     if args.conf_risk:
         overrides["conf_risk_scale"] = {"low": 0.5, "med": 1.0, "high": 1.5}
+    overrides["_symbol"] = args.symbol
     writer = V5ArtifactWriter()
 
     cells = ([(args.exit, args.flip)] if args.exit and args.flip else
@@ -96,7 +101,7 @@ def main() -> None:
 
     for exit_mode, flip_mode in cells:
         stats, res = evaluate(df, exit_mode, flip_mode, args.equity, overrides)
-        run_id = args.run_id or f"xau-trend-{exit_mode}-{flip_mode[:4]}"
+        run_id = args.run_id or f"{args.symbol.lower()}-trend-{exit_mode}-{flip_mode[:4]}"
         eq = res["equity"].loc[EVAL_START:].dropna()
         writer.write_run(
             run_id=run_id,

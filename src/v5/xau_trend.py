@@ -47,10 +47,19 @@ import pandas as pd
 from src.cta.signals import ewmac
 from src.v5.h4_cta import H4_SPEEDS
 
-PIP = 0.1                 # XAUUSD pip in price units
-CONTRACT = 100.0          # oz per 1.0 lot
+PIP = 0.1                 # XAUUSD pip in price units (backward compat)
+CONTRACT = 100.0          # oz per 1.0 lot (backward compat)
 VOL_MIN, VOL_STEP = 0.01, 0.01
 MAX_LOT = 20.0
+
+# Per-symbol contract specs. quote_jpy: PnL accrues in JPY and is converted
+# to USD at the exit-bar price.
+SPECS = {
+    "XAUUSD": dict(pip=0.1, contract=100.0, quote_jpy=False),
+    "EURUSD": dict(pip=1e-4, contract=100_000.0, quote_jpy=False),
+    "GBPUSD": dict(pip=1e-4, contract=100_000.0, quote_jpy=False),
+    "USDJPY": dict(pip=1e-2, contract=100_000.0, quote_jpy=True),
+}
 
 PARAMS = dict(
     enter_thresh=0.50,
@@ -100,7 +109,7 @@ def _round_lot(x: float) -> float:
 
 def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                exit_mode: str = "trail", flip_mode: str = "confidence",
-               params: dict | None = None) -> dict:
+               params: dict | None = None, symbol: str = "XAUUSD") -> dict:
     """Bar-loop trade simulation. df: H4 OHLC + spread (pips), time-indexed.
 
     Returns dict(trades=DataFrame, equity=Series, signals=Series).
@@ -110,13 +119,15 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
     if flip_mode not in ("confidence", "always"):
         raise ValueError(f"unknown flip_mode {flip_mode!r}")
     p = {**PARAMS, **(params or {})}
+    spec = SPECS[symbol]
+    pip, contract, quote_jpy = spec["pip"], spec["contract"], spec["quote_jpy"]
 
     sig = xau_signal(df["close"]).values
     atr = wilder_atr(df, p["atr_period"]).values
     o, h, l, c = (df[k].values for k in ("open", "high", "low", "close"))
     spread_px = np.maximum(df["spread"].values,
-                           np.nanmedian(df["spread"].values)) * PIP * p["spread_cost_mult"]
-    half_cost = spread_px / 2.0 + p["slippage_pips"] * PIP
+                           np.nanmedian(df["spread"].values)) * pip * p["spread_cost_mult"]
+    half_cost = spread_px / 2.0 + p["slippage_pips"] * pip
     idx = df.index
 
     eq = equity0
@@ -131,7 +142,9 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
 
     def close_position(t, price, reason):
         nonlocal eq, pos
-        pnl = (price - pos["entry"]) * pos["dir"] * pos["lots"] * CONTRACT
+        pnl = (price - pos["entry"]) * pos["dir"] * pos["lots"] * contract
+        if quote_jpy:
+            pnl /= price  # JPY -> USD at exit price
         eq += pnl
         trades.append(dict(
             open_time=pos["opened_t"], close_time=idx[t],
@@ -156,7 +169,10 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                 risk = p["risk_frac"]
                 if p["conf_risk_scale"]:
                     risk *= p["conf_risk_scale"][confidence_bucket(pending["strength"])]
-                lots = _round_lot((risk * eq) / (sl_dist * CONTRACT))
+                loss_per_lot = sl_dist * contract  # quote ccy
+                if quote_jpy:
+                    loss_per_lot /= entry          # -> USD
+                lots = _round_lot((risk * eq) / loss_per_lot)
                 if lots > 0:
                     pos = dict(
                         dir=d, lots=lots, entry=entry,
@@ -165,7 +181,8 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                         if exit_mode == "sltp" else None,
                         peak=entry, trail_on=False,
                         atr_at_entry=atr[t - 1],
-                        risk_usd=sl_dist * CONTRACT * lots,
+                        risk_usd=(sl_dist * contract * lots / entry
+                                  if quote_jpy else sl_dist * contract * lots),
                         opened_t=idx[t], conf=confidence_bucket(pending["strength"]))
             pending = None
 
@@ -207,8 +224,10 @@ def run_trades(df: pd.DataFrame, *, equity0: float = 3000.0,
                     pending = dict(dir=d, strength=s, wait=p["entry_delay_bars"] - 1)
 
         # 5) mark equity (closed + floating)
-        floating = ((c[t] - pos["entry"]) * pos["dir"] * pos["lots"] * CONTRACT
+        floating = ((c[t] - pos["entry"]) * pos["dir"] * pos["lots"] * contract
                     if pos is not None else 0.0)
+        if quote_jpy and floating:
+            floating /= c[t]
         equity[t] = eq + floating
 
     open_position = dict(pos) if pos is not None else None

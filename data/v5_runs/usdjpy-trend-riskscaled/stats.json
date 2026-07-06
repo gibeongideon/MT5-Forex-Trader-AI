@@ -1,0 +1,38 @@
+{
+  "avg_r": -0.02,
+  "cagr_pct": 0.11,
+  "eval_end": "2026-06-14 20:00:00",
+  "eval_start": "2017-01-01 20:00:00",
+  "exit_mode": "trail",
+  "exit_reasons": {
+    "stop_loss": 335,
+    "trail_stop": 603
+  },
+  "final_equity": 3032.1,
+  "flip_mode": "confidence",
+  "max_dd_pct": 42.69,
+  "n_trades": 938,
+  "pnl_by_confidence": {
+    "high": {
+      "count": 319,
+      "mean": 0.48
+    },
+    "low": {
+      "count": 378,
+      "mean": -0.85
+    },
+    "med": {
+      "count": 241,
+      "mean": -1.39
+    }
+  },
+  "profit_factor": 0.96,
+  "sharpe_ci95": [
+    -0.793,
+    0.407
+  ],
+  "sharpe_daily": -0.192,
+  "total_return_pct": 1.07,
+  "win_rate_pct": 37.6,
+  "years": 9.45
+}

@@ -736,6 +736,60 @@ nothing once leakage is removed. The XAUUSD engine stays ML-free; the only
 honest risk knob it exposed is that HALVING per-trade risk halves DD
 (21%->12%) at unchanged Sharpe — a sizing preference, not an edge.
 
+### Multi-Symbol Ticket Engine — Pre-Registration (2026-07-05)
+
+Registered BEFORE running. The promoted XAUUSD ticket config
+(trail/confidence + conf-risk, all parameters unchanged, NO per-symbol
+tuning) is applied to EURUSD, GBPUSD, USDJPY H4. Only engine change is
+correct symbol specs (pip size, contract 100k, JPY-quote PnL converted to
+USD at the exit price). Eval 2017+, $3,000 per symbol, all results
+reported. Concurrent-demo inclusion gate: daily Sharpe > 0 required;
+expectation set by the continuous book's FX leg Sharpes (+0.11 EURUSD,
+-0.08 GBPUSD, +0.14 USDJPY) is that FX legs may FAIL — if so they are
+excluded and the demo stays gold-led. No parameter rescue attempts.
+
+RESULT (2026-07-05, runs `eurusd/gbpusd/usdjpy-trend-riskscaled`):
+
+| Symbol | Sharpe | CI 95% | CAGR | MaxDD | PF |
+| ------ | ------ | ------ | ---- | ----- | -- |
+| EURUSD | -0.174 | [-0.72, +0.39] | -5.9% | 41.8% | 0.94 |
+| GBPUSD | -0.085 | [-0.73, +0.52] | +0.7% | 30.8% | 0.99 |
+| USDJPY | -0.192 | [-0.79, +0.41] | +0.1% | 42.7% | 0.96 |
+
+VERDICT: all three FAIL the Sharpe > 0 gate — EXCLUDED from the concurrent
+demo. The ticket engine's edge is gold-specific; FX trend at H4 does not
+survive per-trade costs in ticket form (consistent with every prior FX
+result in this repo). For multi-symbol concurrency the validated vehicle is
+the CONTINUOUS H4 book (`h4-cta-v5`, Sharpe 0.63), where weak FX legs earn
+their place as diversifiers inside vol targeting rather than as standalone
+profit centers.
+
+### XAUUSD Demo Gate (2026-07-05, in progress)
+
+`scripts/v5_xau_demo.py` is the first V5 order-send path. Guards: hard
+demo-only abort (checks `trade_mode`/server; the terminal has previously
+held a LIVE login), `--execute` opt-in, `--max-lot 0.05`, magic 360520
+isolation, every order journaled (`run_id v5-xau-demo`, `dry_run=0`).
+
+Verified on demo 57462638 (HFMarketsKE-Demo2, KES account):
+
+- connection, demo guard, symbol resolution (plain `XAUUSD` tradable);
+- fresh H4 bars pulled from the terminal and merged into the CSV
+  (+91 bars -> last 2026-07-03 20:00; `--save-data` refreshed the file);
+- sizing computed in ACCOUNT currency via `order_calc_profit` (KES-safe);
+  at this account's ~103k KES the correct 1% risk rounds below min lot, so
+  the gate runs `--force-min-lot` (0.01 lot = ~11% actual risk, demo only);
+- engine state on fresh data: SHORT, forecast -1.39, trailing SL 4262.16;
+- order path verified to the broker: correct 10018 rejection while the
+  gold session was closed (Sunday). A background retry loop places the
+  order at session open, logging to `data/v5_runs/v5-xau-demo-retry.log`.
+
+Cadence after the first fill: run once per completed H4 bar
+(`python scripts/v5_xau_demo.py --force-min-lot --save-data --execute`),
+which also maintains the trailing SL via `modify_position` and handles
+flips. Reconcile journal vs broker history before considering demo-live
+passed.
+
 Agent overlay on the gold ticket (2026-07-05): `v5_xau_runner.py --overlay`
 runs the same researcher->bull->bear->PM team (src/v5/agents.py, unchanged)
 on a single-instrument evidence pack extended with the live ticket
