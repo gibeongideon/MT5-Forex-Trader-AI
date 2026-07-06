@@ -121,6 +121,10 @@ def size_lots(conn: MT5Connector, symbol: str, direction: int, price: float,
     order = mt5.ORDER_TYPE_BUY if direction > 0 else mt5.ORDER_TYPE_SELL
     loss_1lot = mt5.order_calc_profit(order, symbol, 1.0, price, sl)
     if loss_1lot is None or loss_1lot >= 0:
+        if force_min:
+            print("  ! order_calc_profit unavailable (transient?) — "
+                  "falling back to broker min lot (demo gate)")
+            return vol_min
         print("  ! order_calc_profit unavailable — refusing to size")
         return 0.0
     loss_1lot = abs(loss_1lot)
