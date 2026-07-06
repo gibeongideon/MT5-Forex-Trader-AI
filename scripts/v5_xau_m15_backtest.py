@@ -32,6 +32,8 @@ CELLS = {
     "E2b": dict(limit_k=0.50, trail_source="h4"),
     "E3": dict(limit_k=None, trail_source="m15"),
     "E4": dict(limit_k=None, trail_source="h4", session_block=(0, 8)),
+    "E5a": dict(limit_k=None, trail_source="h4", confirm_rule="1h"),
+    "E5b": dict(limit_k=None, trail_source="h4", confirm_rule="30min"),
 }
 
 

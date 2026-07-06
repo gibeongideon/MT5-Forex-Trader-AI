@@ -65,10 +65,22 @@ def h4_features(m15: pd.DataFrame):
     return dict(sig=sig, atr=atr, high=hi, low=lo, last_done=last_done)
 
 
+def ltf_trend(m15: pd.DataFrame, rule: str, fast: int = 8, slow: int = 24):
+    """Completed-bar LTF trend sign (+1/-1) and its leakage-safe M15 mapping."""
+    bars = m15["close"].resample(rule, label="left", closed="left").last().dropna()
+    step = pd.tseries.frequencies.to_offset(rule)
+    close_time = (bars.index + step).asi8
+    trend = np.sign(bars.ewm(span=fast, min_periods=fast).mean()
+                    - bars.ewm(span=slow, min_periods=slow).mean()).values
+    last_done = np.searchsorted(close_time, m15.index.asi8, side="right") - 1
+    return trend, last_done
+
+
 def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
                    limit_k: float | None = None,
                    trail_source: str = "h4",
                    session_block: tuple | None = None,
+                   confirm_rule: str | None = None,
                    params: dict | None = None,
                    entry_delay_h4: int = 0,
                    limit_penetration_pips: float = 0.0) -> dict:
@@ -90,6 +102,8 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
     idx = m15.index
     n = len(m15)
     pen = limit_penetration_pips * PIP
+    if confirm_rule is not None:
+        ltf_sign, ltf_done = ltf_trend(m15, confirm_rule)
 
     eq = equity0
     equity = np.full(n, np.nan)
@@ -102,9 +116,17 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
         return (session_block is not None and
                 session_block[0] <= hours[j] < session_block[1])
 
+    def confirmed(j, d):
+        """LTF trend agreement on COMPLETED bars only (E5 cells)."""
+        if confirm_rule is None:
+            return True
+        k = ltf_done[j]
+        return k >= 0 and np.isfinite(ltf_sign[k]) and ltf_sign[k] == d
+
     def open_pos(j, d, entry, strength, i_h4):
         nonlocal pos
         sl_dist = p["sl_atr"] * atr_h4[i_h4]
+        first_trail_i = last_done[j] + 1   # the H4 window containing the fill
         risk = p["risk_frac"]
         if p.get("conf_risk_scale"):
             risk *= p["conf_risk_scale"][confidence_bucket(strength)]
@@ -113,6 +135,7 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
             return
         pos = dict(dir=d, lots=lots, entry=entry,
                    sl=entry - d * sl_dist, peak=entry, trail_on=False,
+                   first_trail_i=first_trail_i,
                    atr_at_entry=atr_h4[i_h4],
                    risk_usd=sl_dist * CONTRACT * lots,
                    opened_t=idx[j], conf=confidence_bucket(strength))
@@ -162,11 +185,15 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
                 order["kind"] = "market" if limit_k is None else "arm"
                 k = order["kind"]
             if k == "market":
-                if not blocked(j):
+                wait = order.setdefault("confirm_ttl", LIMIT_TTL)
+                ok = confirmed(j, order["dir"]) or wait <= 0
+                if not blocked(j) and ok:
                     open_pos(j, order["dir"],
                              o[j] + order["dir"] * half_cost[j],
                              order["strength"], order["i_h4"])
                     order = None
+                else:
+                    order["confirm_ttl"] = wait - 1
             elif k == "arm":
                 if not blocked(j):   # E4 defers limit placement too
                     order.update(kind="limit",
@@ -197,7 +224,9 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
         # ── 4) trail ratchet
         if pos is not None:
             if trail_source == "h4":
-                if new_h4 and i >= 0:   # completed H4 extreme = strictly past
+                # only completed windows during which the position existed —
+                # never seed the peak from pre-entry extremes (E1 sanity bug)
+                if new_h4 and i >= pos["first_trail_i"]:
                     ext = h4_hi[i] if pos["dir"] > 0 else h4_lo[i]
                     pos["peak"] = (max(pos["peak"], ext) if pos["dir"] > 0
                                    else min(pos["peak"], ext))

@@ -798,6 +798,20 @@ identical daily-resampled metric; winner stress = spread x2, +1 H4 delay,
 and for E2 additionally 1-pip penetration fills; E4 wins additionally
 require fill-bar spread distribution comparison vs E1.
 
+Round 2 (user-directed, registered 2026-07-06 before running): LTF trend
+confirmation for entry ("wait for best entry"). After the H4 signal
+completes, the market entry is deferred until the first M15 bar whose
+COMPLETED lower-timeframe trend agrees with the H4 direction; timeout 24
+M15 bars then enter at market regardless (trend trades must never be
+missed). LTF trend = sign(EMA8 - EMA24) on completed LTF bars (close-time
+aligned, same leakage rule as H4). Two cells, both reported:
+E5a = 1H confirmation, E5b = 30M confirmation. No other constants change.
+
+Implementation-bug disclosure: the first run of E1-E4 contained a trail
+bug (peak seeded from the pre-entry completed H4 bar -> phantom instant
+trail activation) caught by the E1<->E0 reconciliation sanity check;
+results above are from the fixed engine (E1 now matches E0's 903 trades).
+
 ### XAUUSD Demo Gate (2026-07-05, in progress)
 
 `scripts/v5_xau_demo.py` is the first V5 order-send path. Guards: hard
