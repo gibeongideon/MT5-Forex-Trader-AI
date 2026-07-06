@@ -1,0 +1,18 @@
+{
+  "broker_profile": {
+    "base_symbol": "EURUSD",
+    "broker_symbol": "EURUSD",
+    "checked_trades": 191,
+    "checks": {
+      "magic": "pass",
+      "stop_distance": "pass",
+      "symbol": "pass",
+      "volume": "pass"
+    },
+    "magic_number": null,
+    "min_stop_distance_pips": 0.0,
+    "status": "broker_profile_checked"
+  },
+  "note": "Candle-trail replay over supplied OOS candle probabilities; not paper/live reconciled.",
+  "status": "research_replay_only"
+}

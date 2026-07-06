@@ -67,11 +67,16 @@ class PipelineConfig:
     encoder_latent_dim: int   = 8
     encoder_window:     int   = 50              # OHLCV bars per input window
     encoder_epochs:     int   = 30
+    encoder_patience:   int   = 0
     encoder_batch:      int   = 4096
     encoder_lr:         float = 1e-3
     # Candle tokenizer (K-Means per-bar shape clustering)
     candle_tokenizer_enabled:  bool = False
     candle_tokenizer_clusters: int  = 32
+    # Fractal symmetry score feature (READ 7)
+    fractal_enabled:  bool = False
+    fractal_min_win:  int  = 6
+    fractal_max_win:  int  = 60
 
     # Multitask-specific (only used when encoder_mode="multitask")
     encoder_multitask_alpha: float = 0.3
@@ -79,6 +84,11 @@ class PipelineConfig:
     encoder_d_model:    int   = 32
     encoder_n_heads:    int   = 4
     encoder_n_layers:   int   = 2
+    # Forecast-specific (only used when encoder_mode="forecast")
+    encoder_forecast_horizons: int = 8
+    # Contrastive-specific (only used when encoder_mode="contrastive")
+    encoder_contrastive_temp:  float = 0.1
+    encoder_proj_dim:          int   = 32
 
     # Walk-forward
     wf_window_type: str          = "expanding"  # expanding | sliding
@@ -94,6 +104,7 @@ class PipelineConfig:
     bt_balance:    float = 10_000.0
     bt_risk_pct:   float = 0.01
     bt_use_regime: bool  = False
+    bt_pip_size:   float = 0.0001   # 0.0001 for EURUSD/GBPUSD, 0.01 for USDJPY
 
     # Artifact storage
     artifacts_dir: str = "data/models/pipeline"
@@ -136,14 +147,21 @@ class PipelineConfig:
             encoder_latent_dim = enc.get("latent_dim",  8),
             encoder_window     = enc.get("window_size", 50),
             encoder_epochs     = enc.get("epochs",      30),
+            encoder_patience   = enc.get("patience",    0),
             encoder_batch      = enc.get("batch_size",  4096),
             encoder_lr         = enc.get("lr",          1e-3),
             candle_tokenizer_enabled  = d.get("candle_tokenizer", {}).get("enabled",   False),
             candle_tokenizer_clusters = d.get("candle_tokenizer", {}).get("n_clusters", 32),
+            fractal_enabled = feat.get("fractal_enabled", False),
+            fractal_min_win = feat.get("fractal_min_win", 6),
+            fractal_max_win = feat.get("fractal_max_win", 60),
             encoder_multitask_alpha   = enc.get("multitask_alpha", 0.3),
             encoder_d_model    = enc.get("d_model",     32),
             encoder_n_heads    = enc.get("n_heads",     4),
             encoder_n_layers   = enc.get("n_layers",    2),
+            encoder_forecast_horizons = enc.get("forecast_horizons", 8),
+            encoder_contrastive_temp  = enc.get("contrastive_temp",  0.1),
+            encoder_proj_dim          = enc.get("proj_dim",          32),
 
             wf_window_type = wf.get("window_type", "expanding"),
             wf_train_days  = wf.get("train_days",  180),
@@ -156,6 +174,7 @@ class PipelineConfig:
             bt_spread      = bt.get("spread_pips",      1.0),
             bt_balance     = bt.get("initial_balance",  10_000.0),
             bt_risk_pct    = bt.get("risk_pct",         0.01),
+            bt_pip_size    = bt.get("pip_size",         0.0001),
             bt_use_regime  = bt.get("use_regime_filter", False),
 
             artifacts_dir = art.get("directory", "data/models/pipeline"),
@@ -207,20 +226,27 @@ class PredictorPipeline:
             label_horizon   = cfg.label_horizon,
             label_threshold = cfg.label_threshold,
             scale           = cfg.scale,
+            fractal_enabled = cfg.fractal_enabled,
+            fractal_min_win = cfg.fractal_min_win,
+            fractal_max_win = cfg.fractal_max_win,
         )
 
         self._enc: Optional[LatentEncoder] = (
             LatentEncoder(
-                mode                 = cfg.encoder_mode,
-                latent_dim           = cfg.encoder_latent_dim,
-                window_size          = cfg.encoder_window,
-                epochs               = cfg.encoder_epochs,
-                batch_size           = cfg.encoder_batch,
-                lr                   = cfg.encoder_lr,
-                multitask_alpha      = cfg.encoder_multitask_alpha,
-                transformer_d_model  = cfg.encoder_d_model,
-                transformer_n_heads  = cfg.encoder_n_heads,
-                transformer_n_layers = cfg.encoder_n_layers,
+                mode                     = cfg.encoder_mode,
+                latent_dim               = cfg.encoder_latent_dim,
+                window_size              = cfg.encoder_window,
+                epochs                   = cfg.encoder_epochs,
+                batch_size               = cfg.encoder_batch,
+                lr                       = cfg.encoder_lr,
+                early_stopping_patience  = cfg.encoder_patience,
+                multitask_alpha          = cfg.encoder_multitask_alpha,
+                transformer_d_model      = cfg.encoder_d_model,
+                transformer_n_heads      = cfg.encoder_n_heads,
+                transformer_n_layers     = cfg.encoder_n_layers,
+                forecast_horizons        = cfg.encoder_forecast_horizons,
+                contrastive_temp         = cfg.encoder_contrastive_temp,
+                contrastive_proj_dim     = cfg.encoder_proj_dim,
             )
             if cfg.encoder_enabled else None
         )
@@ -259,6 +285,7 @@ class PredictorPipeline:
         self,
         df_raw:     pd.DataFrame,
         train_frac: float = None,
+        pretrained_state_dict: dict = None,
     ) -> Tuple[pd.DataFrame, pd.Series]:
         """
         Build the full feature matrix (base indicators + optional latent dims).
@@ -296,16 +323,18 @@ class PredictorPipeline:
 
         # Latent encoder — trained on train only
         if self._enc is not None:
+            _needs_labels = ("supervised", "transformer", "multitask")
             y_for_enc = (
                 y_full.reindex(df_tr.index)
-                if self._enc.mode in ("supervised", "transformer", "multitask") else None
+                if self._enc.mode in _needs_labels else None
             )
             print(
                 f"[Pipeline] Training {self._enc.mode} encoder "
                 f"(latent_dim={self._enc.latent_dim})...",
                 flush=True,
             )
-            self._enc.fit(df_tr, y=y_for_enc)
+            self._enc.fit(df_tr, y=y_for_enc,
+                          pretrained_state_dict=pretrained_state_dict)
 
             latent_full = self._enc.transform(df_raw)      # (n_rows, latent_dim)
 
@@ -393,12 +422,21 @@ class PredictorPipeline:
 
     # ── Live inference ─────────────────────────────────────────────────────────
 
-    def predict(self, df_raw: pd.DataFrame) -> dict:
+    def predict(self, df_raw: pd.DataFrame,
+                candle_signal: dict | None = None) -> dict:
         """
         Single-bar inference from raw OHLCV.
 
         Applies the fitted scaler → encoder → model and returns a signal dict.
         df_raw must contain at least max(indicator_warmup, encoder.window_size) bars.
+
+        Parameters
+        ----------
+        df_raw        : raw OHLCV bars (at least encoder.window_size bars)
+        candle_signal : optional output of a candle model's predict() call.
+                        If provided and the model was trained with candle features,
+                        injects candle_p_buy / candle_p_sell before inference.
+                        Expected keys: "P_buy", "P_sell".
 
         Returns
         -------
@@ -426,6 +464,16 @@ class PredictorPipeline:
             lat_row = latent.iloc[[-1]].copy()
             lat_row.index = X_live.index
             X_live = pd.concat([X_live, lat_row], axis=1)
+
+        # Inject candle probabilities if the model expects them
+        _has_candle_feats = self._feature_cols and "candle_p_buy" in self._feature_cols
+        if _has_candle_feats:
+            if candle_signal is not None:
+                X_live["candle_p_buy"]  = candle_signal.get("P_buy",  0.5)
+                X_live["candle_p_sell"] = candle_signal.get("P_sell", 0.5)
+            else:
+                X_live["candle_p_buy"]  = 0.5
+                X_live["candle_p_sell"] = 0.5
 
         # Align to training feature columns (fill any missing with 0)
         if self._feature_cols:
@@ -629,6 +677,7 @@ class PredictorPipeline:
     def _make_backtest_cfg(self) -> BacktestConfig:
         return BacktestConfig(
             threshold         = self.cfg.bt_threshold,
+            pip_size          = self.cfg.bt_pip_size,
             sl_pips           = self.cfg.bt_sl_pips,
             tp_pips           = self.cfg.bt_tp_pips,
             spread_pips       = self.cfg.bt_spread,

@@ -1,0 +1,47 @@
+{
+  "ann_cost_drag_pct": 0.106,
+  "ann_turnover": 6.44,
+  "avg_gross_exposure": 1.633,
+  "cagr_pct": 10.645,
+  "carry": false,
+  "eval_end": "2026-06-16 00:00:00",
+  "eval_start": "2017-01-03 00:00:00",
+  "final_equity": 26005.7,
+  "max_drawdown_pct": 22.783,
+  "ml_combine": false,
+  "n_instruments": 11,
+  "per_class_sharpe": {
+    "CRYPTO": 0.713,
+    "ENERGY": 0.132,
+    "EQ_INDEX": 0.519,
+    "FX_USD": 0.039,
+    "METAL": 0.531,
+    "RATES": 0.449
+  },
+  "rebalance": "monthly",
+  "regime": "none",
+  "sharpe_ci95": [
+    0.363,
+    1.604
+  ],
+  "sharpe_daily_ann": 0.949,
+  "sharpe_resampled": 0.375,
+  "sleeve": "combined",
+  "sortino": 0.515,
+  "speeds": "slow",
+  "tier": "basket10-btc",
+  "total_return_pct": 160.06,
+  "yearly_net_return_pct": {
+    "2017": 32.16,
+    "2018": -2.33,
+    "2019": -2.4,
+    "2020": 26.93,
+    "2021": 3.67,
+    "2022": 17.62,
+    "2023": -7.34,
+    "2024": 25.09,
+    "2025": 18.81,
+    "2026": -3.13
+  },
+  "years": 9.45
+}

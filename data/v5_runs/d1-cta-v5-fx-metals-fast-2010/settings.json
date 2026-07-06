@@ -1,0 +1,54 @@
+{
+  "buffer_frac": 0.1,
+  "entry_delay_bars": 1,
+  "eval_start": "2010-01-01",
+  "initial_equity": 10000.0,
+  "instruments": [
+    "EURUSD",
+    "GBPUSD",
+    "USDJPY",
+    "AUDUSD",
+    "USDCHF",
+    "USDCAD",
+    "NZDUSD",
+    "EURGBP",
+    "EURJPY",
+    "GBPJPY",
+    "AUDJPY",
+    "EURCHF",
+    "EURAUD",
+    "NZDJPY",
+    "CADJPY",
+    "AUDNZD",
+    "GBPCHF",
+    "GBPAUD",
+    "GOLD",
+    "SILVER",
+    "COPPER",
+    "PLAT",
+    "PALL"
+  ],
+  "speeds": [
+    [
+      8,
+      32
+    ],
+    [
+      16,
+      64
+    ],
+    [
+      32,
+      128
+    ],
+    [
+      64,
+      256
+    ]
+  ],
+  "spread_cost_mult": 1.0,
+  "strategy": "d1_cta_ewmac_voltarget",
+  "target_vol": 0.1,
+  "tier": "fx-metals",
+  "timeframe": "D1"
+}

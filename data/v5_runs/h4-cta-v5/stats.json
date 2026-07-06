@@ -1,0 +1,37 @@
+{
+  "ann_cost_drag_pct": 0.414,
+  "ann_turnover": 35.9,
+  "avg_gross_exposure": 1.298,
+  "cagr_pct": 6.205,
+  "eval_end": "2026-06-15 16:00:00",
+  "eval_start": "2017-01-01 20:00:00",
+  "final_equity": 17661.3,
+  "max_drawdown_pct": 16.848,
+  "per_symbol_sharpe": {
+    "EURUSD": 0.113,
+    "GBPUSD": -0.077,
+    "USDJPY": 0.143,
+    "XAUUSD": 0.772
+  },
+  "sharpe_bar_ann": 0.634,
+  "sharpe_daily_ann": 0.45,
+  "sharpe_daily_ci95": [
+    -0.124,
+    1.064
+  ],
+  "sortino_daily_ann": 0.62,
+  "total_return_pct": 76.613,
+  "yearly_net_return_pct": {
+    "2017": -12.77,
+    "2018": 4.89,
+    "2019": 6.74,
+    "2020": 11.33,
+    "2021": -9.56,
+    "2022": 21.56,
+    "2023": -2.32,
+    "2024": 15.3,
+    "2025": 28.44,
+    "2026": 2.14
+  },
+  "years": 9.45
+}

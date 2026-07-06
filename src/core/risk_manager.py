@@ -12,7 +12,7 @@ Sizing layers (applied in order):
   5. Portfolio cap      — skips new trades when total open risk already at max
 
 Usage:
-    from src.risk_manager import RiskManager, RiskConfig
+    from src.core.risk_manager import RiskManager, RiskConfig
 
     rm = RiskManager(RiskConfig())
     sizing = rm.size(confidence=0.62, balance=10000, sl_pips=25, tp_pips=50)

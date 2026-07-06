@@ -1,0 +1,35 @@
+# MT4 PipelineBot systemd template (HFM, via PyBridge file bridge).
+# Install:
+#   sudo cp deploy/mt4_bot.service /etc/systemd/system/mt4-eurusd.service
+#   # edit --symbol / --magic / SyslogIdentifier per instrument
+#   sudo systemctl daemon-reload && sudo systemctl enable --now mt4-eurusd
+#
+# Runs ALONGSIDE the mt5-*.service units (different platform, prefix, magic).
+# Longer ExecStartPre than MT5 so the MT4 terminal + PyBridge EA are bound first.
+
+[Unit]
+Description=MT4 PipelineBot — EURUSD (HFM)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=rock
+WorkingDirectory=/home/rock/Desktop/2026_Projects/MT5
+Environment=PATH=/home/rock/anaconda3/envs/envmt5/bin:/home/rock/anaconda3/bin:/usr/bin:/bin
+ExecStartPre=/bin/sleep 25
+ExecStart=/home/rock/anaconda3/envs/envmt5/bin/python src/bots/pipeline_bot.py \
+    --platform mt4 \
+    --symbol EURUSD \
+    --magic 40260101 \
+    --model-dir data/models/pipeline_EURUSD \
+    --flip-mode candle_predictor \
+    --candle-model-dir data/models/candle_EURUSD
+Restart=always
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=mt4-eurusd
+
+[Install]
+WantedBy=multi-user.target

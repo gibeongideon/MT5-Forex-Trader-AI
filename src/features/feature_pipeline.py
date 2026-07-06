@@ -13,7 +13,7 @@ Design rules:
      future returns are always available for every labelled row.
 
 Usage:
-    from src.feature_pipeline import FeaturePipeline
+    from src.features.feature_pipeline import FeaturePipeline
 
     pipeline = FeaturePipeline()
 
@@ -45,6 +45,7 @@ from src.features.indicators import (
     sma, ema, rsi, macd, bollinger_bands, bollinger_pct_b,
     atr, stochastic, adx,
 )
+from src.features.fractal_labeler import FractalLabeler
 
 
 # ─── Default feature spec ─────────────────────────────────────────────────────
@@ -93,17 +94,27 @@ class FeaturePipeline:
 
     def __init__(
         self,
-        label_horizon:   int   = 4,
-        label_threshold: float = 0.0003,
-        scale:           bool  = True,
-        extra_spec:      list  = None,
+        label_horizon:    int   = 4,
+        label_threshold:  float = 0.0003,
+        scale:            bool  = True,
+        extra_spec:       list  = None,
+        fractal_enabled:  bool  = False,
+        fractal_min_win:  int   = 6,
+        fractal_max_win:  int   = 60,
     ):
-        self.label_horizon   = label_horizon
-        self.label_threshold = label_threshold
-        self.scale           = scale
-        self._spec           = _DEFAULT_SPEC + (extra_spec or [])
+        self.label_horizon    = label_horizon
+        self.label_threshold  = label_threshold
+        self.scale            = scale
+        self._spec            = _DEFAULT_SPEC + (extra_spec or [])
         self._scaler: Optional[StandardScaler] = None
         self._feature_cols: list[str] = []
+        self._fractal_enabled = fractal_enabled
+        if fractal_enabled:
+            self._fractal_labeler = FractalLabeler(
+                min_window=fractal_min_win,
+                max_window=fractal_max_win,
+                corr_threshold=0.0,   # compute correlation for all bars; no label used
+            )
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -298,18 +309,11 @@ class FeaturePipeline:
         if "atr_14" in df.columns:
             df["atr_pct"] = df["atr_14"] / close.replace(0, np.nan)
 
-        # Session / time-of-day features
-        # EURUSD session boundaries (UTC): Asia 00-07, London 07-16, NY 12-21
-        if hasattr(df.index, "hour"):
-            hour = df.index.hour
-            # Cyclical encoding — preserves continuity across midnight
-            df["hour_sin"] = np.sin(2 * np.pi * hour / 24)
-            df["hour_cos"] = np.cos(2 * np.pi * hour / 24)
-            # Binary session flags
-            df["is_london_open"]     = ((hour >= 7)  & (hour < 16)).astype(np.float32)
-            df["is_ny_open"]         = ((hour >= 12) & (hour < 21)).astype(np.float32)
-            df["is_london_ny_overlap"] = ((hour >= 12) & (hour < 16)).astype(np.float32)
-            df["is_asia"]            = ((hour >= 0)  & (hour < 7)).astype(np.float32)
+        # Fractal symmetry score: best Pearson r between left and mirror-right
+        # half of the recent price window. Captures V/inverted-V structures.
+        # Will be shift(1)'d by build() so no lookahead.
+        if self._fractal_enabled:
+            df["fractal_corr"] = self._fractal_labeler.compute_correlations(df)
 
         return df
 

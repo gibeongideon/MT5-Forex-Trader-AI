@@ -28,7 +28,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 
 try:
     import torch

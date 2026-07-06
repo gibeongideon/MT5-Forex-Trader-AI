@@ -1,0 +1,18 @@
+{
+  "broker_profile": {
+    "base_symbol": "USDJPY",
+    "broker_symbol": "USDJPY.Z",
+    "checked_trades": 553,
+    "checks": {
+      "magic": "pass",
+      "stop_distance": "pass",
+      "symbol": "pass",
+      "volume": "pass"
+    },
+    "magic_number": 20260103,
+    "min_stop_distance_pips": 5.0,
+    "status": "broker_profile_checked"
+  },
+  "note": "Candle-trail replay over supplied OOS candle probabilities; not paper/live reconciled.",
+  "status": "research_replay_only"
+}

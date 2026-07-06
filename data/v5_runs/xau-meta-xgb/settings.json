@@ -1,0 +1,13 @@
+{
+  "pre_registration": "V5_PLAN.MD",
+  "strategy": "xau_meta_labeling",
+  "xgb_params": {
+    "eval_metric": "logloss",
+    "learning_rate": 0.05,
+    "max_depth": 3,
+    "n_estimators": 200,
+    "n_jobs": 4,
+    "random_state": 42,
+    "subsample": 0.8
+  }
+}

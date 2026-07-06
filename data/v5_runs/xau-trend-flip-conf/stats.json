@@ -1,0 +1,30 @@
+{
+  "avg_r": 13.82,
+  "cagr_pct": 5.74,
+  "eval_end": "2026-06-15 16:00:00",
+  "eval_start": "2017-01-02 20:00:00",
+  "exit_mode": "flip",
+  "exit_reasons": {
+    "eod_mark": 1,
+    "flip": 9
+  },
+  "final_equity": 5083.47,
+  "flip_mode": "confidence",
+  "max_dd_pct": 43.22,
+  "n_trades": 10,
+  "pnl_by_confidence": {
+    "med": {
+      "count": 10,
+      "mean": 249.9
+    }
+  },
+  "profit_factor": 3.22,
+  "sharpe_ci95": [
+    -0.187,
+    1.009
+  ],
+  "sharpe_daily": 0.36,
+  "total_return_pct": 69.45,
+  "win_rate_pct": 30.0,
+  "years": 9.45
+}

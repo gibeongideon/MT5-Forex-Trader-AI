@@ -1,0 +1,19 @@
+{
+  "validated_by_run_ids": ["h4-cta-v5", "h4-cta-v5-costx2", "h4-cta-v5-delay2", "h4-capital-sweep"],
+  "promoted_on": "2026-07-05",
+  "expected_cont_sharpe": 0.634,
+  "symbols": ["EURUSD", "GBPUSD", "USDJPY", "XAUUSD"],
+  "lever_cfg": {
+    "target_vol": 0.10,
+    "vol_halflife": 252,
+    "buffer_frac": 0.10,
+    "entry_delay_bars": 1,
+    "spread_cost_mult": 1.0
+  },
+  "default_equity": 3000.0,
+  "min_recommended_equity": 3000.0,
+  "comfortable_equity": 5000.0,
+  "magic": 360510,
+  "run_id": "v5-h4-day",
+  "note": "positions update on completed 4H bars and are held across bars; this is a slow intraday-managed book, not a scalper. Below $3k the 0.01-lot grid dominates outcomes (quantization lottery)."
+}

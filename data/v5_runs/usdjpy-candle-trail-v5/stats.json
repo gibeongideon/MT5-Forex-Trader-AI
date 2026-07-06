@@ -1,0 +1,10 @@
+{
+  "final_equity": 12138.550000000658,
+  "max_drawdown": 0.0008334192445658071,
+  "mode": "candle_trail",
+  "research_only": true,
+  "symbol": "USDJPY",
+  "total_return": 0.21385500000006585,
+  "trades": 3000,
+  "win_rate": 0.7503333333333333
+}

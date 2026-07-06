@@ -1,0 +1,5 @@
+{
+  "exit_mode": "trail",
+  "strategy": "xau_lock_compare",
+  "symbol": "XAUUSD"
+}

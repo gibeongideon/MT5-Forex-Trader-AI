@@ -207,6 +207,9 @@ def _build_model(model_type: str) -> ModelInterface:
     if t in ("lstm",):
         from src.models.lstm_model import LSTMModel
         return LSTMModel()
+    if t in ("e2e_lstm", "e2elstm"):
+        from src.models.e2e_lstm import E2ELSTMModel
+        return E2ELSTMModel()
     if t in ("ensemble",):
         from src.models.ensemble import Ensemble
         from src.models.xgboost_model import XGBoostModel

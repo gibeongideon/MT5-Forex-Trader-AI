@@ -1,0 +1,16 @@
+{
+  "broker_symbol": "USDJPY.Z",
+  "checked_orders": 0,
+  "checks": {
+    "confidence": "pass",
+    "dry_run": "pass",
+    "magic": "pass",
+    "model": "pass",
+    "sl_tp": "pass",
+    "symbol": "pass",
+    "volume": "pass"
+  },
+  "magic_number": 20260103,
+  "run_id": "usdjpy-candle-trail-v5-enc30-hfm",
+  "status": "waiting_for_live_dry_run_order"
+}

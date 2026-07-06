@@ -109,6 +109,11 @@ class MT5Connector:
             self._connected = False
             print("Disconnected from MT5")
 
+    def reset_singleton(self) -> None:
+        """Drop the cached rpyc bridge so the next connect() builds a fresh one."""
+        global _mt5
+        _mt5 = None
+
     def __enter__(self):
         self.connect()
         return self
@@ -154,6 +159,22 @@ class MT5Connector:
     # Orders & positions
     # ------------------------------------------------------------------ #
 
+    def _fill_type(self, symbol: str):
+        """Pick the order-filling mode the symbol/broker actually supports.
+        Brokers differ (IC Markets=IOC, HFM may require FOK) — sending an
+        unsupported mode returns retcode 10030 (invalid fill). The symbol's
+        `filling_mode` bitmask: 1=FOK allowed, 2=IOC allowed."""
+        mt5 = self._mt5
+        try:
+            mode = int(getattr(self.symbol_info(symbol), "filling_mode", 0))
+        except Exception:
+            mode = 0
+        if mode & 2:   # SYMBOL_FILLING_IOC
+            return mt5.ORDER_FILLING_IOC
+        if mode & 1:   # SYMBOL_FILLING_FOK
+            return mt5.ORDER_FILLING_FOK
+        return mt5.ORDER_FILLING_RETURN
+
     def open_position(
         self,
         symbol: str,
@@ -184,7 +205,7 @@ class MT5Connector:
             "magic": magic,
             "comment": comment,
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._fill_type(symbol),
         }
 
         result = mt5.order_send(request)
@@ -223,7 +244,7 @@ class MT5Connector:
             "magic": position.magic,
             "comment": "close",
             "type_time": mt5.ORDER_TIME_GTC,
-            "type_filling": mt5.ORDER_FILLING_IOC,
+            "type_filling": self._fill_type(symbol),
         }
 
         result = mt5.order_send(request)
@@ -234,6 +255,43 @@ class MT5Connector:
         print(f"Closed ticket={ticket} {symbol}")
         return result._asdict()
 
+    def close_position_partial(self, position, volume: float) -> dict:
+        """Close only `volume` lots of an open position (deal in the opposite direction).
+        Falls back to a full close when volume >= the position's size."""
+        mt5 = self._mt5
+        if volume is None or volume >= position.volume:
+            return self.close_position(position)
+
+        symbol = position.symbol
+        tick = mt5.symbol_info_tick(symbol)
+        if tick is None:
+            raise RuntimeError(f"Cannot get tick for {symbol}")
+
+        if position.type == mt5.POSITION_TYPE_BUY:
+            order_type, price = mt5.ORDER_TYPE_SELL, tick.bid
+        else:
+            order_type, price = mt5.ORDER_TYPE_BUY, tick.ask
+
+        request = {
+            "action": mt5.TRADE_ACTION_DEAL,
+            "symbol": symbol,
+            "volume": volume,
+            "type": order_type,
+            "position": position.ticket,
+            "price": price,
+            "deviation": 20,
+            "magic": position.magic,
+            "comment": "partial_close",
+            "type_time": mt5.ORDER_TIME_GTC,
+            "type_filling": self._fill_type(symbol),
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            code = result.retcode if result else "None"
+            raise RuntimeError(f"close_position_partial failed: retcode={code}")
+        print(f"Partial-closed {volume} of ticket={position.ticket} {symbol}")
+        return result._asdict()
+
     def get_positions(self, symbol: str = None, magic: int = None):
         positions = self._mt5.positions_get(symbol=symbol) if symbol else self._mt5.positions_get()
         if positions is None:
@@ -241,6 +299,21 @@ class MT5Connector:
         if magic is not None:
             positions = [p for p in positions if p.magic == magic]
         return list(positions)
+
+    def modify_position(self, ticket: int, sl: float, tp: float) -> dict:
+        """Modify the SL and/or TP of an open position."""
+        mt5 = self._mt5
+        request = {
+            "action":   mt5.TRADE_ACTION_SLTP,
+            "position": ticket,
+            "sl":       sl,
+            "tp":       tp,
+        }
+        result = mt5.order_send(request)
+        if result is None or result.retcode != mt5.TRADE_RETCODE_DONE:
+            code = result.retcode if result else "None"
+            raise RuntimeError(f"modify_position failed: retcode={code}  ticket={ticket}")
+        return result._asdict()
 
     def calc_lot_size(self, symbol: str, sl_pips: float, risk_pct: float = 0.01) -> float:
         info = self._mt5.symbol_info(symbol)

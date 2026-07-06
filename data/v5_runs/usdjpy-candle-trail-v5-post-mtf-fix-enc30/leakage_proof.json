@@ -1,0 +1,155 @@
+{
+  "interpretation": "Passed OOS metadata and Sharpe recomputation checks. This supports that the reported Sharpe comes from fold-local out-of-sample candle probabilities and the persisted equity curve, but it is still research-only until dry-run and demo-live reconciliation pass.",
+  "oos_predictions": {
+    "duplicate_prediction_times": 0,
+    "first_prediction": "2024-05-07 21:00:00",
+    "folds": 12,
+    "folds_table": [
+      {
+        "first_prediction": "2024-05-07 21:00:00",
+        "fold": 0,
+        "last_prediction": "2024-07-05 23:30:00",
+        "rows": 4139,
+        "test_end": "2024-07-06 21:00:00",
+        "test_start": "2024-05-07 21:00:00",
+        "train_end": "2024-05-07 21:00:00",
+        "train_start": "2024-01-08 21:00:00"
+      },
+      {
+        "first_prediction": "2024-07-08 00:00:00",
+        "fold": 1,
+        "last_prediction": "2024-09-04 20:30:00",
+        "rows": 4115,
+        "test_end": "2024-09-04 21:00:00",
+        "test_start": "2024-07-06 21:00:00",
+        "train_end": "2024-07-06 21:00:00",
+        "train_start": "2024-03-08 21:00:00"
+      },
+      {
+        "first_prediction": "2024-09-04 21:00:00",
+        "fold": 2,
+        "last_prediction": "2024-11-01 23:30:00",
+        "rows": 4043,
+        "test_end": "2024-11-03 21:00:00",
+        "test_start": "2024-09-04 21:00:00",
+        "train_end": "2024-09-04 21:00:00",
+        "train_start": "2024-05-07 21:00:00"
+      },
+      {
+        "first_prediction": "2024-11-04 00:00:00",
+        "fold": 3,
+        "last_prediction": "2025-01-02 20:30:00",
+        "rows": 4019,
+        "test_end": "2025-01-02 21:00:00",
+        "test_start": "2024-11-03 21:00:00",
+        "train_end": "2024-11-03 21:00:00",
+        "train_start": "2024-07-06 21:00:00"
+      },
+      {
+        "first_prediction": "2025-01-02 21:00:00",
+        "fold": 4,
+        "last_prediction": "2025-03-03 20:30:00",
+        "rows": 4031,
+        "test_end": "2025-03-03 21:00:00",
+        "test_start": "2025-01-02 21:00:00",
+        "train_end": "2025-01-02 21:00:00",
+        "train_start": "2024-09-04 21:00:00"
+      },
+      {
+        "first_prediction": "2025-03-03 21:00:00",
+        "fold": 5,
+        "last_prediction": "2025-05-02 20:30:00",
+        "rows": 4223,
+        "test_end": "2025-05-02 21:00:00",
+        "test_start": "2025-03-03 21:00:00",
+        "train_end": "2025-03-03 21:00:00",
+        "train_start": "2024-11-03 21:00:00"
+      },
+      {
+        "first_prediction": "2025-05-02 21:00:00",
+        "fold": 6,
+        "last_prediction": "2025-07-01 20:30:00",
+        "rows": 4031,
+        "test_end": "2025-07-01 21:00:00",
+        "test_start": "2025-05-02 21:00:00",
+        "train_end": "2025-05-02 21:00:00",
+        "train_start": "2025-01-02 21:00:00"
+      },
+      {
+        "first_prediction": "2025-07-01 21:00:00",
+        "fold": 7,
+        "last_prediction": "2025-08-29 23:30:00",
+        "rows": 4139,
+        "test_end": "2025-08-30 21:00:00",
+        "test_start": "2025-07-01 21:00:00",
+        "train_end": "2025-07-01 21:00:00",
+        "train_start": "2025-03-03 21:00:00"
+      },
+      {
+        "first_prediction": "2025-09-01 00:00:00",
+        "fold": 8,
+        "last_prediction": "2025-10-29 20:30:00",
+        "rows": 4115,
+        "test_end": "2025-10-29 21:00:00",
+        "test_start": "2025-08-30 21:00:00",
+        "train_end": "2025-08-30 21:00:00",
+        "train_start": "2025-05-02 21:00:00"
+      },
+      {
+        "first_prediction": "2025-10-29 21:00:00",
+        "fold": 9,
+        "last_prediction": "2025-12-26 23:30:00",
+        "rows": 3947,
+        "test_end": "2025-12-28 21:00:00",
+        "test_start": "2025-10-29 21:00:00",
+        "train_end": "2025-10-29 21:00:00",
+        "train_start": "2025-07-01 21:00:00"
+      },
+      {
+        "first_prediction": "2025-12-29 00:00:00",
+        "fold": 10,
+        "last_prediction": "2026-02-26 20:30:00",
+        "rows": 4115,
+        "test_end": "2026-02-26 21:00:00",
+        "test_start": "2025-12-28 21:00:00",
+        "train_end": "2025-12-28 21:00:00",
+        "train_start": "2025-08-30 21:00:00"
+      },
+      {
+        "first_prediction": "2026-02-26 21:00:00",
+        "fold": 11,
+        "last_prediction": "2026-04-27 20:30:00",
+        "rows": 4019,
+        "test_end": "2026-04-27 21:00:00",
+        "test_start": "2026-02-26 21:00:00",
+        "train_end": "2026-02-26 21:00:00",
+        "train_start": "2025-10-29 21:00:00"
+      }
+    ],
+    "last_prediction": "2026-04-27 20:30:00",
+    "rows": 48936,
+    "status": "pass"
+  },
+  "run_dir": "data/v5_runs/usdjpy-candle-trail-v5-post-mtf-fix-enc30",
+  "run_stats": {
+    "daily_sharpe": -0.9311218397578638,
+    "max_drawdown": 0.007215237464570556,
+    "sharpe": -1.1881845215459172,
+    "total_return": -0.004364999999983743,
+    "trades": 421
+  },
+  "sharpe_check": {
+    "absolute_delta": 1.545430450278218e-13,
+    "recomputed_sharpe": -1.1881845215460718,
+    "reported_sharpe": -1.1881845215459172,
+    "status": "pass",
+    "tolerance": 1e-06
+  },
+  "signal_file": {
+    "path": "data/features/candle_signal_v5_USDJPY_post_mtf_fix_enc30.parquet",
+    "sha256": "d017d89d296fc79c2fa44b01b31f7cd6da05e7dc8aec3f80628fd9cb757a10e4"
+  },
+  "status": "leakage_checks_pass",
+  "stress_runs": [],
+  "symbol": "USDJPY"
+}

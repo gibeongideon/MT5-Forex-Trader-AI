@@ -30,7 +30,7 @@ import pandas as pd
 from lightgbm import LGBMClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 
 
 class LightGBMModel(ModelInterface):

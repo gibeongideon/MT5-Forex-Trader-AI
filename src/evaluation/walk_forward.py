@@ -8,8 +8,8 @@ A proper walk-forward engine that:
   - Uses Backtester for trade simulation (unified cost model)
   - Aggregates per-fold equity curves into a single out-of-sample equity curve
 
-This replaces / supersedes scripts/walk_forward.py which was the Phase 4/5
-prototype.  The prototype is kept for backward compatibility.
+This supersedes the old Phase 4/5 script prototype that was removed from the
+V5 branch.
 
 Usage:
     from src.evaluation.walk_forward import WalkForwardValidator, WalkForwardConfig
@@ -356,7 +356,7 @@ class WalkForwardValidator:
         key_hash = hashlib.md5(
             json.dumps(key_data, sort_keys=True).encode()
         ).hexdigest()[:10]
-        suffix = ".joblib" if config.model_type != "lstm" else ".pt"
+        suffix = ".pt" if config.model_type in ("lstm", "e2e_lstm", "e2elstm", "bar_lm", "barlm") else ".joblib"
         return Path(config.cache_dir) / f"{config.model_type}_fold{fold}_{key_hash}{suffix}"
 
     def _save_cached(self, model, path: Path, model_type: str) -> None:

@@ -29,7 +29,7 @@ import pandas as pd
 from catboost import CatBoostClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 
 
 class CatBoostModel(ModelInterface):

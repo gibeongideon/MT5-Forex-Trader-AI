@@ -33,7 +33,7 @@ import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from xgboost import XGBClassifier
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 
 
 class XGBoostModel(ModelInterface):

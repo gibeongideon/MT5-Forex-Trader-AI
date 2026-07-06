@@ -11,8 +11,8 @@ SignalCombiner aggregates multiple rules into a single probability vector
 This makes rule-based and ML-based signals drop-in replacements for each other.
 
 Usage:
-    from src.indicators import compute, sma, rsi, atr, bollinger_pct_b
-    from src.rule_engine import SignalCombiner, ma_crossover_rule, rsi_rule, \
+    from src.features.indicators import compute, sma, rsi, atr, bollinger_pct_b
+    from src.signals.rule_engine import SignalCombiner, ma_crossover_rule, rsi_rule, \
                                 bb_reversion_rule, trend_filter_rule
 
     df = compute(df, [

@@ -29,7 +29,7 @@ import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import RandomForestClassifier
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 
 
 class RandomForestModel(ModelInterface):

@@ -1,0 +1,11 @@
+{
+  "cell": "E2b",
+  "data": "data/XAUUSD_M15_spliced.csv",
+  "entry_delay_h4": 1,
+  "equity0": 3000.0,
+  "limit_k": "0.5",
+  "limit_penetration_pips": 0.0,
+  "spread_mult": 1.0,
+  "strategy": "xau_m15_exec",
+  "trail_source": "h4"
+}

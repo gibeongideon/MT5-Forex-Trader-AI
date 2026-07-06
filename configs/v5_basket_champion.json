@@ -1,0 +1,22 @@
+{
+  "promoted_from_run_id": "v5q-b10btc-base",
+  "promoted_on": "2026-07-05",
+  "expected_sharpe": 0.935,
+  "expected_ci95": [0.452, 1.424],
+  "tier": "basket10-btc",
+  "instruments": ["GOLD", "SILVER", "UST10Y", "UST30Y", "SPX", "DAX",
+                  "WTI", "BRENT", "EURUSD", "USDJPY", "BTC"],
+  "lever_cfg": {
+    "speeds": "slow",
+    "sleeve": "combined",
+    "rebalance": "monthly",
+    "buffer_frac": 0.4,
+    "target_vol": 0.10,
+    "regime": "none",
+    "carry": false,
+    "ml_combine": false
+  },
+  "magic": 360500,
+  "run_id_pure": "v5-basket-pure",
+  "run_id_overlay": "v5-basket-overlay"
+}

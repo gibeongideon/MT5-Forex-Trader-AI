@@ -1,0 +1,19 @@
+{
+  "acceptance": "discrete Sharpe >= 0.8x continuous",
+  "equity_grid": [
+    500.0,
+    1000.0,
+    2000.0,
+    3000.0,
+    5000.0,
+    10000.0
+  ],
+  "eval_start": "2017-01-01",
+  "strategy": "h4_cta_discrete_lots",
+  "vol_min": 0.01,
+  "vol_step": 0.01,
+  "vol_targets": [
+    0.1,
+    0.2
+  ]
+}

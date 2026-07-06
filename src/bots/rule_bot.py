@@ -25,9 +25,9 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from src.indicators import compute, sma, ema, rsi, macd, bollinger_bands, bollinger_pct_b, atr
+from src.features.indicators import compute, sma, ema, rsi, macd, bollinger_bands, bollinger_pct_b, atr
 from src.evaluation.metrics import performance_report
-from src.rule_engine import (
+from src.signals.rule_engine import (
     SignalCombiner,
     ma_crossover_rule,
     rsi_rule,
@@ -312,7 +312,7 @@ if __name__ == "__main__":
     if args.backtest:
         csv = Path(args.data)
         if not csv.exists():
-            print(f"ERROR: {csv} not found.  Run: python scripts/download_data.py")
+            print(f"ERROR: {csv} not found. Provide a local OHLCV CSV first.")
             sys.exit(1)
 
         print(f"Loading {csv}...")

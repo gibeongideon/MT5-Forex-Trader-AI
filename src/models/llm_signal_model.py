@@ -16,7 +16,7 @@ Usage:
     proba = model.predict_proba(X)  # (N, 3) — reads cache or calls API
 
     # Walk-forward (after precompute_llm_signals.py):
-    from src.walk_forward import WalkForwardConfig, WalkForwardValidator
+    from src.evaluation.walk_forward import WalkForwardConfig, WalkForwardValidator
     cfg = WalkForwardConfig(model_type="llm_signal", ...)
     WalkForwardValidator().run(X, y, prices, cfg).report()
 """
@@ -34,7 +34,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from src.model_interface import ModelInterface
+from src.models.model_interface import ModelInterface
 from src.features.bar_tokenizer import BarTokenizer, VOCAB_SIZE
 
 try:

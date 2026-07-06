@@ -1,0 +1,18 @@
+{
+  "symbol": "XAUUSD",
+  "tf": "H4",
+  "start": "2022-01-01",
+  "thr": 0.55,
+  "k_sl": 1.0,
+  "k_tp": 3.0,
+  "horizon": 6,
+  "h_min": 4,
+  "h_max": 24,
+  "t_thresh": 2.0,
+  "atr_n": 14,
+  "pip": 0.1,
+  "n_features": 44,
+  "trained": "2026-06-15",
+  "n_bars": 7116,
+  "regime": "2022+ gold bull \u2014 regime-specific, demo forward-test only"
+}

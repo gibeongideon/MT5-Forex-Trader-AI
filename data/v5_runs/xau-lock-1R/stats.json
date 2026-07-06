@@ -1,0 +1,21 @@
+{
+  "cagr_pct": 7.02,
+  "exit_mode": "lock",
+  "exit_reasons": {
+    "eod_mark": 1,
+    "lock_tp": 580,
+    "stop_loss": 523
+  },
+  "lock_r": 1.0,
+  "max_dd_pct": 27.42,
+  "n_trades": 1104,
+  "profit_factor": 1.19,
+  "sharpe": 0.576,
+  "sharpe_ci95": [
+    0.007,
+    1.277
+  ],
+  "total_return_pct": 90.6,
+  "variant": "lock_1R",
+  "win_rate_pct": 52.6
+}

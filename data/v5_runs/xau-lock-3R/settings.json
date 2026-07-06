@@ -1,0 +1,6 @@
+{
+  "exit_mode": "lock",
+  "lock_r": 3.0,
+  "strategy": "xau_lock_compare",
+  "symbol": "XAUUSD"
+}

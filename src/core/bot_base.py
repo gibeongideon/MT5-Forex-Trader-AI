@@ -6,12 +6,12 @@ Subclass this and implement on_tick() with your strategy logic.
 import signal
 import time
 from abc import ABC, abstractmethod
-from datetime import datetime, date
+from datetime import datetime, date, time as dtime
 
 import yaml
 from pathlib import Path
 
-from .mt5_connector import MT5Connector
+from .connector import Connector, get_connector, resolve_platform
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "config.yaml"
 
@@ -23,7 +23,7 @@ class BotBase(ABC):
         bot.run()           # blocks; Ctrl+C to stop
     """
 
-    def __init__(self, name: str = "Bot", tick_interval: float = 5.0):
+    def __init__(self, name: str = "Bot", tick_interval: float = 5.0, platform: str | None = None):
         with open(_CONFIG_PATH) as f:
             self.config = yaml.safe_load(f)
 
@@ -35,7 +35,8 @@ class BotBase(ABC):
         self.risk_per_trade: float = trading["risk_per_trade"]
         self.tick_interval = tick_interval  # seconds between on_tick() calls
 
-        self.conn: MT5Connector = MT5Connector()
+        self.platform = resolve_platform(platform)   # mt5 (default) | mt4
+        self.conn: Connector = get_connector(self.platform)
         self._running = False
         self._daily_loss = 0.0
         self._day_start_balance = 0.0
@@ -64,7 +65,7 @@ class BotBase(ABC):
         signal.signal(signal.SIGTERM, self._handle_signal)
 
         print(f"[{self.name}] Starting...")
-        self.conn.connect()
+        self._connect_with_retry()
         self._day_start_balance = self.conn.account_balance()
         self._running = True
 
@@ -157,6 +158,26 @@ class BotBase(ABC):
         lot = self.conn.calc_lot_size(symbol, sizing.sl_pips, sizing.risk_pct)
         return lot, sizing.sl_pips
 
+    def in_session(self) -> bool:
+        """
+        Return True if the current UTC time is within the configured trading session.
+
+        Reads trading.session_filter from config.yaml:
+            enabled   : bool   — if false, always return True
+            start_utc : "HH:MM" — session open (inclusive)
+            end_utc   : "HH:MM" — session close (exclusive)
+
+        Designed to be called at the top of on_tick() so the bot only enters
+        new trades during the active London/NY trading hours.
+        """
+        sf = self.config.get("trading", {}).get("session_filter", {})
+        if not sf.get("enabled", False):
+            return True
+        now_utc = datetime.utcnow().time()
+        start = dtime.fromisoformat(sf.get("start_utc", "00:00"))
+        end   = dtime.fromisoformat(sf.get("end_utc",   "23:59"))
+        return start <= now_utc < end
+
     def rates(self, symbol: str, timeframe: str, count: int = 200):
         return self.conn.get_rates(symbol, timeframe, count)
 
@@ -184,6 +205,23 @@ class BotBase(ABC):
             self.log(f"Daily loss limit reached ({loss_pct:.1%}). Closing all positions and stopping.")
             self.close_all()
             self.stop()
+
+    def _connect_with_retry(self, max_wait: int = 60) -> None:
+        """Retry bridge connection with backoff — waits for MT5 to start."""
+        delay = 5
+        attempt = 0
+        while True:
+            try:
+                self.conn.connect()
+                return
+            except Exception as e:
+                attempt += 1
+                print(f"[{self.name}] MT5 bridge not ready (attempt {attempt}): {e}")
+                print(f"[{self.name}] Retrying in {delay}s — start the platform with ./start_{self.platform}.sh")
+                time.sleep(delay)
+                delay = min(delay * 2, max_wait)
+                # Reset cached connection so next attempt starts fresh (mt5 rpyc / mt4 file dir)
+                self.conn.reset_singleton()
 
     def _handle_signal(self, signum, frame) -> None:
         print(f"\n[{self.name}] Signal {signum} received, shutting down...")

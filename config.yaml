@@ -24,6 +24,9 @@ pipeline:
     label_horizon: 4           # bars ahead for direction label
     label_threshold: 0.0003    # min return to count as buy/sell (else hold)
     scale: true                # StandardScaler on base features
+    fractal_enabled: true      # add fractal_corr feature (READ 7 — symmetric Pearson r)
+    fractal_min_win: 6         # smallest even window for symmetry scan
+    fractal_max_win: 60        # largest even window (M15: 60 bars = 15 hours)
 
   # ── Supervised latent encoder ─────────────────────────────────────────────
   # Set enabled: false to fall back to baseline 31-feature XGBoost.
@@ -86,9 +89,26 @@ mt5:
   server: null     # override: set MT5_SERVER in .env (e.g. "ICMarkets-Demo")
   timeout: 60000   # connection timeout ms
 
+mt4:
+  # MT4 (HFM) runs under Wine in an ISOLATED win32 prefix, alongside MT5 (~/.mt5).
+  # No rpyc bridge — automation is the PyBridge.mq4 file bridge (no DLLs needed).
+  wine_prefix: "/home/rock/.mt4"
+  # Linux path to the EA's exchange folder. "auto" locates <prefix>/.../MQL4/Files/pybridge
+  # (handles both Program Files and Roaming/Terminal/<hash> layouts).
+  file_bridge_dir: "auto"
+  request_timeout: 10.0      # seconds to wait for an EA reply (file round-trip)
+  # Credentials are entered in the MT4 GUI; kept here for records (override via .env)
+  login: null                # MT4_LOGIN
+  password: null             # MT4_PASSWORD
+  server: null               # MT4_SERVER (e.g. "HFMarketsKE-Demo")
+
 trading:
+  # Platform the bots trade through: mt5 (default, rpyc bridge) | mt4 (file bridge).
+  # Override per run with --platform or env BOT_PLATFORM.
+  platform: "mt5"
   # Risk management
   risk_per_trade: 0.01      # 1% of account balance per trade
+  max_lot: 0.50             # hard cap on lot size (realistic ceiling; risk-% on a big balance can balloon)
   max_open_trades: 5
   max_daily_loss: 0.05      # stop trading if daily loss exceeds 5%
   magic_number: 20260101    # unique ID for this bot's orders
@@ -97,6 +117,15 @@ trading:
   symbol: "EURUSD"
   timeframe: "M15"          # M1 M5 M15 M30 H1 H4 D1 W1 MN1
   lot_size: 0.01            # minimum lot, overridden by risk_per_trade if > 0
+
+  # Session filter — restrict NEW entries to active session hours (UTC / naive)
+  # EAT = UTC+3 (Nairobi). Existing positions are never auto-closed.
+  # Set enabled: true to restrict to London open → NY close only.
+  # Sessions (UTC → EAT): London 08–17 (11–20), NY 13–22 (16–01), overlap 13–17 (16–20)
+  session_filter:
+    enabled: false
+    start_utc: "08:00"      # London open  (EAT 11:00)
+    end_utc: "22:00"        # NY close     (EAT 01:00)
 
 example_bot:
   symbol: "EURUSD"
@@ -271,7 +300,8 @@ rule_bot:
 #
 # Training:  conda run -n envmt5 python scripts/train_autoencoder.py
 # Merging:   conda run -n envmt5 python scripts/build_latent_features.py
-# Comparing: conda run -n envmt5 python scripts/compare_latent_vs_baseline.py
+# Compare model variants through scripts/v5_validate_champion.py and record
+# the resulting artifacts under data/v5_runs/.
 latent_encoder:
   enabled: false                              # set true to use extended feature matrix
   window_size: 50                             # OHLCV bars per input window (bars t-W to t-1)
