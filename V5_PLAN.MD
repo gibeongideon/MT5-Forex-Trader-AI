@@ -810,7 +810,41 @@ E5a = 1H confirmation, E5b = 30M confirmation. No other constants change.
 Implementation-bug disclosure: the first run of E1-E4 contained a trail
 bug (peak seeded from the pre-entry completed H4 bar -> phantom instant
 trail activation) caught by the E1<->E0 reconciliation sanity check;
-results above are from the fixed engine (E1 now matches E0's 903 trades).
+results below are from the fixed engine (E1 now matches E0's 903 trades).
+A permanent regression test guards this
+(`test_trail_never_seeds_from_pre_entry_extreme`).
+
+### M15 Execution Results (2026-07-06)
+
+Eval 2017+ on the spliced frame, $3,000, runs `data/v5_runs/xau-m15-*`:
+
+| Cell | Sharpe | CI 95% | CAGR | MaxDD | Trades | PF |
+| ---- | ------ | ------ | ---- | ----- | ------ | -- |
+| E0 reference (H4 engine) | 0.427 | [-0.14, 1.12] | 8.6% | 26.6% | 903 | 1.27 |
+| E1 M15 market (sanity) | 0.433 | [-0.13, 1.13] | 8.6% | 26.3% | 903 | 1.27 |
+| E2a limit 0.25 ATR | 0.481 | [-0.08, 1.17] | 8.0% | 22.6% | 878 | 1.29 |
+| **E2b limit 0.50 ATR (PROMOTED)** | **0.519** | [-0.07, 1.22] | 8.5% | 24.2% | 840 | 1.31 |
+| E3 M15 trail | 0.479 | [-0.09, 1.18] | 8.7% | 23.0% | 914 | 1.30 |
+| E4 session defer | 0.478 | [-0.10, 1.18] | 8.4% | 24.9% | 886 | 1.29 |
+| E5a 1H trend confirm | 0.437 | [-0.10, 1.12] | 8.7% | 23.6% | 841 | 1.30 |
+| E5b 30M trend confirm | 0.485 | [-0.05, 1.16] | 8.7% | 23.4% | 832 | 1.29 |
+
+E2b stress: penetration fill 0.520 (fill optimism NOT the driver);
+spread x2 0.340 vs E0-at-x2 0.317 (edge preserved under cost stress);
++1 H4 delay 0.605.
+
+Verdict: E2b (0.50 ATR pullback limit, TTL 24 M15 bars then market) is
+promoted as an EXECUTION refinement: +0.09 Sharpe, -2.4pp DD, fewer
+trades, better PF, robust to all three stresses — consistent with the
+delay-2 retracement finding it was designed to harvest systematically.
+The user-requested LTF trend confirmation (E5) is honest but weaker:
+1H adds nothing, 30M adds about half of E2b's lift. Strategy-level CIs
+still include zero (single-symbol sample limits unchanged); the promoted
+cell improves the point estimate and every stress cell, not significance.
+Porting E2b into the live demo executor (limit order placement +
+TTL-to-market) is a follow-up gated on demo reconciliation; the live bot
+stays on H4 market entries until then. Tests: 7 in
+`tests/test_v5_xau_m15_exec.py`; suite 203 passed.
 
 ### XAUUSD Demo Gate (2026-07-05, in progress)
 
@@ -837,6 +871,18 @@ Cadence after the first fill: run once per completed H4 bar
 which also maintains the trailing SL via `modify_position` and handles
 flips. Reconcile journal vs broker history before considering demo-live
 passed.
+
+Update 2026-07-06: the executor now runs the PROMOTED E2b configuration
+(M15 pullback-limit entries, `configs/v5_xau_trader.json` `execution`
+block). It replays `run_trades_m15` on the spliced M15 file (self-
+refreshing from the terminal each pass), reconciles positions AND pending
+limit orders (GTC limits; the 24-M15-bar TTL is enforced by reconcile
+passes converting to market), and sizes at the limit price. Switch-over
+executed on demo: the E2b engine state agreed with the live SHORT
+(direction unchanged) and only tightened the trail SL 4262.16 -> 4227.05
+(ticket 111274851); second pass reported in-sync. First fresh E2b entry
+cycle (limit placement observable at the broker) occurs at the next H4
+signal. Suite 203 green.
 
 Agent overlay on the gold ticket (2026-07-05): `v5_xau_runner.py --overlay`
 runs the same researcher->bull->bear->PM team (src/v5/agents.py, unchanged)

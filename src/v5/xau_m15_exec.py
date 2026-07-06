@@ -246,8 +246,17 @@ def run_trades_m15(m15: pd.DataFrame, *, equity0: float = 3000.0,
                     if pos is not None else 0.0)
         equity[j] = eq + floating
 
+    open_position = dict(pos) if pos is not None else None
+    working_order = dict(order) if order is not None else None
+    if working_order is not None and working_order.get("kind") == "limit":
+        working_order["atr_h4"] = float(atr_h4[working_order["i_h4"]])
+    last_i = last_done[-1]
     if pos is not None:
         close_pos(n - 1, c[-1], "eod_mark")
         equity[-1] = eq
     return dict(trades=pd.DataFrame(trades),
-                equity=pd.Series(equity, index=idx, name="equity"))
+                equity=pd.Series(equity, index=idx, name="equity"),
+                open_position=open_position,
+                working_order=working_order,
+                forecast=float(sig_h4[last_i]) if last_i >= 0 else float("nan"),
+                atr_h4_last=float(atr_h4[last_i]) if last_i >= 0 else float("nan"))

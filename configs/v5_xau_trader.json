@@ -2,7 +2,8 @@
   "validated_by_run_ids": [
     "xau-trend-trail-conf-riskscaled",
     "xau-trend-riskscaled-costx2",
-    "xau-trend-riskscaled-delay2"
+    "xau-trend-riskscaled-delay2",
+    "xau-m15-e2b"
   ],
   "promoted_on": "2026-07-05",
   "expected_sharpe": 0.571,
@@ -22,5 +23,13 @@
   "run_id": "v5-xau-trend",
   "note": "trade-ticket engine on the validated H4 EWMAC gold forecast; flips only on opposite |forecast|>=1.0; most exits are ATR trail stops.",
   "run_id_overlay": "v5-xau-overlay",
-  "magic_overlay": 360521
+  "magic_overlay": 360521,
+  "execution": {
+    "mode": "pullback_limit",
+    "limit_k": 0.5,
+    "ttl_m15": 24,
+    "validated_by": "xau-m15-e2b",
+    "promoted_on": "2026-07-06",
+    "expected_sharpe": 0.519
+  }
 }

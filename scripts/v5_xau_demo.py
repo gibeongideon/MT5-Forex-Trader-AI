@@ -1,23 +1,25 @@
-"""v5_xau_demo.py — DEMO-ONLY MT5 executor for the validated XAUUSD engine.
+"""v5_xau_demo.py — DEMO-ONLY MT5 executor for the promoted XAUUSD engine.
 
-Phase-4 demo gate for `xau-trend-trail-conf-riskscaled`. Each invocation
-(run it once per completed 4H bar, e.g. via cron or /loop):
+Executes the E2b-promoted configuration (`xau-m15-e2b`): the validated H4
+EWMAC signal with M15 PULLBACK-LIMIT entries — after a signal, a limit order
+is placed 0.5 x ATR_H4 better than market; if unfilled for 24 M15 bars the
+engine converts it to a market entry. Broker limits are GTC; TTL expiry is
+enforced by these reconcile passes (cancel + market), not by server-side
+expiration.
 
-  1. connects to the running MT5 terminal (./start_mt5.sh) and HARD-ABORTS
-     unless the logged-in account is a DEMO account;
-  2. resolves the broker's tradable gold symbol (XAUUSD -> XAUUSD.Z etc.);
-  3. pulls fresh H4 bars from the terminal and merges them with the
-     validated CSV history (same engine, fresh data);
-  4. replays the deterministic engine to get the desired state (direction,
-     stop, pending action) and sizes lots from the ACTUAL account equity;
-  5. reconciles with the broker: open / close / flip / move the trailing SL,
-     capped at --max-lot; journals every action.
+Each invocation (once per completed 4H bar; more often is harmless):
+  1. HARD-ABORTS unless the logged-in account is a DEMO account;
+  2. resolves the broker's tradable gold symbol;
+  3. pulls fresh M15 bars into `data/XAUUSD_M15_spliced.csv` (same HFM
+     feed, gate-checked) and refreshes the H4 CSV;
+  4. replays the deterministic M15 engine for the desired state: position
+     (with trailing SL), working pullback limit, or flat;
+  5. reconciles the broker to that state (market / limit / cancel /
+     modify-SL), sized from ACTUAL account equity via order_calc_profit,
+     capped at --max-lot; every action journaled.
 
-Default is a dry run (prints the reconciliation plan). Orders are sent only
-with --execute, and only on a demo account — there is no override.
-
-    python scripts/v5_xau_demo.py                    # plan only
-    python scripts/v5_xau_demo.py --execute          # trade on demo
+Default prints the plan; orders are sent only with --execute, and only on
+a demo account — no override exists.
 """
 from __future__ import annotations
 
@@ -26,7 +28,6 @@ import json
 import sys
 from pathlib import Path
 
-import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,26 +35,29 @@ sys.path.insert(0, str(ROOT))
 
 from src.core.mt5_connector import MT5Connector
 from src.core.trade_journal import TradeJournal
-from src.v5.xau_trend import (CONTRACT, PARAMS, confidence_bucket, run_trades,
-                              wilder_atr)
+from src.v5.xau_m15_exec import run_trades_m15
+from src.v5.xau_trend import PARAMS
 
 CONFIG_FILE = ROOT / "configs" / "v5_xau_trader.json"
-CSV = ROOT / "data" / "XAUUSD_H4_long.csv"
+M15_CSV = ROOT / "data" / "XAUUSD_M15_spliced.csv"
+H4_CSV = ROOT / "data" / "XAUUSD_H4_long.csv"
 RUN_ID = "v5-xau-demo"
-SL_TOLERANCE = 0.5  # USD; don't spam modify_position for sub-tolerance moves
+SL_TOLERANCE = 0.5     # USD
+LIMIT_TOLERANCE = 0.5  # USD — replace pending if engine limit moved more
 
 
 def require_demo(conn: MT5Connector):
     info = conn.account_info()
     if info is None:
         raise SystemExit("ABORT: no account logged in on the MT5 terminal")
-    is_demo = getattr(info, "trade_mode", None) == 0 or "demo" in str(info.server).lower()
+    is_demo = getattr(info, "trade_mode", None) == 0 or \
+        "demo" in str(info.server).lower()
     if not is_demo:
         raise SystemExit(
             f"ABORT: account {info.login} on '{info.server}' is NOT a demo "
             "account. This executor refuses to trade non-demo accounts.")
     print(f"  demo account OK: {info.login} on {info.server}  "
-          f"equity ${info.equity:,.2f} {info.currency}")
+          f"equity {info.equity:,.2f} {info.currency}")
     return info
 
 
@@ -74,88 +78,160 @@ def resolve_symbol(conn: MT5Connector, base: str = "XAUUSD") -> str:
     return name
 
 
-def fresh_h4(conn: MT5Connector, symbol: str, save: bool) -> pd.DataFrame:
-    hist = pd.read_csv(CSV, parse_dates=["time"], index_col="time").sort_index()
+def fresh_data(conn: MT5Connector, symbol: str, save: bool) -> pd.DataFrame:
+    """Merge fresh terminal M15 bars into the spliced CSV; refresh H4 CSV."""
+    hist = pd.read_csv(M15_CSV, parse_dates=["time"], index_col="time").sort_index()
     hist = hist[~hist.index.duplicated(keep="last")]
-    live = conn.get_rates(symbol, "H4", count=5000)
-    live = live.rename(columns={"tick_volume": "tick_volume"})
-    live["spread"] = live["spread"] / 10.0        # broker points -> pip units
+    live = conn.get_rates(symbol, "M15", count=65_000)
+    live["spread"] = live["spread"] / 10.0
     live = live[["open", "high", "low", "close", "tick_volume", "spread"]]
-    # drop the still-forming bar: its close is not final
     now = pd.Timestamp.utcnow().tz_localize(None)
-    live = live[live.index + pd.Timedelta(hours=4) <= now + pd.Timedelta(hours=3)]
+    live = live[live.index + pd.Timedelta(minutes=15) <= now + pd.Timedelta(hours=3)]
     merged = pd.concat([hist, live])
     merged = merged[~merged.index.duplicated(keep="last")].sort_index()
-    n_new = len(merged) - len(hist)
-    print(f"  bars: csv {len(hist)} + terminal {len(live)} -> merged "
-          f"{len(merged)} ({n_new:+d} new, last {merged.index[-1]})")
-    if save and n_new > 0:
-        merged.to_csv(CSV)
-        print(f"  refreshed {CSV.name}")
+    print(f"  M15 bars: {len(hist)} -> {len(merged)} "
+          f"({len(merged) - len(hist):+d} new, last {merged.index[-1]})")
+    if save:
+        merged.to_csv(M15_CSV)
+        try:
+            h4l = conn.get_rates(symbol, "H4", count=5000)
+            h4l["spread"] = h4l["spread"] / 10.0
+            h4l = h4l[["open", "high", "low", "close",
+                       "tick_volume", "spread"]].iloc[:-1]
+            h4h = pd.read_csv(H4_CSV, parse_dates=["time"],
+                              index_col="time").sort_index()
+            h4m = pd.concat([h4h, h4l])
+            h4m[~h4m.index.duplicated(keep="last")].sort_index().to_csv(H4_CSV)
+        except Exception as e:  # noqa: BLE001 — H4 refresh is best-effort
+            print(f"  ! H4 CSV refresh skipped: {e}")
     return merged
 
 
-def desired_state(df: pd.DataFrame, cfg: dict) -> dict:
-    res = run_trades(df, exit_mode=cfg["exit_mode"], flip_mode=cfg["flip_mode"],
-                     params=cfg.get("params"))
-    pos, pending = res["open_position"], res["pending"]
-    atr = float(wilder_atr(df, PARAMS["atr_period"]).iloc[-1])
-    sig = float(res["signal"].iloc[-1])
-    if pending is not None:          # decided at last close; fills now
-        d = pending["dir"]
-        return dict(dir=d, sl_dist=PARAMS["sl_atr"] * atr,
-                    sl=None, conf=confidence_bucket(pending["strength"]),
-                    src="pending", forecast=sig)
-    if pos is not None:
-        return dict(dir=pos["dir"], sl_dist=None, sl=float(pos["sl"]),
-                    conf=pos["conf"], src="position", forecast=sig)
-    return dict(dir=0, sl=None, sl_dist=None, conf=None, src="flat", forecast=sig)
-
-
-def size_lots(conn: MT5Connector, symbol: str, direction: int, price: float,
-              sl: float, equity_acct_ccy: float, conf: str, vol_min: float,
-              vol_step: float, max_lot: float, cfg: dict,
-              force_min: bool) -> float:
-    """Loss-at-SL computed by the broker in ACCOUNT currency (KES-safe)."""
+def size_lots(conn, symbol, direction, price, sl, equity, conf, si, max_lot,
+              cfg, force_min):
     mt5 = conn._mt5
     order = mt5.ORDER_TYPE_BUY if direction > 0 else mt5.ORDER_TYPE_SELL
-    loss_1lot = mt5.order_calc_profit(order, symbol, 1.0, price, sl)
-    if loss_1lot is None or loss_1lot >= 0:
+    loss = mt5.order_calc_profit(order, symbol, 1.0, price, sl)
+    vol_min = getattr(si, "volume_min", 0.01)
+    vol_step = getattr(si, "volume_step", 0.01)
+    if loss is None or loss >= 0:
         if force_min:
-            print("  ! order_calc_profit unavailable (transient?) — "
-                  "falling back to broker min lot (demo gate)")
+            print("  ! order_calc_profit unavailable — broker min lot (demo gate)")
             return vol_min
-        print("  ! order_calc_profit unavailable — refusing to size")
         return 0.0
-    loss_1lot = abs(loss_1lot)
+    loss = abs(loss)
     risk = PARAMS["risk_frac"] * cfg["params"]["conf_risk_scale"][conf]
-    ideal = (risk * equity_acct_ccy) / loss_1lot
-    lots = round(round(ideal / vol_step) * vol_step, 2)
+    lots = round(round((risk * equity) / loss / vol_step) * vol_step, 2)
     if lots < vol_min:
         if force_min:
-            actual_risk = vol_min * loss_1lot / equity_acct_ccy
             print(f"  ! forced to min lot {vol_min}: actual risk "
-                  f"{actual_risk:.1%} of equity (target was {risk:.1%}) — "
-                  "demo-gate only")
+                  f"{vol_min * loss / equity:.1%} (target {risk:.1%}) — demo gate")
             return vol_min
         return 0.0
     return min(lots, max_lot)
 
 
+def my_pendings(conn, symbol, magic):
+    orders = conn._mt5.orders_get(symbol=symbol) or []
+    return [od for od in orders if getattr(od, "magic", 0) == magic]
+
+
+def place_limit(conn, symbol, direction, lots, price, sl, magic):
+    mt5 = conn._mt5
+    req = {"action": mt5.TRADE_ACTION_PENDING, "symbol": symbol,
+           "volume": lots,
+           "type": (mt5.ORDER_TYPE_BUY_LIMIT if direction > 0
+                    else mt5.ORDER_TYPE_SELL_LIMIT),
+           "price": round(price, 2), "sl": round(sl, 2),
+           "deviation": 20, "magic": magic, "comment": RUN_ID,
+           "type_time": mt5.ORDER_TIME_GTC,
+           "type_filling": mt5.ORDER_FILLING_RETURN}
+    r = mt5.order_send(req)
+    if r is None or r.retcode != mt5.TRADE_RETCODE_DONE:
+        raise RuntimeError(f"limit order failed: retcode="
+                           f"{getattr(r, 'retcode', None)} {mt5.last_error()}")
+    return r._asdict()
+
+
+def cancel_pending(conn, ticket):
+    mt5 = conn._mt5
+    r = mt5.order_send({"action": mt5.TRADE_ACTION_REMOVE, "order": ticket})
+    if r is None or r.retcode != mt5.TRADE_RETCODE_DONE:
+        raise RuntimeError(f"cancel failed: {getattr(r, 'retcode', None)}")
+    return r._asdict()
+
+
+def build_plan(res, held, held_dir, pendings, tick, si, acct, cfg, args, conn,
+               symbol):
+    """Reconciliation actions to move the broker to the engine's state."""
+    pos, wo = res["open_position"], res["working_order"]
+    actions = []
+    want_dir = pos["dir"] if pos else (wo["dir"] if wo else 0)
+
+    if held is not None and (want_dir == 0 or
+                             (pos is not None and held_dir != pos["dir"])):
+        actions.append(("close", dict(position=held, ticket=held.ticket)))
+        held, held_dir = None, 0
+
+    if pos is not None and held is None:
+        price = tick.ask if pos["dir"] > 0 else tick.bid
+        lots = size_lots(conn, symbol, pos["dir"], price, pos["sl"],
+                         acct.equity, pos["conf"], si, args.max_lot,
+                         cfg, args.force_min_lot)
+        if lots > 0:
+            actions.append(("open_market", dict(
+                dir=pos["dir"], lots=lots, sl=round(pos["sl"], 2),
+                why="engine holds position (catch-up)")))
+    elif pos is not None and held is not None and \
+            abs(float(held.sl or 0) - pos["sl"]) > SL_TOLERANCE:
+        actions.append(("modify_sl", dict(position=held, ticket=held.ticket,
+                                          sl=round(pos["sl"], 2))))
+
+    want_limit = wo if (wo and wo.get("kind") == "limit" and pos is None
+                        and held is None) else None
+    if want_limit is not None:
+        lim = want_limit["limit"]
+        sl = lim - want_limit["dir"] * PARAMS["sl_atr"] * want_limit["atr_h4"]
+        match = [od for od in pendings
+                 if abs(od.price_open - lim) <= LIMIT_TOLERANCE]
+        for od in [od for od in pendings if od not in match]:
+            actions.append(("cancel", dict(ticket=od.ticket)))
+        if not match:
+            lots = size_lots(conn, symbol, want_limit["dir"], lim, sl,
+                             acct.equity, "med", si, args.max_lot,
+                             cfg, args.force_min_lot)
+            if lots > 0:
+                actions.append(("place_limit", dict(
+                    dir=want_limit["dir"], lots=lots, price=round(lim, 2),
+                    sl=round(sl, 2), ttl_left=want_limit.get("ttl"))))
+    else:
+        for od in pendings:
+            actions.append(("cancel", dict(ticket=od.ticket)))
+
+    if wo is not None and wo.get("kind") in ("market", "arm") and \
+            pos is None and held is None:
+        price = tick.ask if wo["dir"] > 0 else tick.bid
+        sl = price - wo["dir"] * PARAMS["sl_atr"] * res["atr_h4_last"]
+        lots = size_lots(conn, symbol, wo["dir"], price, sl, acct.equity,
+                         "med", si, args.max_lot, cfg, args.force_min_lot)
+        if lots > 0:
+            actions.append(("open_market", dict(
+                dir=wo["dir"], lots=lots, sl=round(sl, 2),
+                why="limit TTL expired -> market")))
+    return actions
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--execute", action="store_true",
-                    help="actually send orders (demo account only)")
+    ap.add_argument("--execute", action="store_true")
     ap.add_argument("--max-lot", type=float, default=0.05)
-    ap.add_argument("--force-min-lot", action="store_true",
-                    help="if correct sizing rounds to zero, trade the broker "
-                         "minimum anyway (demo gate; prints the inflated risk)")
-    ap.add_argument("--save-data", action="store_true",
-                    help="write merged fresh bars back to the CSV")
+    ap.add_argument("--force-min-lot", action="store_true")
+    ap.add_argument("--save-data", action="store_true")
     ap.add_argument("--journal", default=str(ROOT / "data" / "live_trades.db"))
     args = ap.parse_args()
 
     cfg = json.loads(CONFIG_FILE.read_text())
+    exe = cfg.get("execution", {})
     magic = cfg["magic"]
     journal = TradeJournal(args.journal)
 
@@ -164,87 +240,68 @@ def main() -> None:
     try:
         acct = require_demo(conn)
         symbol = resolve_symbol(conn)
-        df = fresh_h4(conn, symbol, save=args.save_data)
-        want = desired_state(df, cfg)
-        print(f"  engine: {want['src']}  forecast {want['forecast']:+.2f}  "
-              f"dir {want['dir']:+d}  conf {want['conf']}")
+        m15 = fresh_data(conn, symbol, save=args.save_data)
+        res = run_trades_m15(
+            m15, limit_k=exe.get("limit_k", 0.5), trail_source="h4",
+            params={"conf_risk_scale": cfg["params"]["conf_risk_scale"]})
+        pos, wo = res["open_position"], res["working_order"]
+        state = ("POSITION " + ("LONG" if pos["dir"] > 0 else "SHORT")
+                 if pos else
+                 "LIMIT working" if wo and wo.get("kind") == "limit" else
+                 "MARKET pending" if wo else "flat")
+        print(f"  engine: forecast {res['forecast']:+.2f}  {state}")
+        if pos:
+            print(f"          entry ~{pos['entry']:.2f}  SL {pos['sl']:.2f}"
+                  f"{' (trailing)' if pos['trail_on'] else ''}  conf {pos['conf']}")
+        if wo and wo.get("kind") == "limit":
+            print(f"          limit {wo['limit']:.2f}  ttl {wo.get('ttl')} bars")
 
         mine = [p for p in (conn.get_positions(magic=magic) or [])
                 if p.symbol == symbol]
         held = mine[0] if mine else None
         held_dir = 0 if held is None else (1 if held.type == 0 else -1)
-        if held is not None:
-            print(f"  broker: {'LONG' if held_dir > 0 else 'SHORT'} "
-                  f"{held.volume} lots @ {held.price_open}  SL {held.sl}  "
-                  f"ticket {held.ticket}")
-        else:
-            print("  broker: flat (magic-filtered)")
+        pendings = my_pendings(conn, symbol, magic)
+        print(f"  broker: "
+              f"{'flat' if held is None else f'{held.volume} lots dir {held_dir:+d} SL {held.sl}'}"
+              f", {len(pendings)} pending order(s)")
 
-        si = conn.symbol_info(symbol)
-        tick = conn.get_tick(symbol)
-        actions = []
-
-        if want["dir"] == 0 and held is not None:
-            actions.append(("close", held, None, None))
-        elif want["dir"] != 0:
-            if held is not None and held_dir != want["dir"]:
-                actions.append(("close", held, None, None))
-                held = None
-            if held is None:
-                price = tick.ask if want["dir"] > 0 else tick.bid
-                sl = (want["sl"] if want["sl"] is not None
-                      else price - want["dir"] * want["sl_dist"])
-                lots = size_lots(conn, symbol, want["dir"], price, sl,
-                                 acct.equity, want["conf"],
-                                 getattr(si, "volume_min", 0.01),
-                                 getattr(si, "volume_step", 0.01),
-                                 args.max_lot, cfg, args.force_min_lot)
-                if lots > 0:
-                    actions.append(("open", None,
-                                    "buy" if want["dir"] > 0 else "sell",
-                                    dict(lots=lots, sl=round(sl, 2))))
-                else:
-                    print("  ! sized to zero lots at this equity — no open")
-            elif want["sl"] is not None and \
-                    abs(float(held.sl or 0.0) - want["sl"]) > SL_TOLERANCE:
-                actions.append(("modify_sl", held, None,
-                                dict(sl=round(want["sl"], 2))))
-
+        actions = build_plan(res, held, held_dir, pendings,
+                             conn.get_tick(symbol), conn.symbol_info(symbol),
+                             acct, cfg, args, conn, symbol)
         if not actions:
-            print("  PLAN: nothing to do (in sync)")
-        for act, position, side, extra in actions:
-            desc = (f"{act} {side or ''} {extra or ''}"
-                    if act != "close" else f"close ticket {position.ticket}")
-            print(f"  PLAN: {desc}")
+            print("  PLAN: in sync — nothing to do")
+        for act, a in actions:
+            printable = {k: v for k, v in a.items() if k != "position"}
+            print(f"  PLAN: {act} {printable}")
             if not args.execute:
                 continue
             try:
-                r = None
                 if act == "close":
-                    r = conn.close_position(position)
-                elif act == "open":
-                    r = conn.open_position(symbol, side, extra["lots"],
-                                           sl=extra["sl"], magic=magic,
-                                           comment=RUN_ID)
-                else:
-                    r = conn.modify_position(position.ticket, sl=extra["sl"],
-                                             tp=float(position.tp or 0.0))
-            except Exception as exc:  # market closed, requote, etc.
+                    r = conn.close_position(a["position"])
+                elif act == "open_market":
+                    r = conn.open_position(
+                        symbol, "buy" if a["dir"] > 0 else "sell",
+                        a["lots"], sl=a["sl"], magic=magic, comment=RUN_ID)
+                elif act == "modify_sl":
+                    r = conn.modify_position(a["position"].ticket, sl=a["sl"],
+                                             tp=float(a["position"].tp or 0.0))
+                elif act == "place_limit":
+                    r = place_limit(conn, symbol, a["dir"], a["lots"],
+                                    a["price"], a["sl"], magic)
+                elif act == "cancel":
+                    r = cancel_pending(conn, a["ticket"])
+                journal.record(dict(
+                    bot="v5_xau_demo", symbol=symbol, direction=act,
+                    entry_time=str(m15.index[-1]),
+                    entry_reason=json.dumps(printable, default=str)[:180],
+                    volume=a.get("lots", 0.0), sl_pips=a.get("sl"),
+                    magic=magic, run_id=RUN_ID, dry_run=0))
+                print(f"    EXECUTED: "
+                      f"{r.get('retcode', r) if isinstance(r, dict) else r}")
+            except Exception as exc:  # noqa: BLE001
                 print(f"    ORDER REJECTED: {exc}")
-                print("    (if 10018/market closed: rerun after market open)")
-                continue
-            journal.record(dict(
-                bot="v5_xau_demo", symbol=symbol,
-                direction=side or act, entry_time=str(df.index[-1]),
-                entry_reason=f"{want['src']} forecast={want['forecast']:+.2f}",
-                volume=extra.get("lots", getattr(position, "volume", 0.0))
-                if extra else getattr(position, "volume", 0.0),
-                sl_pips=extra.get("sl") if extra else None,
-                confidence={"low": 0.5, "med": 1.0, "high": 1.5}.get(want["conf"]),
-                magic=magic, run_id=RUN_ID, dry_run=0))
-            print(f"    EXECUTED: {r.get('retcode', r) if isinstance(r, dict) else r}")
         if not args.execute and actions:
-            print("  (dry plan — rerun with --execute to send on the demo account)")
+            print("  (dry plan — rerun with --execute)")
     finally:
         conn.disconnect()
 
