@@ -764,6 +764,40 @@ the CONTINUOUS H4 book (`h4-cta-v5`, Sharpe 0.63), where weak FX legs earn
 their place as diversifiers inside vol targeting rather than as standalone
 profit centers.
 
+### M15 Execution Experiment — Pre-Registration (2026-07-06)
+
+Registered BEFORE any cell runs. Question: does lower-timeframe EXECUTION
+(entry timing / stop granularity) improve the promoted XAUUSD H4 engine?
+The H4 signal itself stays untouched (fast signals died after costs in
+every prior repo test). Internal prior: the delay-2 stress (0.571->0.792)
+suggests post-signal retracement that a pullback entry could harvest.
+
+Data gate (blocking, passed): old M15 CSV was a foreign feed after
+2023-04-12; terminal M15 (65k bars from 2023-09-29) matches the H4 CSV
+exactly (0/4,266 bars). Ground truth = `data/XAUUSD_M15_spliced.csv`
+(old feed < 2023-09-29 20:30, terminal after; hard cutover). Resampled H4
+matches the H4 CSV on 17,491/17,491 bars outside the declared
+2023-04-12..2023-09-29 foreign-feed window (736/762 differ inside it,
+documented). E0 is therefore recomputed on this frame and the promoted
+0.571 is NOT the reference — E0 is.
+
+Cells (engine `src/v5/xau_m15_exec.py`, CLI `scripts/v5_xau_m15_backtest.py`,
+all constants frozen, every cell reported, no post-hoc additions):
+
+- E0 H4 engine on resampled frame (reference)
+- E1 M15 sim, market entry at first M15 open after H4 signal completes
+- E2a/E2b pullback limit at P0 - dir*k*ATR_H4, k in {0.25, 0.50}, TTL 24
+  M15 bars then market; limit cancelled if a newer H4 bar invalidates the
+  signal; fills on touch at limit + half-spread (no slippage)
+- E3 trail ratchet from M15 extremes (same 2xATR_H4 distance, one-bar rule)
+- E4 entries deferred out of 00:00-07:59 server bars (exits always active)
+
+Locked: limits apply to flip re-entries (closing leg market, immediate);
+E4 defers rather than skips; promotion = Sharpe AND CI-low > E0 on the
+identical daily-resampled metric; winner stress = spread x2, +1 H4 delay,
+and for E2 additionally 1-pip penetration fills; E4 wins additionally
+require fill-bar spread distribution comparison vs E1.
+
 ### XAUUSD Demo Gate (2026-07-05, in progress)
 
 `scripts/v5_xau_demo.py` is the first V5 order-send path. Guards: hard

@@ -1,0 +1,18 @@
+{
+  "cagr_pct": 8.66,
+  "cell": "E3",
+  "exit_reasons": {
+    "eod_mark": 1,
+    "stop_loss": 296,
+    "trail_stop": 617
+  },
+  "max_dd_pct": 22.96,
+  "n_trades": 914,
+  "profit_factor": 1.3,
+  "sharpe": 0.479,
+  "sharpe_ci95": [
+    -0.086,
+    1.18
+  ],
+  "win_rate_pct": 39.9
+}
