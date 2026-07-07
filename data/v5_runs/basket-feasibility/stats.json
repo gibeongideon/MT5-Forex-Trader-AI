@@ -1,0 +1,1396 @@
+{
+  "candidates": [
+    {
+      "basket": "full11",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 841582.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 862.0,
+              "leverage": 0.86,
+              "n_round_zero": 6,
+              "round_zero": [
+                "GOLD",
+                "SILVER",
+                "DAX",
+                "EURUSD",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 11696.0,
+              "leverage": 1.17,
+              "n_round_zero": 3,
+              "round_zero": [
+                "GOLD",
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 130755.0,
+              "leverage": 1.31,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 420791.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1816.0,
+              "leverage": 1.82,
+              "n_round_zero": 5,
+              "round_zero": [
+                "GOLD",
+                "SILVER",
+                "EURUSD",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 25981.0,
+              "leverage": 2.6,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 261503.0,
+              "leverage": 2.62,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 280527.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3839.0,
+              "leverage": 3.84,
+              "n_round_zero": 4,
+              "round_zero": [
+                "GOLD",
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 41198.0,
+              "leverage": 4.12,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 391433.0,
+              "leverage": 3.91,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 210396.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 4624.0,
+              "leverage": 4.62,
+              "n_round_zero": 4,
+              "round_zero": [
+                "GOLD",
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 52367.0,
+              "leverage": 5.24,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 517940.0,
+              "leverage": 5.18,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        }
+      },
+      "cagr_pct": 10.24,
+      "ci95": [
+        0.452,
+        1.424
+      ],
+      "dsr": 0.997,
+      "kept": [
+        "GOLD",
+        "SILVER",
+        "UST10Y",
+        "UST30Y",
+        "SPX",
+        "DAX",
+        "WTI",
+        "BRENT",
+        "EURUSD",
+        "USDJPY",
+        "BTC"
+      ],
+      "maxdd_pct": 22.8,
+      "n": 11,
+      "sharpe": 0.935
+    },
+    {
+      "basket": "basket5_v4",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 19388.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1034.0,
+              "leverage": 1.03,
+              "n_round_zero": 2,
+              "round_zero": [
+                "GOLD",
+                "EURUSD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 19707.0,
+              "leverage": 1.97,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 170684.0,
+              "leverage": 1.71,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 9694.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3263.0,
+              "leverage": 3.26,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 33972.0,
+              "leverage": 3.4,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 341293.0,
+              "leverage": 3.41,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 6463.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 4374.0,
+              "leverage": 4.37,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 53679.0,
+              "leverage": 5.37,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 510816.0,
+              "leverage": 5.11,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 4847.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 5518.0,
+              "leverage": 5.52,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 67793.0,
+              "leverage": 6.78,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 685783.0,
+              "leverage": 6.86,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 8.6,
+      "ci95": [
+        0.34,
+        1.212
+      ],
+      "dsr": 0.987,
+      "kept": [
+        "GOLD",
+        "UST10Y",
+        "SPX",
+        "WTI",
+        "EURUSD"
+      ],
+      "maxdd_pct": 18.8,
+      "n": 5,
+      "sharpe": 0.778
+    },
+    {
+      "basket": "six_class_liquid",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 19388.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 959.0,
+              "leverage": 0.96,
+              "n_round_zero": 3,
+              "round_zero": [
+                "GOLD",
+                "EURUSD",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 18066.0,
+              "leverage": 1.81,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 155565.0,
+              "leverage": 1.56,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 9694.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3043.0,
+              "leverage": 3.04,
+              "n_round_zero": 2,
+              "round_zero": [
+                "GOLD",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 31114.0,
+              "leverage": 3.11,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 309819.0,
+              "leverage": 3.1,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 6463.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 4003.0,
+              "leverage": 4.0,
+              "n_round_zero": 2,
+              "round_zero": [
+                "GOLD",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 49180.0,
+              "leverage": 4.92,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 466048.0,
+              "leverage": 4.66,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 4847.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 5039.0,
+              "leverage": 5.04,
+              "n_round_zero": 2,
+              "round_zero": [
+                "GOLD",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 62226.0,
+              "leverage": 6.22,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 625970.0,
+              "leverage": 6.26,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 9.34,
+      "ci95": [
+        0.396,
+        1.287
+      ],
+      "dsr": 0.994,
+      "kept": [
+        "GOLD",
+        "UST10Y",
+        "SPX",
+        "WTI",
+        "EURUSD",
+        "BTC"
+      ],
+      "maxdd_pct": 20.3,
+      "n": 6,
+      "sharpe": 0.84
+    },
+    {
+      "basket": "six_class_granular",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 452888.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 643.0,
+              "leverage": 0.64,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 7821.0,
+              "leverage": 0.78,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 85417.0,
+              "leverage": 0.85,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 226444.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1479.0,
+              "leverage": 1.48,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 18538.0,
+              "leverage": 1.85,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 174162.0,
+              "leverage": 1.74,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 150963.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2122.0,
+              "leverage": 2.12,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 26359.0,
+              "leverage": 2.64,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 419918.0,
+              "leverage": 4.2,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 113222.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2839.0,
+              "leverage": 2.84,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 33362.0,
+              "leverage": 3.34,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 509407.0,
+              "leverage": 5.09,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 10.11,
+      "ci95": [
+        0.411,
+        1.443
+      ],
+      "dsr": 0.997,
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "SPX",
+        "BRENT",
+        "USDJPY",
+        "BTC"
+      ],
+      "maxdd_pct": 27.2,
+      "n": 6,
+      "sharpe": 0.925
+    },
+    {
+      "basket": "five_no_crypto",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 450995.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 830.0,
+              "leverage": 0.83,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 8172.0,
+              "leverage": 0.82,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 95528.0,
+              "leverage": 0.96,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 225498.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1628.0,
+              "leverage": 1.63,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 19865.0,
+              "leverage": 1.99,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 191057.0,
+              "leverage": 1.91,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 150332.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2458.0,
+              "leverage": 2.46,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 27956.0,
+              "leverage": 2.8,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 450290.0,
+              "leverage": 4.5,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 112749.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3256.0,
+              "leverage": 3.26,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 39649.0,
+              "leverage": 3.96,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 545818.0,
+              "leverage": 5.46,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 8.4,
+      "ci95": [
+        0.262,
+        1.304
+      ],
+      "dsr": 0.984,
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "SPX",
+        "BRENT",
+        "USDJPY"
+      ],
+      "maxdd_pct": 24.1,
+      "n": 5,
+      "sharpe": 0.782
+    },
+    {
+      "basket": "five_no_energy",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 409660.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 562.0,
+              "leverage": 0.56,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 6504.0,
+              "leverage": 0.65,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 75991.0,
+              "leverage": 0.76,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 204830.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1198.0,
+              "leverage": 1.2,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 15940.0,
+              "leverage": 1.59,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 152458.0,
+              "leverage": 1.52,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 136553.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1760.0,
+              "leverage": 1.76,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 22444.0,
+              "leverage": 2.24,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 388788.0,
+              "leverage": 3.89,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 102415.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2321.0,
+              "leverage": 2.32,
+              "n_round_zero": 3,
+              "round_zero": [
+                "SILVER",
+                "USDJPY",
+                "BTC"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 31692.0,
+              "leverage": 3.17,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 464666.0,
+              "leverage": 4.65,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 10.82,
+      "ci95": [
+        0.463,
+        1.498
+      ],
+      "dsr": 0.998,
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "SPX",
+        "USDJPY",
+        "BTC"
+      ],
+      "maxdd_pct": 30.2,
+      "n": 5,
+      "sharpe": 0.977
+    },
+    {
+      "basket": "four_core",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 355354.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 710.0,
+              "leverage": 0.71,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 7178.0,
+              "leverage": 0.72,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 85904.0,
+              "leverage": 0.86,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 177677.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1421.0,
+              "leverage": 1.42,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 17877.0,
+              "leverage": 1.79,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 335856.0,
+              "leverage": 3.36,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 118451.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2131.0,
+              "leverage": 2.13,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 25056.0,
+              "leverage": 2.51,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 421760.0,
+              "leverage": 4.22,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 88839.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2842.0,
+              "leverage": 2.84,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 35868.0,
+              "leverage": 3.59,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 511260.0,
+              "leverage": 5.11,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 9.06,
+      "ci95": [
+        0.337,
+        1.362
+      ],
+      "dsr": 0.991,
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "SPX",
+        "USDJPY"
+      ],
+      "maxdd_pct": 21.4,
+      "n": 4,
+      "sharpe": 0.841
+    },
+    {
+      "basket": "three_granular",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 315777.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 452.0,
+              "leverage": 0.45,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 7474.0,
+              "leverage": 0.75,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 57133.0,
+              "leverage": 0.57,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 157888.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 791.0,
+              "leverage": 0.79,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 11427.0,
+              "leverage": 1.14,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 274718.0,
+              "leverage": 2.75,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 105259.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1242.0,
+              "leverage": 1.24,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 18900.0,
+              "leverage": 1.89,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 331851.0,
+              "leverage": 3.32,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 78944.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1581.0,
+              "leverage": 1.58,
+              "n_round_zero": 2,
+              "round_zero": [
+                "SILVER",
+                "USDJPY"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 22853.0,
+              "leverage": 2.29,
+              "n_round_zero": 1,
+              "round_zero": [
+                "USDJPY"
+              ]
+            },
+            "100000.0": {
+              "gross_notional": 389097.0,
+              "leverage": 3.89,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 5.69,
+      "ci95": [
+        0.043,
+        1.074
+      ],
+      "dsr": 0.9,
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "USDJPY"
+      ],
+      "maxdd_pct": 22.6,
+      "n": 3,
+      "sharpe": 0.566
+    },
+    {
+      "basket": "three_classic",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 14399.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 1066.0,
+              "leverage": 1.07,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 15352.0,
+              "leverage": 1.54,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 140305.0,
+              "leverage": 1.4,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 7200.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2207.0,
+              "leverage": 2.21,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 26311.0,
+              "leverage": 2.63,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 280501.0,
+              "leverage": 2.81,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 4800.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3273.0,
+              "leverage": 3.27,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 41663.0,
+              "leverage": 4.17,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 420806.0,
+              "leverage": 4.21,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 3600.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 4339.0,
+              "leverage": 4.34,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 56979.0,
+              "leverage": 5.7,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 561112.0,
+              "leverage": 5.61,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 7.81,
+      "ci95": [
+        0.3,
+        1.207
+      ],
+      "dsr": 0.977,
+      "kept": [
+        "GOLD",
+        "UST10Y",
+        "SPX"
+      ],
+      "maxdd_pct": 23.2,
+      "n": 3,
+      "sharpe": 0.745
+    },
+    {
+      "basket": "two_gold_rates",
+      "by_vol": {
+        "0.1": {
+          "min_viable": 12092.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 989.0,
+              "leverage": 0.99,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 14793.0,
+              "leverage": 1.48,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 138993.0,
+              "leverage": 1.39,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.2": {
+          "min_viable": 6046.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 2087.0,
+              "leverage": 2.09,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 29586.0,
+              "leverage": 2.96,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 282233.0,
+              "leverage": 2.82,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.3": {
+          "min_viable": 4031.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 3076.0,
+              "leverage": 3.08,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 39911.0,
+              "leverage": 3.99,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 421226.0,
+              "leverage": 4.21,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        },
+        "0.4": {
+          "min_viable": 3023.0,
+          "tiers": {
+            "1000.0": {
+              "gross_notional": 4174.0,
+              "leverage": 4.17,
+              "n_round_zero": 1,
+              "round_zero": [
+                "GOLD"
+              ]
+            },
+            "10000.0": {
+              "gross_notional": 54704.0,
+              "leverage": 5.47,
+              "n_round_zero": 0,
+              "round_zero": []
+            },
+            "100000.0": {
+              "gross_notional": 560109.0,
+              "leverage": 5.6,
+              "n_round_zero": 0,
+              "round_zero": []
+            }
+          }
+        }
+      },
+      "cagr_pct": 5.09,
+      "ci95": [
+        0.063,
+        0.953
+      ],
+      "dsr": 0.856,
+      "kept": [
+        "GOLD",
+        "UST10Y"
+      ],
+      "maxdd_pct": 26.1,
+      "n": 2,
+      "sharpe": 0.508
+    }
+  ],
+  "contract_sizes_are_best_effort": true,
+  "eval_start": "2010-01-01",
+  "note": "Sharpe invariant to target_vol; vol is a deployability knob. VERIFY contract sizes in terminal before deploying.",
+  "pbo_across_candidates": 0.635,
+  "recommendation_by_tier": {
+    "1000": null,
+    "10000": {
+      "basket": "six_class_liquid",
+      "ci95": [
+        0.396,
+        1.287
+      ],
+      "kept": [
+        "GOLD",
+        "UST10Y",
+        "SPX",
+        "WTI",
+        "EURUSD",
+        "BTC"
+      ],
+      "min_viable": 9694.0,
+      "round_zero": [],
+      "sharpe": 0.84,
+      "target_vol": 0.2
+    },
+    "100000": {
+      "basket": "four_core",
+      "ci95": [
+        0.337,
+        1.362
+      ],
+      "kept": [
+        "SILVER",
+        "UST30Y",
+        "SPX",
+        "USDJPY"
+      ],
+      "min_viable": 88839.0,
+      "round_zero": [],
+      "sharpe": 0.841,
+      "target_vol": 0.4
+    }
+  },
+  "tiers": [
+    1000.0,
+    10000.0,
+    100000.0
+  ],
+  "vol_sweep": [
+    0.1,
+    0.2,
+    0.3,
+    0.4
+  ]
+}

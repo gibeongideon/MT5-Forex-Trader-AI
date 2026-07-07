@@ -1,0 +1,84 @@
+{
+  "candidates": {
+    "basket5_v4": [
+      "GOLD",
+      "UST10Y",
+      "SPX",
+      "WTI",
+      "EURUSD"
+    ],
+    "five_no_crypto": [
+      "SILVER",
+      "UST30Y",
+      "SPX",
+      "BRENT",
+      "USDJPY"
+    ],
+    "five_no_energy": [
+      "SILVER",
+      "UST30Y",
+      "SPX",
+      "USDJPY",
+      "BTC"
+    ],
+    "four_core": [
+      "SILVER",
+      "UST30Y",
+      "SPX",
+      "USDJPY"
+    ],
+    "full11": [
+      "GOLD",
+      "SILVER",
+      "UST10Y",
+      "UST30Y",
+      "SPX",
+      "DAX",
+      "WTI",
+      "BRENT",
+      "EURUSD",
+      "USDJPY",
+      "BTC"
+    ],
+    "six_class_granular": [
+      "SILVER",
+      "UST30Y",
+      "SPX",
+      "BRENT",
+      "USDJPY",
+      "BTC"
+    ],
+    "six_class_liquid": [
+      "GOLD",
+      "UST10Y",
+      "SPX",
+      "WTI",
+      "EURUSD",
+      "BTC"
+    ],
+    "three_classic": [
+      "GOLD",
+      "UST10Y",
+      "SPX"
+    ],
+    "three_granular": [
+      "SILVER",
+      "UST30Y",
+      "USDJPY"
+    ],
+    "two_gold_rates": [
+      "GOLD",
+      "UST10Y"
+    ]
+  },
+  "lever_base": {
+    "buffer_frac": 0.4,
+    "carry": false,
+    "ml_combine": false,
+    "rebalance": "monthly",
+    "regime": "none",
+    "sleeve": "combined",
+    "speeds": "slow"
+  },
+  "strategy": "basket_small_account_feasibility"
+}
