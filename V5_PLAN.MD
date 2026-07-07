@@ -452,6 +452,77 @@ conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-dela
 conda run -n envmt5 python scripts/v5_h4_cta_backtest.py --run-id h4-cta-v5-recent --eval-start 2021-01-01
 ```
 
+### Small-Account Basket Feasibility (2026-07-07)
+
+Goal: make the continuous basket edge deployable on the real account. The
+promoted champion (`configs/v5_basket_champion.json`, basket10-btc, Sharpe
+0.935) needs ~$66.7k min-viable equity; the live HFM demo is ~$820 (106k KES).
+Study: `scripts/v5_basket_feasibility.py` → `data/v5_runs/basket-feasibility/`,
+tests `tests/test_v5_basket_feasibility.py` (4). Reuses the validated causal
+path (`lever_positions` + `mtm_pnl_price_units`) so Sharpe is comparable to the
+promoted run. Two load-bearing facts: (a) diversification comes from asset
+CLASSES not instrument count (Universe-Widening Ablation above); (b) Sharpe is
+cost-adjusted-INVARIANT to `target_vol` (scales net and its std together), so
+`target_vol` is a pure DEPLOYABILITY knob — raising it shrinks min-viable
+equity without changing Sharpe, until leverage/DD get imprudent.
+
+BROKER REALITY (verified live 2026-07-07 via `symbol_select`+`symbol_info` on
+HFMarketsKE-Demo2): all classes ARE offered but under suffixed tickers the old
+runner map missed — rates `US10YR.F` (NO 30y; `US30.F` is the Dow index), US
+indices `US500.F/US100.F/US30.F`, crypto `#BTCUSD`. True min-lot USD notionals:
+GOLD ~$4,140 (expensive), SILVER ~$400, **US10YR.F ~$10,936 (vmin=1.0!)**,
+US500.F ~$740, GER40 ~$250, UK100 ~$107, USOIL/UKOIL ~$770, EURUSD ~$1,140,
+USDJPY ~$1,000, #BTCUSD ~$660. The two small-account blockers are GOLD (big
+min-lot × tiny target weight → the original $66k) and RATES (`vmin=1.0` forces
+a ~$11k min-lot). Fix metals with SILVER; rates simply cannot be traded below
+~$20k.
+
+Validated candidates (eval 2010+, base vol 0.10, HFM-tradable only):
+
+| Basket | n | Sharpe | CI 95% | DSR | MaxDD | min-viable @vol0.10 / 0.20 / 0.40 |
+| ------ | - | ------ | ------ | --- | ----- | --------------------------------- |
+| six_class (SILVER,UST10Y,SPX,WTI,USDJPY,BTC) | 6 | 0.932 | [0.45,1.41] | 0.999 | 25.9% | $18.8k / $9.4k / $4.7k |
+| full10 (no 30y) | 10 | 0.864 | [0.39,1.34] | 0.998 | 21.0% | $35.8k / $17.9k / $9.0k |
+| four_core (SILVER,UST10Y,SPX,USDJPY) | 4 | 0.794 | [0.27,1.32] | 0.994 | 20.4% | $16.1k / $8.1k / $4.0k |
+| five_no_rates (SILVER,SPX,WTI,USDJPY,BTC) | 5 | 0.792 | [0.29,1.26] | 0.996 | 37.5% | $14.6k / $7.3k / $3.7k |
+| basket5_v4 (GOLD,UST10Y,SPX,WTI,EURUSD) | 5 | 0.778 | [0.34,1.21] | 0.995 | 18.8% | $19.4k / $9.7k / $4.8k |
+| four_no_rates (SILVER,SPX,WTI,USDJPY) | 4 | 0.706 | [0.21,1.18] | 0.99 | 32.2% | $6.8k / $3.4k / $1.7k |
+| three_no_rates (SILVER,SPX,USDJPY) | 3 | 0.680 | [0.18,1.18] | 0.98 | 34.2% | $3.9k / $1.9k / $1.0k |
+| two_metal_eq (SILVER,SPX) | 2 | 0.570 | [0.10,1.06] | 0.947 | 29.1% | $4.3k / $2.1k / $1.1k |
+
+PBO across candidates (CSCV): 0.540 — the top ~4 are statistically clustered
+(all CI ≈ [0.4,1.4]); do not over-read the exact ranking.
+
+TIERED RECOMMENDATION (best validated Sharpe that FITS the account):
+
+- **~$820 demo (now):** below even the smallest viable diversified book
+  (three_no_rates needs ~$965 at an aggressive 40% vol). Options: fund the demo
+  up to a tier below, or accept a 2-instrument SILVER+SPX book at high vol
+  (Sharpe 0.57, DD ~29%). Recommend funding the demo.
+- **$3k:** `four_no_rates` (SILVER,SPX,WTI,USDJPY) @ vol 0.30 — Sharpe 0.706,
+  CI [0.21,1.18], min-viable $2.3k. Note ~32% DD at that vol.
+- **$10k+:** `six_class` @ vol 0.20 — Sharpe **0.932**, CI [0.45,1.41],
+  min-viable $9.4k. Recovers the FULL champion Sharpe with only 6 instruments;
+  the winner and the deployment target.
+- **$25k+:** `six_class` @ vol 0.10 (DD 25.9%) or full10 for lower DD.
+
+KEY FINDINGS. (1) `six_class` (6 instruments, 6 classes) matches the 11-symbol
+champion (0.932 vs 0.935) — instrument count beyond one-per-class adds nothing,
+confirming the class-diversification thesis. (2) Rates is the binding
+small-account constraint (`vmin=1.0`); dropping it costs ~0.13–0.23 Sharpe but
+unlocks sub-$3k trading. (3) `target_vol` cleanly trades DD for deployability at
+constant Sharpe. Caveats: contract sizes verified on the demo but re-confirm on
+the live server; `target_vol` 0.30–0.40 implies 30–38% drawdowns — a risk
+choice, not free. Deployment blockers remaining before live: refresh the D1
+CSVs from MT5 (data was 21d stale), fix the runner's `MT5_MAP` to the suffixed
+tickers (`US10YR.F`/`US500.F`/`#BTCUSD`), and run the paper/dry-run
+reconciliation gate on the chosen tier basket. Live config unchanged (research).
+
+```bash
+conda run -n envmt5 python -m pytest tests/test_v5_basket_feasibility.py -q
+conda run -n envmt5 python scripts/v5_basket_feasibility.py --tiers 3000,10000,25000,100000
+```
+
 ### Phase A Lever Experiments — Pre-Registration (2026-07-05)
 
 Registered BEFORE any lever run was executed. Engine: `src/v5/levers.py`

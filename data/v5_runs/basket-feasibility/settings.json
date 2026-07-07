@@ -9,29 +9,34 @@
     ],
     "five_no_crypto": [
       "SILVER",
-      "UST30Y",
+      "UST10Y",
       "SPX",
-      "BRENT",
+      "WTI",
       "USDJPY"
     ],
-    "five_no_energy": [
+    "five_no_rates": [
       "SILVER",
-      "UST30Y",
       "SPX",
+      "WTI",
       "USDJPY",
       "BTC"
     ],
     "four_core": [
       "SILVER",
-      "UST30Y",
+      "UST10Y",
       "SPX",
       "USDJPY"
     ],
-    "full11": [
+    "four_no_rates": [
+      "SILVER",
+      "SPX",
+      "WTI",
+      "USDJPY"
+    ],
+    "full10": [
       "GOLD",
       "SILVER",
       "UST10Y",
-      "UST30Y",
       "SPX",
       "DAX",
       "WTI",
@@ -40,20 +45,12 @@
       "USDJPY",
       "BTC"
     ],
-    "six_class_granular": [
+    "six_class": [
       "SILVER",
-      "UST30Y",
-      "SPX",
-      "BRENT",
-      "USDJPY",
-      "BTC"
-    ],
-    "six_class_liquid": [
-      "GOLD",
       "UST10Y",
       "SPX",
       "WTI",
-      "EURUSD",
+      "USDJPY",
       "BTC"
     ],
     "three_classic": [
@@ -61,14 +58,14 @@
       "UST10Y",
       "SPX"
     ],
-    "three_granular": [
+    "three_no_rates": [
       "SILVER",
-      "UST30Y",
+      "SPX",
       "USDJPY"
     ],
-    "two_gold_rates": [
-      "GOLD",
-      "UST10Y"
+    "two_metal_eq": [
+      "SILVER",
+      "SPX"
     ]
   },
   "lever_base": {

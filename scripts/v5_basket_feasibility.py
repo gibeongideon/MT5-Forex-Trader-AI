@@ -249,7 +249,7 @@ def main() -> None:
            "contract_sizes_are_best_effort": True,
            "note": "Sharpe invariant to target_vol; vol is a deployability knob. "
                    "VERIFY contract sizes in terminal before deploying."}
-    eq_ref = (1.0 + base_meta["full11"][3]["net"].fillna(0.0)).cumprod()
+    eq_ref = (1.0 + base_meta["full10"][3]["net"].fillna(0.0)).cumprod()
     V5ArtifactWriter().write_run(
         run_id=args.run_id,
         settings={"strategy": "basket_small_account_feasibility",
