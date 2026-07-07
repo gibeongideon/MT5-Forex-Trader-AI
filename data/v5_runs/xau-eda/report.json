@@ -1,0 +1,372 @@
+{
+  "data": "XAUUSD_H4_long.csv",
+  "bars": 18407,
+  "date_range": [
+    "2015-01-01 20:00:00",
+    "2026-07-07 08:00:00"
+  ],
+  "engine_trades": 1014,
+  "reversal_horizon_bars": 6,
+  "trend_run_length": {
+    "n_runs": 1648,
+    "mean_bars": 11.17,
+    "median_bars": 1,
+    "p90_bars": 1,
+    "max_bars": 4157
+  },
+  "forecast_autocorr": {
+    "acf_lag1": 0.999,
+    "acf_lag6": 0.991,
+    "acf_lag24": 0.953,
+    "half_life_bars": null,
+    "max_lag": 60
+  },
+  "abs_return_autocorr": {
+    "acf_lag1": 0.191,
+    "acf_lag6": 0.226,
+    "acf_lag24": 0.145,
+    "half_life_bars": 1,
+    "max_lag": 60
+  },
+  "reversal_base_rate_overall": 0.017,
+  "reversal_by_state": [
+    {
+      "conf": "low",
+      "vol": "lo",
+      "session": "london_ny",
+      "n": 517,
+      "reversal_rate": 0.052
+    },
+    {
+      "conf": "low",
+      "vol": "lo",
+      "session": "asia",
+      "n": 1284,
+      "reversal_rate": 0.048
+    },
+    {
+      "conf": "low",
+      "vol": "lo",
+      "session": "london",
+      "n": 1198,
+      "reversal_rate": 0.047
+    },
+    {
+      "conf": "low",
+      "vol": "lo",
+      "session": "ny",
+      "n": 726,
+      "reversal_rate": 0.047
+    },
+    {
+      "conf": "low",
+      "vol": "mid",
+      "session": "london",
+      "n": 685,
+      "reversal_rate": 0.038
+    },
+    {
+      "conf": "low",
+      "vol": "mid",
+      "session": "london_ny",
+      "n": 406,
+      "reversal_rate": 0.032
+    },
+    {
+      "conf": "low",
+      "vol": "mid",
+      "session": "asia",
+      "n": 635,
+      "reversal_rate": 0.028
+    },
+    {
+      "conf": "low",
+      "vol": "mid",
+      "session": "ny",
+      "n": 416,
+      "reversal_rate": 0.026
+    },
+    {
+      "conf": "low",
+      "vol": "hi",
+      "session": "asia",
+      "n": 444,
+      "reversal_rate": 0.023
+    },
+    {
+      "conf": "low",
+      "vol": "hi",
+      "session": "london_ny",
+      "n": 284,
+      "reversal_rate": 0.021
+    },
+    {
+      "conf": "low",
+      "vol": "hi",
+      "session": "london",
+      "n": 493,
+      "reversal_rate": 0.02
+    },
+    {
+      "conf": "low",
+      "vol": "hi",
+      "session": "ny",
+      "n": 295,
+      "reversal_rate": 0.02
+    },
+    {
+      "conf": "high",
+      "vol": "hi",
+      "session": "asia",
+      "n": 882,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "hi",
+      "session": "london",
+      "n": 928,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "hi",
+      "session": "london_ny",
+      "n": 502,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "hi",
+      "session": "ny",
+      "n": 546,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "lo",
+      "session": "asia",
+      "n": 445,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "lo",
+      "session": "london",
+      "n": 411,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "lo",
+      "session": "london_ny",
+      "n": 156,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "lo",
+      "session": "ny",
+      "n": 232,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "mid",
+      "session": "asia",
+      "n": 710,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "mid",
+      "session": "london",
+      "n": 685,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "mid",
+      "session": "london_ny",
+      "n": 313,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "high",
+      "vol": "mid",
+      "session": "ny",
+      "n": 414,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "hi",
+      "session": "asia",
+      "n": 440,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "hi",
+      "session": "london",
+      "n": 477,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "hi",
+      "session": "london_ny",
+      "n": 283,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "hi",
+      "session": "ny",
+      "n": 302,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "lo",
+      "session": "asia",
+      "n": 301,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "lo",
+      "session": "london",
+      "n": 248,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "lo",
+      "session": "london_ny",
+      "n": 103,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "lo",
+      "session": "ny",
+      "n": 161,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "mid",
+      "session": "asia",
+      "n": 281,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "mid",
+      "session": "london",
+      "n": 297,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "mid",
+      "session": "london_ny",
+      "n": 146,
+      "reversal_rate": 0.0
+    },
+    {
+      "conf": "med",
+      "vol": "mid",
+      "session": "ny",
+      "n": 160,
+      "reversal_rate": 0.0
+    }
+  ],
+  "trade_win_map": [
+    {
+      "confidence": "high",
+      "session": "asia",
+      "n": 84,
+      "win_rate": 0.488,
+      "mean_r": 0.275
+    },
+    {
+      "confidence": "low",
+      "session": "asia",
+      "n": 58,
+      "win_rate": 0.483,
+      "mean_r": 0.17
+    },
+    {
+      "confidence": "med",
+      "session": "asia",
+      "n": 31,
+      "win_rate": 0.452,
+      "mean_r": 0.539
+    },
+    {
+      "confidence": "high",
+      "session": "ny",
+      "n": 117,
+      "win_rate": 0.427,
+      "mean_r": 0.259
+    },
+    {
+      "confidence": "med",
+      "session": "london_ny",
+      "n": 90,
+      "win_rate": 0.422,
+      "mean_r": -0.023
+    },
+    {
+      "confidence": "med",
+      "session": "ny",
+      "n": 62,
+      "win_rate": 0.419,
+      "mean_r": -0.021
+    },
+    {
+      "confidence": "high",
+      "session": "london_ny",
+      "n": 120,
+      "win_rate": 0.392,
+      "mean_r": -0.009
+    },
+    {
+      "confidence": "low",
+      "session": "ny",
+      "n": 67,
+      "win_rate": 0.388,
+      "mean_r": -0.021
+    },
+    {
+      "confidence": "low",
+      "session": "london",
+      "n": 81,
+      "win_rate": 0.37,
+      "mean_r": -0.026
+    },
+    {
+      "confidence": "high",
+      "session": "london",
+      "n": 129,
+      "win_rate": 0.357,
+      "mean_r": -0.031
+    },
+    {
+      "confidence": "med",
+      "session": "london",
+      "n": 68,
+      "win_rate": 0.338,
+      "mean_r": 0.013
+    },
+    {
+      "confidence": "low",
+      "session": "london_ny",
+      "n": 107,
+      "win_rate": 0.28,
+      "mean_r": -0.083
+    }
+  ]
+}

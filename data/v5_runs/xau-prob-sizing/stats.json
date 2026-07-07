@@ -1,0 +1,203 @@
+{
+  "auc_uplift_vs_control": 0.008,
+  "const_multiplier": 0.76,
+  "exog_legs": [
+    "USDJPY",
+    "EURUSD",
+    "GBPUSD"
+  ],
+  "kill_criterion": "abandon meta if AUC<=0.53 AND const_ctrl matches meta_full within CI",
+  "note": "identical R-based equity metric for all rows; engine untouched (research-only)",
+  "oos_auc": {
+    "fold_aucs_full": [
+      0.483,
+      0.498,
+      0.526,
+      0.512,
+      0.526,
+      0.452,
+      0.543,
+      0.502,
+      0.331
+    ],
+    "meta_full": 0.486,
+    "meta_xauonly": 0.478
+  },
+  "pbo": 0.409,
+  "results": [
+    {
+      "dsr": 0.909,
+      "max_dd_pct": 22.57,
+      "n_taken": 816,
+      "n_trades": 816,
+      "sharpe": 0.756,
+      "sharpe_ci95": [
+        0.241,
+        1.256
+      ],
+      "total_return_pct": 174.8,
+      "variant": "baseline",
+      "win_rate_pct": 41.1
+    },
+    {
+      "dsr": 0.931,
+      "max_dd_pct": 19.15,
+      "n_taken": 816,
+      "n_trades": 816,
+      "sharpe": 0.781,
+      "sharpe_ci95": [
+        0.277,
+        1.26
+      ],
+      "total_return_pct": 192.4,
+      "variant": "vol_target",
+      "win_rate_pct": 41.1
+    },
+    {
+      "dsr": 0.921,
+      "max_dd_pct": 18.02,
+      "n_taken": 816,
+      "n_trades": 816,
+      "sharpe": 0.776,
+      "sharpe_ci95": [
+        0.257,
+        1.278
+      ],
+      "total_return_pct": 129.3,
+      "variant": "meta_full",
+      "win_rate_pct": 41.1
+    },
+    {
+      "dsr": 0.918,
+      "max_dd_pct": 17.38,
+      "n_taken": 816,
+      "n_trades": 816,
+      "sharpe": 0.771,
+      "sharpe_ci95": [
+        0.253,
+        1.273
+      ],
+      "total_return_pct": 126.2,
+      "variant": "meta_xauonly",
+      "win_rate_pct": 41.1
+    },
+    {
+      "dsr": 0.909,
+      "max_dd_pct": 17.48,
+      "n_taken": 816,
+      "n_trades": 816,
+      "sharpe": 0.756,
+      "sharpe_ci95": [
+        0.241,
+        1.256
+      ],
+      "total_return_pct": 119.1,
+      "variant": "const_ctrl",
+      "win_rate_pct": 41.1
+    },
+    {
+      "dsr": 0.076,
+      "max_dd_pct": 0.0,
+      "n_taken": 0,
+      "n_trades": 816,
+      "sharpe": 0.0,
+      "sharpe_ci95": [
+        NaN,
+        NaN
+      ],
+      "total_return_pct": 0.0,
+      "variant": "meta_gate",
+      "win_rate_pct": 0.0
+    }
+  ],
+  "stress": {
+    "delay_2": {
+      "baseline": {
+        "dsr": null,
+        "max_dd_pct": 16.5,
+        "n_taken": 725,
+        "n_trades": 725,
+        "sharpe": 0.915,
+        "sharpe_ci95": [
+          0.441,
+          1.383
+        ],
+        "total_return_pct": 228.8,
+        "variant": "baseline/delay_2",
+        "win_rate_pct": 42.9
+      },
+      "meta_full": {
+        "dsr": null,
+        "max_dd_pct": 12.97,
+        "n_taken": 725,
+        "n_trades": 725,
+        "sharpe": 0.946,
+        "sharpe_ci95": [
+          0.482,
+          1.411
+        ],
+        "total_return_pct": 175.1,
+        "variant": "meta_full/delay_2",
+        "win_rate_pct": 42.9
+      },
+      "vol_target": {
+        "dsr": null,
+        "max_dd_pct": 12.85,
+        "n_taken": 725,
+        "n_trades": 725,
+        "sharpe": 0.937,
+        "sharpe_ci95": [
+          0.474,
+          1.377
+        ],
+        "total_return_pct": 252.3,
+        "variant": "vol_target/delay_2",
+        "win_rate_pct": 42.9
+      }
+    },
+    "spread_x2": {
+      "baseline": {
+        "dsr": null,
+        "max_dd_pct": 25.88,
+        "n_taken": 809,
+        "n_trades": 809,
+        "sharpe": 0.667,
+        "sharpe_ci95": [
+          0.153,
+          1.164
+        ],
+        "total_return_pct": 141.9,
+        "variant": "baseline/spread_x2",
+        "win_rate_pct": 39.6
+      },
+      "meta_full": {
+        "dsr": null,
+        "max_dd_pct": 19.85,
+        "n_taken": 809,
+        "n_trades": 809,
+        "sharpe": 0.697,
+        "sharpe_ci95": [
+          0.185,
+          1.194
+        ],
+        "total_return_pct": 105.0,
+        "variant": "meta_full/spread_x2",
+        "win_rate_pct": 39.6
+      },
+      "vol_target": {
+        "dsr": null,
+        "max_dd_pct": 21.78,
+        "n_taken": 809,
+        "n_trades": 809,
+        "sharpe": 0.672,
+        "sharpe_ci95": [
+          0.169,
+          1.151
+        ],
+        "total_return_pct": 150.9,
+        "variant": "vol_target/spread_x2",
+        "win_rate_pct": 39.6
+      }
+    }
+  }
+}

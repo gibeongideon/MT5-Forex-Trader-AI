@@ -1,0 +1,29 @@
+# XAUUSD demo reconcile pass (systemd migration of the xau_cron.sh cron job).
+#
+# One-shot: each activation runs ONE reconcile pass via the idempotent
+# xau_cron.sh wrapper, which ensures the MT5 terminal + rpyc bridge are up and
+# ANSWERING before firing v5_xau_demo.py --execute. Driven by xau-demo.timer.
+#
+# Install:
+#   sudo cp deploy/xau-demo.service deploy/xau-demo.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now xau-demo.timer
+#   # (disable the crontab xau_cron.sh lines so it does not double-run)
+
+[Unit]
+Description=XAUUSD demo reconcile pass (v5_xau_demo --execute)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rock
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+# Wine needs the X session; xau_cron.sh also sets DISPLAY, kept here for safety.
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_cron.sh
+# The pass polls the bridge for up to ~2 min + start_mt5.sh sleeps; allow slack.
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-demo

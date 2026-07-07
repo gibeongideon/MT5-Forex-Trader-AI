@@ -967,6 +967,129 @@ conda run -n envmt5 python scripts/v5_universe_backtest.py --tier basket5 --spee
 conda run -n envmt5 python scripts/v5_universe_backtest.py --tier basket5 --speeds slow --sleeve combined --rebalance monthly --buffer-frac 0.4 --entry-delay-bars 2 --run-id d1-cta-v5-basket5-champion-delay2
 ```
 
+## XAUUSD Probabilistic Sizing Program — Pre-Registration (2026-07-07)
+
+Registered BEFORE any run. Goal: richer confidence determination and lot
+sizing for the promoted XAUUSD engine (trail/confidence + conf-risk, live cell
+`xau-m15-e2b`), and any resulting Sharpe uplift. The validated H4 EWMAC signal
+still decides side and timing — this program only changes HOW MUCH to trade and
+WHEN TO STAND ASIDE. No directional/next-candle ML (repeatedly disproven here).
+
+Why this is not a rerun of the rejected meta-labeling experiment (§ above,
+2026-07-05, OOS AUC ~0.511, constant-multiplier control reproduced the gain):
+that attempt used ONLY XAUUSD-derived features (|forecast|, ATR, returns, SMA
+distance) — saturated OHLC information. Two materially different levers are
+tested here, each pre-registered with a control and a kill criterion.
+
+Data: `data/XAUUSD_H4_long.csv` (2015+), eval 2018+, equity0 $3,000, identical
+daily-Sharpe metric + `block_bootstrap_sharpe` CI for EVERY row (baseline,
+variants, controls). Costs = engine defaults; stress battery on any promoted
+cell = spread x2 AND +1 entry-delay bar. Exogenous inputs are PROXIES built
+from existing FX CSVs now (synthetic USD-strength from USDJPY(+)/EURUSD(-)/
+GBPUSD(-); cross-pair risk/vol proxy); real DXY / US10Y real-yield / VIX CSVs
+swap in later and the pre-registered test re-runs.
+
+### Track 0 — Pattern EDA (informative, non-promotable)
+
+`scripts/v5_xau_eda.py` → `data/v5_runs/xau-eda/`: trend run-length
+distribution; conditional reversal base rates by (|forecast| bucket x vol
+regime x session); forecast autocorrelation/half-life; volatility clustering
+(ACF of |returns|); conditional trade win-rate maps. Read-only characterization.
+
+### Track 1 — Exogenous meta-probability
+
+- Features: prior bar-features (`scripts/v5_xau_meta.py::bar_features`) PLUS new
+  exogenous proxies (`src/features/xau_exog.py`), all completed-bar, shift(1).
+- Labels (two heads): (a) trade-win via `side_barrier_meta_label`; (b) trend
+  reversal within K H4 bars (sign(forecast) flip or price reversal > X·ATR).
+- Model: `Ensemble` {xgboost, lightgbm, calibrated logistic} + isotonic
+  calibration; fold-local OOS (`src/v5/xau_meta_oos.py`, cloning
+  `generate_candle_oos_predictions`); OOS-guarded parquet.
+- Controls (mandatory): (i) constant-multiplier; (ii) XAU-only-features (no
+  exogenous) — isolates whether exogenous data adds AUC over the prior set.
+- KILL CRITERION: abandon meta-prob sizing if fold-mean OOS AUC <= 0.53 AND the
+  constant-multiplier control matches within bootstrap CI.
+
+### Track 2 — Volatility targeting + regime gating (direction-free)
+
+- Ex-ante H4 vol forecast (`src/features/vol_forecast.py`: EWMA-RV + HAR-RV).
+- `sizing_mode ∈ {conf_risk(default), vol_target, prob}` added as OPTIONAL,
+  backward-compatible params to `run_trades` / `run_trades_m15` (live default
+  path unchanged). Regime gate via `src/cta/regime.py` + macro proxy.
+
+### Statistical validation
+
+`src/evaluation/dsr_pbo.py`: Deflated Sharpe Ratio + PBO (CSCV). Reported
+alongside bootstrap CI for every promotable cell.
+
+### Promotion rule
+
+A track is promoted to live sizing ONLY if it beats the identically-computed
+conf-risk baseline on Sharpe AND CI-low, survives the stress battery, and
+(Track 1) clears the AUC kill criterion above its control. Until then this is
+research-only: `configs/v5_xau_trader.json` and `scripts/v5_xau_demo.py` are
+untouched. Results appended below after the runs.
+
+### Results (2026-07-07)
+
+Runs: `scripts/v5_xau_eda.py` → `data/v5_runs/xau-eda/`; full comparison
+`scripts/v5_xau_prob_sizing.py` → `data/v5_runs/xau-prob-sizing/`. Engine trades
+= promoted trail/confidence + conf-risk (1014 trades, 2016→2026), eval 2018+,
+identical R-based equity metric + `block_bootstrap_sharpe` CI for every row.
+Tests: `tests/test_v5_xau_prob_sizing.py` (10) + related v5 suites, 31 passed.
+
+Track 0 EDA (informative): the EWMAC H4 forecast is EXTREMELY persistent
+(ACF lag-1 0.999, lag-24 0.953, half-life > 60 bars), so a short-horizon
+"trend change" is rare — overall 6-bar reversal base rate 1.7%. Volatility
+DOES cluster (|return| ACF ~0.19, half-life ~1 bar) — the one predictable
+quantity, which is why the direction-free vol lever is the credible one.
+Trade win-rate is best in the Asia session (high-conf Asia win 49%, mean R
++0.28) — a stable descriptive pattern, not itself an edge.
+
+Sizing comparison (Sharpe / CI95 / DSR / ret% / maxDD% / win%):
+
+| Variant | Sharpe | CI 95% | DSR | Return | MaxDD | Win |
+| ------- | ------ | ------ | --- | ------ | ----- | --- |
+| baseline (conf-risk) | 0.756 | [0.24, 1.26] | 0.909 | +175% | 22.6% | 41% |
+| vol_target (Track 2) | 0.781 | [0.28, 1.26] | 0.931 | +192% | 19.1% | 41% |
+| meta_full (Track 1, XAU+exog) | 0.776 | [0.26, 1.28] | 0.921 | +129% | 18.0% | 41% |
+| meta_xauonly (control) | 0.771 | [0.25, 1.27] | 0.918 | +126% | 17.4% | 41% |
+| const_ctrl | 0.756 | [0.24, 1.26] | 0.909 | +119% | 17.5% | 41% |
+| meta_gate p>=0.5 | 0.000 | — | — | 0% | — | — |
+
+Fold OOS AUC: meta_full 0.486, meta_xauonly 0.478 (per-fold 0.33–0.54).
+PBO (CSCV, 6 variants): 0.409. Stress battery:
+
+| Stress | baseline | vol_target | meta_full |
+| ------ | -------- | ---------- | --------- |
+| spread x2 | 0.667 | 0.672 | 0.697 |
+| +1 delay | 0.915 | 0.937 | 0.946 |
+
+VERDICT.
+
+- Track 1 (exogenous meta-probability): **NOT PROMOTED — kill criterion
+  triggered.** Fold-mean OOS AUC 0.486 <= 0.53 (worse than a coin flip), and the
+  exogenous proxies added only +0.008 AUC over the XAU-only control (noise). The
+  constant-multiplier control (0.756) reproduces the whole meta_full "gain"
+  (0.776) within CI. This REPLICATES the 2026-07-05 verdict and extends it: the
+  failure is NOT merely feature saturation — even the correct-sign USD-strength /
+  risk proxies carry no per-trade win information for this slow signal. Real
+  DXY / US10Y real-yield / VIX data may be retried later, but the prior is now
+  strongly negative. Gating trades (meta_gate) again destroys the strategy.
+- Track 2 (volatility targeting): **marginal Sharpe, not a decisive pass.**
+  Sharpe 0.781 vs 0.756 with overlapping CIs (CI-low 0.28 vs 0.24) and higher
+  DSR (0.931), and the small edge SURVIVES both stresses — but the honest,
+  robust effect is drawdown reduction (22.6% → 19.1%, ~15% relative) at
+  equal-or-better Sharpe. This matches the repo's standing finding that the only
+  reliable risk knob here is DD shaping, not Sharpe alpha. Recommendation: adopt
+  vol_target ONLY as an optional lower-DD sizing preference (not an alpha claim),
+  and only after re-running with REAL macro data; live config unchanged for now.
+
+Net: the durable Sharpe levers for this book remain (a) letting winners run on
+one trailing position (already live) and (b) DIVERSIFICATION via the continuous
+H4 basket (Sharpe 0.63–0.935, CI excludes zero) — a stronger next step than any
+single-symbol per-trade ML. Per-trade probability sizing is disproven twice now.
+
 ## Phase 3: Lumibot Bridge, Adapter First
 
 - [ ] Add a thin strategy lifecycle wrapper around the existing MT5 strategy

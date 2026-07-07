@@ -1,0 +1,21 @@
+# Fires the XAUUSD demo reconcile pass on the same cadence as the old cron job:
+#   old cron:  6 1-23 * * 1-5   (minute 6 of hours 01..23, Mon-Fri)
+#   plus       @reboot          (covered here by OnBootSec + Persistent)
+#
+# Install: see xau-demo.service header.
+
+[Unit]
+Description=Timer for XAUUSD demo reconcile pass
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Minute 6 of every hour 01..23, Monday through Friday.
+OnCalendar=Mon-Fri 01..23:06:00
+# Cover post-boot cold start (replaces the @reboot cron line).
+OnBootSec=45sec
+# Run a missed activation on next wake (machine was off / asleep).
+Persistent=true
+Unit=xau-demo.service
+
+[Install]
+WantedBy=timers.target

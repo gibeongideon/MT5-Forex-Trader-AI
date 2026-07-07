@@ -1,0 +1,12 @@
+{
+  "meta_cfg": {
+    "models": [
+      "xgboost",
+      "lightgbm",
+      "logistic"
+    ],
+    "start_year": 2018
+  },
+  "pre_registration": "V5_PLAN.MD",
+  "strategy": "xau_prob_sizing"
+}
