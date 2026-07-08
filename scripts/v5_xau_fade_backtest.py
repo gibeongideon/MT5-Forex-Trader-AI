@@ -55,7 +55,10 @@ def build_signal(d: pd.DataFrame, lo_thr: float, hi_thr: float,
 
 def run(d: pd.DataFrame, dirn: pd.Series, mode: str, cfg: dict) -> pd.DataFrame:
     o1, c1 = d.open.shift(-1), d.close.shift(-1)          # next bar OHLC
-    spread1 = d.spread.shift(-1) * POINT * cfg["spread_mult"]
+    if cfg.get("fixed_spread_usd") is not None:
+        spread1 = pd.Series(cfg["fixed_spread_usd"], index=d.index)  # constant $ spread
+    else:
+        spread1 = d.spread.shift(-1) * POINT * cfg["spread_mult"]
     signed = dirn * (c1 - o1)                              # $ move in our direction
     gross_frac = signed / o1                               # per unit notional
     cost_frac = spread1 / o1                               # full spread paid round trip
@@ -128,13 +131,16 @@ def main() -> None:
     ap.add_argument("--step", type=float, default=1.5, help="anti-martingale up-step")
     ap.add_argument("--cap", type=float, default=8.0, help="max stake multiple")
     ap.add_argument("--spread-mult", type=float, default=1.0)
+    ap.add_argument("--fixed-spread-usd", type=float, default=None,
+                    help="override time-varying spread with a constant $ spread (e.g. 0.14)")
     ap.add_argument("--eval-start", default=None)
     args = ap.parse_args()
 
     good = set(int(x) for x in args.good_hours.split(",")) if args.good_hours else None
     d = load(args.tf)
     dirn = build_signal(d, args.lo_thr, args.hi_thr, good)
-    cfg = dict(step=args.step, cap=args.cap, spread_mult=args.spread_mult, eval_start=args.eval_start)
+    cfg = dict(step=args.step, cap=args.cap, spread_mult=args.spread_mult,
+               fixed_spread_usd=args.fixed_spread_usd, eval_start=args.eval_start)
     print(f"[XAU fade] tf={args.tf} lo<{args.lo_thr} hi>{args.hi_thr} hours={good or 'ALL'} "
           f"spreadx{args.spread_mult} anti(step{args.step},cap{args.cap}x)"
           + (f" eval>={args.eval_start}" if args.eval_start else ""))
