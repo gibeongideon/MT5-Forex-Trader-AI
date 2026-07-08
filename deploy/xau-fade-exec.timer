@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer for XAUUSD fade real-order executor (every 15 min, 1 min after M15 close)
+
+[Timer]
+# M15 bars close at :00/:15/:30/:45; fire ~1 min later so the bar is final and we
+# open near the new bar's open / close the prior bar's one-bar hold.
+OnCalendar=*:01/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

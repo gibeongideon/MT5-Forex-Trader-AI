@@ -1,0 +1,11 @@
+[Unit]
+Description=Timer for XAUUSD fade paper executor (every 15 min, aligned after M15 close)
+
+[Timer]
+# M15 bars close at :00/:15/:30/:45; run a few min later so the bar is final.
+# Idempotent + backfills, so exact alignment/missed runs lose no bars.
+OnCalendar=*:05/15
+Persistent=true
+
+[Install]
+WantedBy=timers.target

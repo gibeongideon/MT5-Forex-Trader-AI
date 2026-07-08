@@ -1,0 +1,11 @@
+[Unit]
+Description=XAUUSD fade signal — REAL demo-order executor (magic 360530, isolated from trend bot)
+# DEMO-only (hard-abort otherwise). Distinct magic on a HEDGING account => own
+# tickets, never nets against the trend bot (magic 360520).
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+ExecStart=/home/rock/anaconda3/bin/conda run -n envmt5 python scripts/v5_xau_fade_exec.py --execute
+# harmless if the MT5 bridge is momentarily down — just fails this pass
+SuccessExitStatus=0 1

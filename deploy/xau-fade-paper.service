@@ -1,0 +1,10 @@
+[Unit]
+Description=XAUUSD fade signal — VIRTUAL paper executor (read-only, isolated from trend bot)
+# Read-only: places no broker orders, cannot affect v5_xau_demo (trend bot).
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+ExecStart=/home/rock/anaconda3/bin/conda run -n envmt5 python scripts/v5_xau_fade_paper.py
+# harmless if the MT5 bridge is momentarily down — it just fails this pass
+SuccessExitStatus=0 1
