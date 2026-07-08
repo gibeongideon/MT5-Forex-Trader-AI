@@ -233,3 +233,19 @@ and are documented dead ends. A Lumibot-pattern AI agent risk overlay
 `scripts/v5_basket_runner.py --overlay`) is live-smoke-tested; it makes no
 backtest claims because LLM pretraining makes LLM backtests unleakproofable.
 See `V5_PLAN.MD` "Phase A Lever Results" and "Champion Live Runner".
+
+Update 2026-07-08 (Sharpe-uplift research → 1.2 target): tested the full lever
+space to lift the deployed XAU book (~0.63 net) toward 1.2. Single-symbol XAU
+overlays are insufficient (regime/vol gates → 0.54–0.57, cut DD not alpha;
+SESSION/hour gating DESTROYS a trend hold, −1.0 to −1.6 — favourite-hours only
+apply to intraday scalps). The lever is the curated basket with `speeds="fast"`:
+`six_class` fast **+1.01** (CI `[+0.45,+1.60]`, DD 19%, stress-stable costx2
+1.00/delay2 0.95) matches basket10-btc fast (+1.02) at 6 instruments. Widening
+hurts (full48 0.77); regime/carry/ml-combine/RL all fail (RL = wrong tool, over-
+fits limited data; repo's own ml-combine 0.15–0.33 is proof). VERDICT: ~1.0 is
+robustly reachable (fast six_class = the deployment target); 1.2 is a CI-upper
+edge needing a NEW orthogonal stream, not a trend re-tune. `speeds="fast"` is
+POST-HOC (PBO 0.54) — must be pre-registered + DSR/PBO-cleared before promotion.
+Capital for the best candidate: **$9.4k @vol0.20 / $18.8k @vol0.10** (demo ~$820
+is ~11x too small). See `V5_PLAN.MD` "Sharpe-Uplift Research" and memory
+`sharpe-to-12-fast-basket`.

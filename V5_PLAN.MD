@@ -523,6 +523,61 @@ conda run -n envmt5 python -m pytest tests/test_v5_basket_feasibility.py -q
 conda run -n envmt5 python scripts/v5_basket_feasibility.py --tiers 3000,10000,25000,100000
 ```
 
+### Sharpe-Uplift Research: pushing the book toward 1.2 (2026-07-08)
+
+Goal: raise the deployed XAU Sharpe (~0.63 net, eval 2017+) to ≥1.2, building on
+top of the current engine. Investigated the literature (CTA horizon-blending,
+regime allocation, vol targeting, diversification) and tested every lever on the
+validated causal path. **Headline: ~1.0 is robustly reachable via the FAST-speed
+curated basket; single-symbol XAU cannot get there, and 1.2 is a CI-upper edge,
+not a robust point estimate.**
+
+SINGLE-SYMBOL XAU OVERLAYS — insufficient (eval 2017+, net):
+- baseline standalone ~0.52; trend-strength regime gate → 0.57; vol-regime gate
+  → 0.54. Both mostly cut drawdown, not add Sharpe (matches the standing "only
+  reliable knob is DD shaping" finding).
+- **Session/hour gating a trend HOLD destroys it** (every H4 bar-hour −1.0 to
+  −1.6): a multi-day trend cannot be chopped into "favourite hours". Session
+  effects apply to intraday scalps only (cf. the spread-killed next-bar fade,
+  `xau-nextbar` memory), never this book.
+
+DIVERSIFICATION — the lever. `speeds="fast"` on the curated basket is the
+breakthrough (all eval 2017+, net, block-bootstrap CI):
+
+| Basket | speeds | Sharpe | CI 95% | maxDD | stress (fast) |
+| ------ | ------ | ------ | ------ | ----- | ------------- |
+| basket10-btc (11) | slow | 0.95 | [0.36,1.61] | 22.8% | — |
+| basket10-btc (11) | **fast** | **1.02** | [0.45,1.63] | 17.5% | costx2 1.00, delay2 0.97, 2021+ 0.91 |
+| **six_class (6)** | **fast** | **1.01** | [0.45,1.60] | 19.4% | costx2 1.00, delay2 0.95, 2021+ 0.75 |
+| four_no_rates (4) | fast | 0.74 | [0.12,1.33] | 31.7% | costx2 0.73, delay2 0.63 |
+
+- `six_class` FAST matches the 11-symbol basket (1.01 vs 1.02) at 6 instruments —
+  **the deployment target**: best Sharpe AND capital-efficient.
+- WIDENING HURTS: full48 = 0.77; adding ags/ETH/PGMs drags b10btc to 0.86–0.95.
+- Frequency blend: D1 basket vs the H4 4-sym book are only **0.30** correlated
+  (genuinely orthogonal) but the H4 book (0.47) is too weak to add — blending
+  drags to 0.87. A STRONGER low-freq-corr stream would help; none exists yet.
+- NOT helpful (tested/on-file): regime filters, FX carry, `ml_combine` sleeve
+  (0.15–0.33 << rules), meta-labeling (AUC 0.511).
+
+RL VERDICT: wrong tool. RL overfits on limited financial data (too few
+independent trajectories); the repo's own `ml_combine` (0.15–0.33 vs rules 0.95)
+is direct proof. Not pursued.
+
+CAVEATS / NEXT STEPS: `speeds="fast"` is a POST-HOC finding (champion is
+pre-registered `slow`) — PBO across the earlier candidate selection was 0.54, so
+fast must be formally PRE-REGISTERED and cleared through the full stress + DSR/PBO
+battery before any promotion, not adopted on the point estimate. 1.2 as a robust
+point estimate needs a NEW orthogonal positive-Sharpe stream (not a trend
+re-tune); every non-trend attempt here has failed OOS. Committed milestone: 1.0
+(fast six_class). Memory: `sharpe-to-12-fast-basket`.
+
+CAPITAL for the best candidate (`six_class` fast, Sharpe ~1.0) is unchanged from
+the feasibility table (min-viable is sizing/lot-driven, speed-independent):
+**$9.4k @ vol 0.20** (DD ~19%) or **$18.8k @ vol 0.10** (lower DD). The live HFM
+demo (~$820 / 106k KES) is ~11x too small; four_no_rates fast (0.74) fits ~$3.4k
+@ vol 0.20 as a stepping stone.
+
 ### Phase A Lever Experiments — Pre-Registration (2026-07-05)
 
 Registered BEFORE any lever run was executed. Engine: `src/v5/levers.py`
