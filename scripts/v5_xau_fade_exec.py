@@ -55,14 +55,16 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--execute", action="store_true", help="actually send orders")
-    ap.add_argument("--good-hours", default="8,20,22")
+    ap.add_argument("--good-hours", default="8,20,22",
+                    help='comma list of server hours, or "all" for continuous')
     ap.add_argument("--lo-thr", type=float, default=0.2)
     ap.add_argument("--hi-thr", type=float, default=0.8)
     ap.add_argument("--lots", type=float, default=0.01)
     ap.add_argument("--protect-sl-usd", type=float, default=8.0,
                     help="fail-safe SL distance in $ (wide; only catches a missed close)")
     args = ap.parse_args()
-    good = {int(x) for x in args.good_hours.split(",")}
+    good = set(range(24)) if args.good_hours.strip().lower() == "all" \
+        else {int(x) for x in args.good_hours.split(",")}
     ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
 
     conn = MT5Connector()
