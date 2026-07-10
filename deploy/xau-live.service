@@ -1,0 +1,35 @@
+# XAUUSD LIVE reconcile pass (real cent account, HFMarketsKE-Live2).
+#
+# One-shot: each activation runs ONE reconcile pass via the idempotent
+# xau_live_cron.sh wrapper, which ensures the MT5 terminal + rpyc bridge are up
+# and ANSWERING before firing v5_xau_live.py --live --execute. Driven by
+# xau-live.timer.
+#
+# PRECONDITIONS (real money):
+#   * AutoTrading must be ENABLED in the MT5 terminal (Ctrl+E) or order_send
+#     is rejected.
+#   * .env must point MT5_* at the intended live account.
+#   * Do NOT run this alongside the demo timer on the same account.
+#
+# Install (leave the DEMO timer stopped/disabled first):
+#   sudo cp deploy/xau-live.service deploy/xau-live.timer /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now xau-live.timer
+
+[Unit]
+Description=XAUUSD LIVE reconcile pass (v5_xau_live --live --execute)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=rock
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+# Wine needs the X session; xau_live_cron.sh also sets DISPLAY, kept for safety.
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_live_cron.sh
+# The pass polls the bridge for up to ~2 min + start_mt5.sh sleeps; allow slack.
+TimeoutStartSec=300
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-live

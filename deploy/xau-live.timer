@@ -1,0 +1,21 @@
+# Fires the XAUUSD LIVE reconcile pass on the same cadence as the demo timer:
+#   Minute 6 of every hour 01..23, Monday through Friday, plus a post-boot pass.
+#
+# Install: see xau-live.service header. Enable only when you are ready to trade
+# real money and AutoTrading is ON in the terminal.
+
+[Unit]
+Description=Timer for XAUUSD LIVE reconcile pass
+Documentation=man:systemd.timer(5)
+
+[Timer]
+# Minute 6 of every hour 01..23, Monday through Friday.
+OnCalendar=Mon-Fri 01..23:06:00
+# Cover post-boot cold start.
+OnBootSec=45sec
+# Run a missed activation on next wake (machine was off / asleep).
+Persistent=true
+Unit=xau-live.service
+
+[Install]
+WantedBy=timers.target
