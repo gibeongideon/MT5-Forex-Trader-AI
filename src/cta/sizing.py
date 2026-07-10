@@ -19,11 +19,14 @@ import math
 # Best-effort HFM contract sizes (1 lot = contract_size units of the underlying).
 # VERIFY against the live terminal (symbol_info.trade_contract_size) before trading — broker/account specific.
 DEFAULT_CONTRACT = {
-    "XAUUSD": 100.0,      # 100 oz
-    "EURUSD": 100000.0,   # 100k base ccy
-    "US500":  1.0,        # $1 / index point (verify)
-    "USOIL":  100.0,      # 100 barrels (verify)
-    "US10YR": 100.0,      # HFM: 1 lot = 100 units
+    "XAUUSD":   100.0,     # 100 oz
+    "XAGUSD":   1000.0,    # 1000 oz
+    "EURUSD":   100000.0,  # 100k base ccy
+    "USDJPY":   100000.0,  # 100k base ccy (USD-base: USD notional = contract, not x price)
+    "US500.F":  1.0,       # $1 / index point
+    "USOIL":    100.0,     # 100 barrels
+    "US10YR.F": 100.0,     # HFM: 1 lot = 100 units, volume_min = 1.0
+    "#BTCUSD":  1.0,       # 1 BTC
 }
 DEFAULT_VOL = dict(vol_min=0.01, vol_step=0.01, vol_max=1e6)
 

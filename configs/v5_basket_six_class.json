@@ -1,0 +1,23 @@
+{
+  "promoted_from_run_id": "basket-feasibility",
+  "promoted_on": "2026-07-09",
+  "expected_sharpe": 0.932,
+  "expected_ci95": [0.45, 1.41],
+  "expected_maxdd_pct": 25.9,
+  "tier": "six_class",
+  "note": "One granular representative per asset class; matches the 11-symbol champion (0.932 vs 0.935) with 6 instruments. target_vol 0.20 is the deployability knob (Sharpe is cost-adjusted-invariant to it); min-viable equity $9.4k, funded to $12k for buffer so the UST10Y leg (volume_min=1.0) cannot round to zero on a drawdown. speeds='slow' is the pre-registered set; 'fast' is post-hoc (PBO 0.54) and NOT promoted.",
+  "instruments": ["SILVER", "UST10Y", "SPX", "WTI", "USDJPY", "BTC"],
+  "lever_cfg": {
+    "speeds": "slow",
+    "sleeve": "combined",
+    "rebalance": "monthly",
+    "buffer_frac": 0.4,
+    "target_vol": 0.20,
+    "regime": "none",
+    "carry": false,
+    "ml_combine": false
+  },
+  "magic": 360600,
+  "run_id_pure": "v5-sixclass-pure",
+  "run_id_overlay": "v5-sixclass-overlay"
+}

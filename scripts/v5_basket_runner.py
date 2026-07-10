@@ -39,21 +39,32 @@ from src.v5.levers import lever_positions
 CONFIG_FILE = ROOT / "configs" / "v5_basket_champion.json"
 STALE_DAYS = 4
 
-# alias → HFM symbol. VERIFY exact tickers in the live terminal (HFM appends
-# .Z / r to some tradables). All eleven trade on HFM as CFDs.
+# alias → HFM symbol, verified live on HFMarketsKE-Demo2 (symbol_select + symbol_info).
+# HFM suffixes rates/US indices with `.F` and prefixes crypto with `#`. There is NO
+# 30-year bond on this server (`US30.F` is the Dow index, not a bond).
 MT5_MAP = {
     "GOLD":   "XAUUSD",
     "SILVER": "XAGUSD",
-    "UST10Y": "US10YR",
-    "UST30Y": "US30YR",   # confirm exact ticker in terminal
-    "SPX":    "US500",
-    "DAX":    "GER40",    # confirm exact ticker (GER40/DE40)
+    "UST10Y": "US10YR.F",
+    "UST30Y": None,       # not offered by HFM — excluded from any tradable basket
+    "SPX":    "US500.F",
+    "DAX":    "GER40",
     "WTI":    "USOIL",
     "BRENT":  "UKOIL",
     "EURUSD": "EURUSD",
     "USDJPY": "USDJPY",
-    "BTC":    "BTCUSD",
+    "BTC":    "#BTCUSD",
 }
+
+# USD notional of 1.0 lot depends on the quote convention. For a USD-BASE pair
+# (USDJPY) one lot is `contract_size` USD outright; multiplying by the price would
+# yield JPY and oversize the leg ~162x. Everything else (CFD/metal/USD-quote FX)
+# is contract_size * price.
+FX_BASE_USD = {"USDJPY"}
+
+
+def _usd_per_lot(alias: str, contract_size: float, price: float) -> float:
+    return contract_size if alias in FX_BASE_USD else contract_size * price
 
 
 def load_champion_config(path: Path = CONFIG_FILE) -> dict:
@@ -77,31 +88,46 @@ def _action(prev: float, tgt: float, eps: float = 1e-6) -> str:
 
 
 def _build_specs(kept, close, live):
-    """Per-alias broker specs. live=query MT5 (exact), else offline defaults."""
+    """Per-alias broker specs. live=query MT5 (exact), else offline defaults.
+
+    `contract_size` is stored as an EFFECTIVE size such that contract_size * price
+    equals the true USD notional of one lot, so `sizing.target_lots` (which assumes
+    that product) stays correct for USD-base FX. Same convention the feasibility
+    study used.
+    """
     specs, conn = {}, None
     if live:
         from src.core.connector import get_connector
         conn = get_connector("mt5")
         conn.connect()
     for a in kept:
-        sym = MT5_MAP.get(a) or a
+        sym = MT5_MAP.get(a, a)
+        if sym is None:
+            raise RuntimeError(f"{a} has no tradable HFM symbol — remove it from the basket")
         if live:
             try:
+                if not conn.symbol_select(sym, True):
+                    raise RuntimeError(f"symbol_select({sym}) rejected — not tradable")
                 si = conn.symbol_info(sym)
                 tk = conn.get_tick(sym)
+                price = float((tk.ask + tk.bid) / 2) or float(close[a].dropna().iloc[-1])
+                raw_contract = float(getattr(si, "trade_contract_size",
+                                             DEFAULT_CONTRACT.get(sym, 1.0)))
+                per_lot = _usd_per_lot(a, raw_contract, price)
                 specs[a] = dict(
                     symbol=sym,
-                    contract_size=float(getattr(si, "trade_contract_size",
-                                                DEFAULT_CONTRACT.get(sym, 1.0))),
-                    price=float((tk.ask + tk.bid) / 2) or float(close.iloc[-1][a]),
+                    contract_size=per_lot / price,
+                    price=price,
                     vol_min=float(getattr(si, "volume_min", 0.01)),
                     vol_step=float(getattr(si, "volume_step", 0.01)),
                     vol_max=float(getattr(si, "volume_max", 1e6)))
                 continue
             except Exception as e:  # noqa: BLE001 — fall back per-symbol
                 print(f"  ! live spec for {sym} failed ({e}) — offline fallback")
-        specs[a] = dict(symbol=sym, contract_size=DEFAULT_CONTRACT.get(sym, 1.0),
-                        price=float(close[a].dropna().iloc[-1]), **DEFAULT_VOL)
+        price = float(close[a].dropna().iloc[-1])
+        per_lot = _usd_per_lot(a, DEFAULT_CONTRACT.get(sym, 1.0), price)
+        specs[a] = dict(symbol=sym, contract_size=per_lot / price,
+                        price=price, **DEFAULT_VOL)
     if conn:
         conn.disconnect()
     return specs
@@ -111,7 +137,8 @@ def _print_sizing(units, kept, close, equity, live):
     specs = _build_specs(kept, close, live)
     res = target_lots(units, equity, specs)
     src = "LIVE broker specs" if live else "OFFLINE defaults — VERIFY in terminal"
-    print(f"\n  -- LOTS for equity ${equity:,.0f}  [{src}] --")
+    print(f"\n  -- LOTS for equity ${equity:,.0f} USD  [{src}] --")
+    print("     (equity is USD; this account settles in KES — do not pass the KES balance)")
     for a in kept:
         r = res[a]
         flag = "ROUND->0" if r["rounded_zero"] else ("CAPPED" if r["capped"] else "")
@@ -178,7 +205,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--config", default=str(CONFIG_FILE))
     ap.add_argument("--journal", default=str(ROOT / "data" / "live_trades.db"))
-    ap.add_argument("--equity", type=float, default=None)
+    ap.add_argument("--equity", type=float, default=None,
+                    help="book equity in USD. NOT account currency — this HFM account "
+                         "is denominated in KES; passing the raw KES balance oversizes "
+                         "every leg by the USDKES rate (~129x).")
     ap.add_argument("--live", action="store_true",
                     help="with --equity: query MT5 for exact specs")
     ap.add_argument("--overlay", action="store_true",

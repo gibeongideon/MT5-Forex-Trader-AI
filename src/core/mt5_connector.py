@@ -155,6 +155,11 @@ class MT5Connector:
     def symbol_info(self, symbol: str):
         return self._mt5.symbol_info(symbol)
 
+    def symbol_select(self, symbol: str, enable: bool = True) -> bool:
+        """Add the symbol to MarketWatch. symbol_info/ticks return None until this
+        is done for symbols the terminal is not already watching."""
+        return bool(self._mt5.symbol_select(symbol, enable))
+
     # ------------------------------------------------------------------ #
     # Orders & positions
     # ------------------------------------------------------------------ #
