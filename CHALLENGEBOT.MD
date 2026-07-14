@@ -1,103 +1,145 @@
-# CHALLENGEBOT — plan to pass a funded-account challenge with the XAU champion
+# CHALLENGEBOT — FundingPips plan (FX majors / GOLD / SILVER)
 
-Status: PLAN (drafted 2026-07-14, from live simulation session).
-Owner strategy: long-only conc^1.5 champion (see `configs/v5_xau_dual.json` bot
-`champ`, signal `src/v5/xau_dual_signals.py::champion_signal`, research
+Status: RESEARCH COMPLETE, build pending (2026-07-14, autonomous session).
+Lab + all backtests: `data/v5_runs/challenge-lab/` (results.csv, campaign
+scripts, final_book_stream.csv). Strategy base: XAU long-only champion
+(`src/v5/xau_dual_signals.py::champion_signal`, research
 `data/v5_runs/XAU_SHARPE1_RESEARCH.md`).
 
-## 1. The challenge rules (as quoted)
+## 1. FundingPips ACTUAL rules (verified 2026-07-14, web)
 
-| Feature          | 1-Step        | 2-Step Standard              |
-|------------------|---------------|------------------------------|
-| Phases           | 1             | Phase 1 + Phase 2            |
-| Profit target    | 10%           | 8% (P1) + 5% (P2)            |
-| Daily loss limit | 3% (strict)   | 5%                           |
-| Max overall loss | 6% (tight)    | 10%                          |
-| Time limit       | Unlimited     | Unlimited                    |
-| Min trading days | 3             | 3 per phase                  |
+**2-Step Standard (CHOSEN):** Phase 1 target 8%, Phase 2 target 5%; daily
+loss 5%; max loss 10% STATIC on initial size; unlimited time; min 3 trading
+days per phase; leverage up to 1:100.
+**1-Step:** 10% target, 5% daily, 6% max static. Zero: trailing — avoid.
 
-## 2. Feasibility verdict (simulated 2026-07-14)
+Rule mechanics that matter:
+- **Daily loss** = 5% of max(day-start balance, day-start equity), INCLUDING
+  floating P&L, resets 00:00 platform time (UTC+3).
+- **Max loss** static, anchored to initial account size. Phase 2 = fresh
+  account with full 10% budget.
+- **Evaluation phase:** weekend holding ALLOWED, news trading ALLOWED, no
+  consistency rule. (Funded/Master differs: weekend holds auto-closed
+  Friday, 5-min news window rule, 35% consistency for on-demand payouts,
+  3% single-trade profit cap — funded stage needs a re-plan, see §6.)
+- **EAs:** full automation allowed with YOUR OWN EA + proof of ownership
+  (our bot = own code, journals + git history = proof). Third-party EAs
+  only as risk managers. Prohibited: HFT, latency/reverse arbitrage, gap
+  trading, tick scalping, cross-account hedging, copy trading.
+- Inactivity: trade at least every 30 days (champion trades ~3-4/mo — OK,
+  but add a watchdog alert if flat > 21 days).
 
-Method: stationary block bootstrap (20-day blocks, 4,000 paths/config) of the
-champion's ACTUAL daily net returns (continuous engine, buffer 0.1, half-spread
-+ $0.10 costs), rules applied path-by-path. Pessimistic variant re-runs the sim
-on the 2016-2020 weak-years stream only (Sharpe ~0.8, pre-bull).
+Sources: fundingpips.com/trading-objectives, help.fundingpips.com articles
+(2-Step Standard, 1-Step, Understanding Trading Mechanics, News Trading &
+Weekend Holding), proptradingvibes.com/blog/fundingpips-rules,
+tradingfinder.com, tradetanto.com (cross-checked 2026-07-14).
 
-Core insight: **time is unlimited, so risk is the only enemy** — run the bot at
-a fraction of deployed risk and let a Sharpe~1 edge grind to the target.
+## 2. Strategy research — what was tried (all net of costs, 2016+)
 
-Pass rates (weak-years stream = conservative):
+| Sleeve / idea                              | Sharpe | Verdict |
+|--------------------------------------------|--------|---------|
+| XAU champion H4 (deployed 360542 signal)    | **+1.02** | THE book |
+| FX 7 majors D1 trend, fast speeds           | −0.36  | dead 2016+ |
+| FX 7 majors D1 trend, slow speeds           | −0.39  | dead |
+| FX per-pair scan (best: USDJPY)             | +0.17  | too weak |
+| FX cross-sectional momentum (3m / 12m)      | −0.36 / −0.15 | dead |
+| FX D1 mean-reversion (trend-gated)          | −0.15  | dead |
+| FX carry (real 3m rates)                    | +0.06  | ~zero |
+| SILVER D1 trend long/short                  | −0.03  | no |
+| SILVER champion-recipe long-only            | +0.49 (0.48 on 2008+) | real but… |
+| GOLD D1 long-only trend (reference)         | +0.65  | inferior to H4 champ |
+| Combined XAU+FX books (any weight)          | 0.14–0.60 | FX poisons |
+| XAU 85/silver 15, 80/20, 70/30              | ≈ XAU alone | non-additive (corr 0.5) |
 
-| Model  | Ann. vol target | Pass % | Median time | Dominant failure    |
-|--------|-----------------|--------|-------------|---------------------|
-| 2-step | 5%              | 91%    | ~22 mo      | max-loss (9%)       |
-| 2-step | 8%              | 81%    | ~12 mo      | max-loss (19%)      |
-| 1-step | 4%              | 89%    | ~19 mo      | max-loss (11%)      |
-| 1-step | 5%              | 75%    | ~12 mo      | daily 3% (14%!)     |
-| 1-step | 10% (deployed)  | ~59%   | ~4 mo       | daily 3% (24%)      |
+**Conclusion: trade ONLY XAUUSD with the champion signal.** FX majors and
+SILVER are permitted but not used: every FX stream tested is ≤ +0.17 (most
+negative — the 2016-2026 FX regime killed retail trend/MR/carry), and
+silver's 0.49 at 0.5 correlation leaves the pass curves statistically
+identical while adding execution surface. Simplicity wins.
 
-**DECISION: take the 2-STEP model, run at ~5% ann vol (half deployed risk);
-optionally 8% vol if speed > certainty.** The 1-step's 3% daily rail is a
-single-bad-day killer for gold (worst historical day −6.4% at deployed risk).
+## 3. FundingPips 2-Step simulation (4,000 bootstrap paths/config)
 
-## 3. Fine print to verify BEFORE paying the fee (any one flips the verdict)
+Book = champion daily net stream normalized to 10% vol, scaled by k.
+Exact rules: 8% → 5% targets, 10% static max loss, 5% daily, phase-2 reset.
 
-- [ ] Max overall loss STATIC on initial balance (assumed) — if TRAILING
-      high-water mark, re-simulate; difficulty jumps sharply.
-- [ ] Weekend/overnight holding ALLOWED — mandatory; H4 trend holds for days.
-      If banned, this bot cannot run there. Also check news-trading bans.
-- [ ] Daily loss measured on floating intraday equity (assumed close-to-close
-      in sim — intraday runs deeper; extra reason to avoid the 1-step).
-- [ ] Consistency rule (e.g. "no day > X% of total profit") — trend P&L is
-      lumpy; a few big days carry the year.
-- [ ] Minimum activity rule vs our ~3-4 trades/month.
-- [ ] Metals (XAUUSD) tradable, leverage ≥ 1:20, spread ≤ ~$0.35 all-in.
+| vol target | pass % | fail-daily | fail-maxloss | median | p75 |
+|-----------|--------|------------|--------------|--------|------|
+| 5%        | 98.4%  | 0.0%       | 1.1%         | 26.9 mo | 41.2 mo |
+| 7%        | 94.8%  | 0.0%       | 5.2%         | 18.3 mo | 29.1 mo |
+| 8%        | 91.4%  | 0.0%       | 8.6%         | 15.3 mo | 24.6 mo |
+| **9%**    | **88.1%** | 0.0%    | 11.9%        | **13.0 mo** | **20.9 mo** |
+| 10%       | 85.7%  | 0.0%       | 14.3%        | 11.0 mo | 18.1 mo |
+| 12%       | 73.2%  | 9.9%       | 16.9%        | 7.9 mo  | 13.1 mo |
 
-## 4. Build plan
+Stress at the chosen dial (9% vol):
+- Weak-years-only stream (2016-2020, pre-bull): 84.8% pass, median 13.9 mo.
+- Costs ×2: 87.1%, median 13.1 mo (turnover-light book — costs irrelevant).
+- Edge haircut −25%: 76.9%, median 13.8 mo.
+- **Intraday proxy (daily breach at 1.5× close-to-close move): pass drops
+  to 61-75%, fail-daily jumps to 20-32% → an INTRADAY GUARD is mandatory,
+  not optional (see §4.2). With the guard, daily breaches convert to small
+  realized losses and the pass rate reverts toward the base row.**
 
-Base: fork of the proven executor `scripts/v5_xau_dual.py` (same engine,
-signal, reconcile loop, --live/--execute double lock) → `scripts/v5_xau_challenge.py`
-+ `configs/v5_xau_challenge.json`. New requirements beyond the dual bot:
+**DECISION: 2-Step Standard, 100% XAUUSD champion signal, 9% ann vol
+(risk_frac 0.9% per trade over the 3×ATR stop, conf scale on), hard
+intraday guards. Expected: ~85-88% pass, median ~13 months, p75 ~21 months
+— meets the <2-year requirement with margin at p75.**
 
-1. **Risk dial**: `risk_frac` 0.01 → **0.005** (≈5% ann vol; 0.008 for the 8%
-   variant). Keep conf_risk_scale {0.5, 1.0, 1.5}, 3×ATR SL/trail.
-2. **Hard equity guards (the bot must fail-safe BEFORE the firm's rails):**
-   - Daily guard: at each pass, if equity − day_start_equity ≤ −2.0% (buffer
-     under the 5% rule): close position, no new entries until next day.
-   - Overall guard: if equity ≤ initial × (1 − 6%) (buffer under 10%): flatten
-     and HALT permanently (challenge is a write-off at that point anyway —
-     protect the retry fee by stopping early).
-   - Persist `day_start_equity`/`initial_balance` in a state JSON, not memory.
-3. **Phase tracker**: state file records phase (1/2), phase-start balance,
-   target; on target hit → log loudly + notify (phase transitions are manual
-   at most firms — new credentials for Phase 2).
-4. **Separate MT5 login**: challenge account gets its own terminal profile /
-   `.env`; NEVER share the terminal with the cent-account bots (different
-   broker anyway). New systemd user units `xau-challenge.{service,timer}`,
-   hourly like xau-dual.
-5. **Min-lot check**: challenge accounts are typically $10k-$200k standard
-   contracts (100 oz) — at 0.5% risk over 3×ATR this sizes fine at 0.01+ lots
-   for ≥$10k; verify with the firm's contract spec on day 1 (dry pass).
-6. **Journal**: same TradeJournal db, bot=v5_xau_challenge; nightly equity row
-   for guard-audit.
+## 4. Build spec — `scripts/v5_xau_challenge.py` (fork of v5_xau_dual.py)
 
-## 5. Rollout
+1. Same engine/signal/reconcile as bot `champ` (magic new, e.g. 360550);
+   `risk_frac` 0.01 → **0.009**; 3×ATR SL/trail; conf_risk_scale kept.
+2. **Intraday daily guard (the critical addition):** timer every **15 min**
+   (not hourly). Each pass: if equity ≤ day_anchor × (1 − 3.5%) → flatten,
+   set no-trade flag until next 00:00 UTC+3. Day anchor = max(balance,
+   equity) snapshot at first pass after 00:00 UTC+3, persisted to state
+   JSON. Full H4 reconcile only on H4 boundaries; guard-only otherwise.
+3. **Overall halt:** equity ≤ initial × (1 − 8%) → flatten + permanent HALT
+   flag + notify (protects the account/retry fee before the firm's 10%).
+4. **Phase tracker:** phase, phase-start balance, target in state JSON; on
+   target: notify loudly, stop opening new positions (hold-to-close only)
+   until manually moved to next phase credentials.
+5. Guards unit-tested against synthetic equity paths BEFORE first --execute
+   (guard must trip in the same pass that breaches its line).
+6. Watchdog: alert if no trade in 21 days (inactivity rule) and if a pass
+   fails 3× consecutively (bridge down).
+7. Separate MT5 terminal profile + .env for the FundingPips account; never
+   share the cent-account terminal. New user units xau-challenge.{service,
+   timer} (OnCalendar *:00/15).
 
-1. Verify §3 fine print against the firm's actual T&Cs. Re-simulate if any
-   assumption breaks (sim harness: session of 2026-07-14, reproducible from
-   `data/v5_runs/xau-sharpe1-lab/xau_lab.py` + champion recipe).
-2. Build executor + config + guards; unit-test the guards with synthetic
-   equity paths (guard must trip in the SAME pass that breaches the buffer).
-3. Dry-run (no --execute) against the challenge account for 2-3 days.
-4. Go live at 5% vol. Expect a LONG campaign (median ~22 mo; ~12 mo at 8%).
-5. On funded: same bot, same risk (funded accounts usually keep the same
-   rails; payout > speed).
+## 5. Residual risks (accepted, monitored)
 
-## 6. Expectations honesty
+- ~12-15% of paths fail even played correctly (drawdown before target) —
+  budget one retry fee; halting at −8% preserves nothing financially but
+  stops wasted months early.
+- Weekend gap through the 3×ATR stop / daily guard: gold Monday gaps of
+  ~5σ+ are rare but non-zero; evaluation allows weekend holds and the sim
+  stream includes historical gaps close-to-close.
+- Edge is half gold-drift: a hard bear regime pushes toward the weak-years
+  numbers (still 85% / 14 mo) or worse; the −25% haircut row (77%) is the
+  honest floor estimate.
+- Funded (Master) stage has DIFFERENT rules (no weekend holds, news windows,
+  3% single-trade cap, consistency for on-demand payouts) — the bot needs a
+  funded-mode profile (auto-flatten Friday 20:45 server, skip entries in
+  news windows, cap conf_risk high-bucket) BEFORE first funded trade. Plan
+  that build after Phase 2 completes.
 
-- ~90% is not 100%: ~1 in 10 challenges fails even played correctly — budget
-  for a retry fee.
-- The edge is half gold-drift: a multi-year gold bear compresses the pass
-  probability toward the weak-years numbers (that is why they are quoted).
-- Do NOT be tempted to raise risk after a good month — the sim says the low
-  dial IS the strategy.
+## 6. Execution sequence
+
+1. Buy 2-Step Standard (size per capital comfort; rules identical across
+   sizes; fee refunded after 4th payout).
+2. Build + unit-test executor & guards (§4); 2-3 day dry-run (no --execute)
+   on the challenge account.
+3. Go live at 9% vol. Do NOT raise the dial after good months — the sim
+   says the dial IS the strategy. Expect ~13 months median, up to ~21 (p75).
+4. On Phase 1 pass: verify ≥3 trading days occurred (if not, make 0.01-lot
+   token trades on separate days before final target push — target and
+   min-days must BOTH be satisfied), repeat for Phase 2.
+5. On funding: build funded-mode profile (§5 last bullet) before enabling.
+
+## 7. Reproducibility
+
+- Sleeve backtests + books: `data/v5_runs/challenge-lab/c1_sleeves.py`,
+  `c2_fx_silver.py`; sim + stress: `c3_book_fpsim.py`; engine/simulator:
+  `challenge_lab.py`. All runs appended to `results.csv`.
+- Champion stream is byte-identical to the deployed 360542 signal module.
