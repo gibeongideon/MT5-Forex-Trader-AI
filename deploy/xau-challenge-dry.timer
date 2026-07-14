@@ -1,0 +1,13 @@
+# 15-minute cadence, Mon-Fri — same rhythm the real challenge bot will use.
+
+[Unit]
+Description=Timer for FundingPips challenge DRY-RUN (15 min, no orders)
+
+[Timer]
+OnCalendar=Mon-Fri *:00/15
+OnBootSec=180sec
+Persistent=true
+Unit=xau-challenge-dry.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,5 @@
+time_utc,account,balance,equity,action,phase,progress_pct,day_dd_pct,total_dd_pct,forecast,engine_state,engine_entry,engine_sl,engine_conf,plan,sent
+2026-07-14 14:00:58,54939391,6265.45,6187.0,trade,1,-1.252,-1.252,-1.252,0.15,flat,,,,in_sync,0
+2026-07-14 14:15:47,54939391,6265.45,6186.42,trade,1,-1.261,-1.261,-1.261,0.15,flat,,,,in_sync,0
+2026-07-14 14:30:48,54939391,6265.45,6186.38,trade,1,-1.262,-1.262,-1.262,0.15,flat,,,,in_sync,0
+2026-07-14 14:45:47,54939391,6265.45,6180.6,trade,1,-1.354,-1.354,-1.354,0.15,flat,,,,in_sync,0

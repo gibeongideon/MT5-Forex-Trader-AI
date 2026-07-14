@@ -1,0 +1,15 @@
+# FundingPips challenge bot — DRY-RUN pass (plan-only, NO orders).
+# Logs every pass to data/v5_runs/challenge_dryrun_log.csv.
+
+[Unit]
+Description=FundingPips challenge DRY-RUN pass (plan-only, CSV log)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_challenge_dry_cron.sh
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-challenge-dry

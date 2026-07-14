@@ -41,6 +41,19 @@ CONFIG_FILE = ROOT / "configs" / "v5_xau_challenge.json"
 STATE_DEFAULT = ROOT / "data" / "v5_runs" / "challenge_state.json"
 
 
+def log_paper(path: str, row: dict) -> None:
+    """Append one per-pass row to the dry-run CSV (creates with header)."""
+    import csv
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    exists = p.exists()
+    with p.open("a", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(row.keys()))
+        if not exists:
+            w.writeheader()
+        w.writerow(row)
+
+
 def load_state(path: Path, acct) -> dict:
     if path.exists():
         return json.loads(path.read_text())
@@ -84,6 +97,8 @@ def main() -> None:
     ap.add_argument("--force-min-lot", action="store_true")
     ap.add_argument("--save-data", action="store_true")
     ap.add_argument("--state", default=str(STATE_DEFAULT))
+    ap.add_argument("--paper-csv", default=None,
+                    help="append one row per pass to this CSV (dry-run log)")
     ap.add_argument("--journal", default=str(ROOT / "data" / "live_trades.db"))
     ap.add_argument("--advance-phase", action="store_true",
                     help="promote state to Phase 2 (run once, no trading)")
@@ -125,6 +140,16 @@ def main() -> None:
 
         symbol = demo.resolve_symbol(conn)
 
+        from datetime import datetime, timezone
+        row = dict(time_utc=datetime.now(timezone.utc).strftime("%F %T"),
+                   account=acct.login, balance=round(float(acct.balance), 2),
+                   equity=round(float(acct.equity), 2), action=action,
+                   phase=state["phase"], progress_pct=round(prog, 3),
+                   day_dd_pct=round(anchor_dd, 3),
+                   total_dd_pct=round(total_dd, 3), forecast=None,
+                   engine_state=None, engine_entry=None, engine_sl=None,
+                   engine_conf=None, plan="", sent=int(send))
+
         if action in ("halt", "day_lock", "locked", "complete",
                       "realize_target"):
             flatten(conn, symbol, magic, send, journal, run_id, action)
@@ -133,6 +158,8 @@ def main() -> None:
             if action == "complete":
                 print("  *** PHASE TARGET REALIZED — await promotion, then "
                       "run --advance-phase ***")
+            if args.paper_csv:
+                log_paper(args.paper_csv, row)
             return
 
         # ---- normal reconcile pass (same flow as the dual bot) ----
@@ -194,6 +221,18 @@ def main() -> None:
                 print(f"    ORDER REJECTED: {exc}")
         if not send and actions:
             print("  (dry plan — rerun with --live --execute to send)")
+
+        if args.paper_csv:
+            row.update(
+                forecast=round(fc, 3),
+                engine_state=state_s,
+                engine_entry=round(pos["entry"], 2) if pos else None,
+                engine_sl=round(pos["sl"], 2) if pos and pos["sl"] else None,
+                engine_conf=pos["conf"] if pos else None,
+                plan="; ".join(
+                    f"{act}:{json.dumps({k: v for k, v in a.items() if k != 'position'}, default=str)}"
+                    for act, a in actions) or "in_sync")
+            log_paper(args.paper_csv, row)
     finally:
         conn.disconnect()
 
