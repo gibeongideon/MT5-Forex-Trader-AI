@@ -1,0 +1,28 @@
+# XAUUSD dual-bot reconcile pass (ls ensemble + long-only champion).
+#
+# USER unit (no sudo needed, same pattern as xau-fade-exec):
+#   mkdir -p ~/.config/systemd/user
+#   cp deploy/xau-dual.service deploy/xau-dual.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now xau-dual.timer
+#
+# PRECONDITIONS (real money):
+#   * AutoTrading enabled in the MT5 terminal (Ctrl+E).
+#   * .env points MT5_* at the intended account.
+#   * xau-live.timer (the old single-bot pass) must be stopped:
+#       sudo systemctl disable --now xau-live.timer
+#     (its wrapper scripts/xau_live_cron.sh also carries a kill-switch).
+
+[Unit]
+Description=XAUUSD dual-bot reconcile pass (v5_xau_dual ls + champ)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_dual_cron.sh
+# bridge poll (~2 min) + start_mt5.sh sleeps + two engine replays; allow slack.
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-dual

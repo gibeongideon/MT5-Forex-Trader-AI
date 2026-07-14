@@ -1,0 +1,37 @@
+{
+  "promoted_on": "2026-07-14",
+  "validated_by": "data/v5_runs/xau-sharpe1-lab (camp1-10) + deploy-variant discrete backtests",
+  "research_report": "data/v5_runs/XAU_SHARPE1_RESEARCH.md",
+  "symbol": "XAUUSD",
+  "timeframe": "H4",
+  "exit_mode": "trail",
+  "flip_mode": "confidence",
+  "replaces": "v5-xau-live (magic 360520, xau-live.timer) — stopped 2026-07-14",
+  "bots": {
+    "ls": {
+      "run_id": "v5-xau-ls",
+      "magic": 360541,
+      "signal": "ls_signal",
+      "expected_sharpe": 0.807,
+      "expected_maxdd_pct": -14.6,
+      "params": {
+        "sl_atr": 3.0,
+        "trail_atr": 3.0,
+        "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
+      }
+    },
+    "champ": {
+      "run_id": "v5-xau-champ",
+      "magic": 360542,
+      "signal": "champion_signal",
+      "expected_sharpe": 0.968,
+      "expected_maxdd_pct": -10.0,
+      "params": {
+        "sl_atr": 3.0,
+        "trail_atr": 3.0,
+        "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
+      }
+    }
+  },
+  "note": "Two H4 trade-ticket bots on one hedging account, isolated by magic. ls = long/short 0.7*EWMAC-mid + 0.3*breakout-fast. champ = LONG-ONLY conc^1.5 blend (research champion, continuous eval Sharpe 1.041). champ never opens shorts by construction (forecast >= 0)."
+}

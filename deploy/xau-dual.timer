@@ -1,0 +1,16 @@
+# Fires the XAUUSD dual-bot reconcile pass hourly (minute 6, like the old
+# xau-live.timer it replaces), Monday-Friday, plus a post-boot catch-up.
+#
+# Install: see xau-dual.service header (USER unit — systemctl --user).
+
+[Unit]
+Description=Timer for XAUUSD dual-bot reconcile pass
+
+[Timer]
+OnCalendar=Mon-Fri 01..23:06:00
+OnBootSec=90sec
+Persistent=true
+Unit=xau-dual.service
+
+[Install]
+WantedBy=timers.target

@@ -10,6 +10,19 @@
 #
 # Idempotent: start_mt5.sh skips an already-running terminal/bridge.
 set -u
+
+# ------------------------------------------------------------------------
+# KILL-SWITCH 2026-07-14: this single-bot pass is RETIRED, replaced by the
+# dual-bot pass (scripts/xau_dual_cron.sh, user unit xau-dual.timer).
+# The system timer xau-live.timer still fires this wrapper (stopping it
+# needs sudo); this early exit makes those firings harmless. To finish the
+# migration properly run:  sudo systemctl disable --now xau-live.timer
+# To resurrect the old bot: delete this block and re-enable the timer.
+echo "$(date -u '+%F %T UTC') xau-live wrapper disabled (dual-bot migration)" \
+  >> /home/rock/Desktop/2026_Projects/Trader36/MT5/data/v5_runs/v5-xau-live-cron.log
+exit 0
+# ------------------------------------------------------------------------
+
 cd /home/rock/Desktop/2026_Projects/Trader36/MT5 || exit 1
 export DISPLAY=:0
 LOG=data/v5_runs/v5-xau-live-cron.log
