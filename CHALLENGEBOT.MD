@@ -1,6 +1,22 @@
 # CHALLENGEBOT — FundingPips plan (FX majors / GOLD / SILVER)
 
-Status: RESEARCH COMPLETE, build pending (2026-07-14, autonomous session).
+Status: BOT BUILT + DRY-RUN VERIFIED (2026-07-14). Awaiting account purchase.
+Bot: `scripts/v5_xau_challenge.py` (guard-first, 15-min cadence) + `configs/
+v5_xau_challenge.json` + `src/v5/challenge_guards.py` (8 unit tests green) +
+`deploy/xau-challenge.{service,timer}` (NOT enabled). Dry-runs verified:
+normal pass (plan-only, in-sync) and synthetic guard trip (day −4.86% →
+day_lock → flatten, no entries).
+
+**Exact-bot simulation (discrete engine, c4_discrete_fpsim.py — these are
+the numbers for the code that will actually run; realized vol is lower than
+the continuous engine at the same risk_frac):**
+
+| risk_frac | pass % | median | p75 | notes |
+|-----------|--------|--------|-----|-------|
+| 0.9%      | 92.6%  | 19.9 mo | 32.1 mo | safest |
+| **1.1% (config default)** | **87.9%** | **15.2 mo** | **25.1 mo** | chosen |
+| Stress @1.1%: weak-years 87.4%/21.6mo; edge−25% 82.5%/21.5mo; daily-limit
+  failures 0.0% everywhere (worst historical day −3.0% + guard). |
 Lab + all backtests: `data/v5_runs/challenge-lab/` (results.csv, campaign
 scripts, final_book_stream.csv). Strategy base: XAU long-only champion
 (`src/v5/xau_dual_signals.py::champion_signal`, research

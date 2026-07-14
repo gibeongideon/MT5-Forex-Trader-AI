@@ -1,0 +1,20 @@
+# FundingPips challenge reconcile + guard pass (v5_xau_challenge).
+# DO NOT ENABLE until the FundingPips account exists and its terminal
+# profile/.env is configured (see CHALLENGEBOT.MD §6).
+#
+# USER unit:
+#   cp deploy/xau-challenge.service deploy/xau-challenge.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now xau-challenge.timer
+
+[Unit]
+Description=FundingPips challenge pass (v5_xau_challenge, guard-first)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_challenge_cron.sh
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-challenge

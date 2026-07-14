@@ -1,0 +1,28 @@
+{
+  "created_on": "2026-07-14",
+  "purpose": "FundingPips 2-Step Standard evaluation (see CHALLENGEBOT.MD)",
+  "validated_by": "data/v5_runs/challenge-lab/c4_discrete_fpsim.py",
+  "expected": {
+    "risk_frac_0.009": {"pass_pct": 92.6, "median_months": 19.9, "p75_months": 32.1},
+    "risk_frac_0.011": {"pass_pct": 87.9, "median_months": 15.2, "p75_months": 25.1}
+  },
+  "symbol": "XAUUSD",
+  "timeframe": "H4",
+  "exit_mode": "trail",
+  "flip_mode": "confidence",
+  "magic": 360550,
+  "run_id": "v5-xau-challenge",
+  "signal": "champion_signal",
+  "params": {
+    "risk_frac": 0.011,
+    "sl_atr": 3.0,
+    "trail_atr": 3.0,
+    "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
+  },
+  "guards": {
+    "daily_guard_frac": 0.035,
+    "overall_halt_frac": 0.08,
+    "phase_targets": {"1": 0.08, "2": 0.05}
+  },
+  "note": "Guard-first executor: every 15-min pass evaluates guards on live equity BEFORE any reconcile. day anchor = max(balance, equity) at first pass after 00:00 UTC+3. NEVER raise risk_frac mid-challenge."
+}

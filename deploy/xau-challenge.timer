@@ -1,0 +1,15 @@
+# Every 15 minutes around the clock Mon-Fri: the GUARD needs intraday
+# cadence (daily loss is checked on floating equity); the H4 engine
+# reconcile inside the pass is idempotent and cheap.
+
+[Unit]
+Description=Timer for FundingPips challenge pass (15-min guard cadence)
+
+[Timer]
+OnCalendar=Mon-Fri *:00/15
+OnBootSec=120sec
+Persistent=true
+Unit=xau-challenge.service
+
+[Install]
+WantedBy=timers.target
