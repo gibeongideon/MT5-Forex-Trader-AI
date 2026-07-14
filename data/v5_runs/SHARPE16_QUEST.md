@@ -100,6 +100,47 @@ final step wasn't curve-fit.
 - (From prior sessions, re-confirmed by design: FX in any form, session
   gates, ML sizing — none re-tried.)
 
+## Capital curve (n6_capital_curve.py, 2026-07-15)
+
+Lot-quantization sweep (rates dropped; HFM-typical min steps, XAU 1 oz
+verified): position-level book eval SR **1.19-1.26 from $200k down to
+$10k** (quantization ≈ free above $10k), **1.08 at $5k**. The gap to the
+1.56 headline is NOT capital — it is the stream-level risk-equalization
+layer (each leg scaled by trailing vol of its own P&L), worth ~+0.3 and
+implementable live. Practical floor: **~$10-25k runs the full book**;
+below ~$5k fall back to the XAU champion alone. (A quick attempt to
+stack stream-scaling on the already-weighted quantized positions printed
+0.88 — that run double-applied risk scaling and is discarded, noted here
+so nobody trusts that number.)
+
+## Quest 2.1 addendum (2026-07-15, m1/m3 campaigns) — NOT achieved; 1.56 стands
+
+Attempt to push 1.56 → 2.1 by adding orthogonal books. Everything tried
+made the portfolio WORSE — the curated 8-class book is at its efficient
+point for the data we have:
+
+| candidate | standalone eval SR | portfolio effect |
+|---|---|---|
+| PALL LO / PLAT LO | +0.41 / +0.03 | dilutive |
+| NATGAS / HEATOIL / GASOIL LS | −0.31 / +0.11 / −0.06 | dead |
+| speed-split trend books (fast/slow) | 0.75-1.19 | corr 0.94-0.99 to mid — same book |
+| XSMOM (drift universe, monthly) | +0.37 | dilutive at 0.5w |
+| Index dip-buy (5d z<−1 in uptrend) | +0.30 | dilutive |
+| Turn-of-month indices | +0.20 (full 0.03) | unstable, dropped |
+| ERC allocation (trailing corr) | — | 1.03-1.13 vs 1.56 — prior beats optimization |
+
+Head-to-head on identical dates: **BASELINE P8-causal 1.561 (CI 0.86-2.23)
+vs best challenger 1.474 (CI 0.78-2.15), corr 0.963.** Weak books (SR
+0.3-0.4) dilute more than they diversify at any meaningful weight —
+the same lesson the 2026-07-08 basket research found ("widening hurts").
+
+**What 2.1 would actually require (not available to us today):** new
+RETURN SOURCES, not new combinations — options/vol-premium books (no
+data), maker-execution intraday alpha (infeasible on a retail MM
+account, see the fade post-mortem), single-stock breadth, or foreign
+rates/commodity futures with real data. Recorded so the next session
+doesn't re-burn this ground.
+
 ## Reproduce / next steps
 
 - `n1_tf_ensemble.py` (timeframe ceiling), `n2_drift_portfolio.py`
