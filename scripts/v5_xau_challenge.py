@@ -33,6 +33,7 @@ demo = dual.demo
 
 import src.v5.challenge_guards as cg  # noqa: E402
 import src.v5.xau_trend as xt  # noqa: E402
+from src.v5.news_filter import NewsFilter, apply_to_plan  # noqa: E402
 from src.core.mt5_connector import MT5Connector  # noqa: E402
 from src.core.trade_journal import TradeJournal  # noqa: E402
 from src.v5.xau_dual_signals import champion_signal  # noqa: E402
@@ -148,7 +149,8 @@ def main() -> None:
                    day_dd_pct=round(anchor_dd, 3),
                    total_dd_pct=round(total_dd, 3), forecast=None,
                    engine_state=None, engine_entry=None, engine_sl=None,
-                   engine_conf=None, plan="", sent=int(send))
+                   engine_conf=None, news_blocked=0, news_event=None,
+                   plan="", sent=int(send))
 
         if action in ("halt", "day_lock", "locked", "complete",
                       "realize_target"):
@@ -190,6 +192,23 @@ def main() -> None:
                                   conn.get_tick(symbol),
                                   conn.symbol_info(symbol), acct, bot_cfg,
                                   args, conn, symbol, atr_last)
+
+        nf_cfg = cfg.get("news_filter", {})
+        verdict = NewsFilter(nf_cfg, root=ROOT).check()
+        if verdict["blocked"]:
+            print(f"  NEWS WINDOW: {verdict['event']} @ "
+                  f"{verdict['event_time']} ({verdict['window']}) — "
+                  f"entries paused"
+                  + (" [STALE CALENDAR]" if verdict.get("stale") else ""))
+        actions, n_blocked, profit_close = apply_to_plan(
+            actions, held, verdict, nf_cfg.get("close_in_profit", True))
+        if n_blocked:
+            print(f"  NEWS: {n_blocked} new-entry action(s) blocked")
+        if profit_close:
+            print("  NEWS: closing in-profit position ahead of the event")
+        row.update(news_blocked=int(bool(verdict["blocked"])),
+                   news_event=verdict.get("event"))
+
         if not actions:
             print("  PLAN: in sync — nothing to do")
         for act, a in actions:

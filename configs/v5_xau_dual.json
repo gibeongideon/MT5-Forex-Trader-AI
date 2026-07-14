@@ -12,6 +12,7 @@
       "run_id": "v5-xau-ls",
       "magic": 360541,
       "signal": "ls_signal",
+      "news_filter": {"enabled": false, "close_in_profit": true},
       "expected_sharpe": 0.807,
       "expected_maxdd_pct": -14.6,
       "params": {
@@ -24,6 +25,7 @@
       "run_id": "v5-xau-champ",
       "magic": 360542,
       "signal": "champion_signal",
+      "news_filter": {"enabled": false, "close_in_profit": true},
       "expected_sharpe": 0.968,
       "expected_maxdd_pct": -10.0,
       "params": {

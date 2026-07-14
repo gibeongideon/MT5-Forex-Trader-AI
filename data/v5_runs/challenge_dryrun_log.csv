@@ -1,5 +1,6 @@
-time_utc,account,balance,equity,action,phase,progress_pct,day_dd_pct,total_dd_pct,forecast,engine_state,engine_entry,engine_sl,engine_conf,plan,sent
-2026-07-14 14:00:58,54939391,6265.45,6187.0,trade,1,-1.252,-1.252,-1.252,0.15,flat,,,,in_sync,0
-2026-07-14 14:15:47,54939391,6265.45,6186.42,trade,1,-1.261,-1.261,-1.261,0.15,flat,,,,in_sync,0
-2026-07-14 14:30:48,54939391,6265.45,6186.38,trade,1,-1.262,-1.262,-1.262,0.15,flat,,,,in_sync,0
-2026-07-14 14:45:47,54939391,6265.45,6180.6,trade,1,-1.354,-1.354,-1.354,0.15,flat,,,,in_sync,0
+time_utc,account,balance,equity,action,phase,progress_pct,day_dd_pct,total_dd_pct,forecast,engine_state,engine_entry,engine_sl,engine_conf,news_blocked,news_event,plan,sent
+2026-07-14 17:19:25,54939391,6265.45,6207.27,trade,1,-0.929,-0.929,-0.929,0.15,flat,,,,0,,in_sync,0
+2026-07-14 17:30:48,54939391,6265.45,6198.85,trade,1,-1.063,-1.063,-1.063,0.15,flat,,,,0,,in_sync,0
+2026-07-14 17:45:49,54939391,6265.45,6203.38,trade,1,-0.991,-0.991,-0.991,0.15,flat,,,,0,,in_sync,0
+2026-07-14 18:00:49,54939391,6265.45,6201.12,trade,1,-1.027,-1.027,-1.027,0.15,flat,,,,0,,in_sync,0
+2026-07-14 18:15:49,54939391,6265.45,6200.35,trade,1,-1.039,-1.039,-1.039,0.15,flat,,,,0,,in_sync,0

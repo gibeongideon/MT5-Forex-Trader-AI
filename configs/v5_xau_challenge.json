@@ -19,6 +19,18 @@
     "trail_atr": 3.0,
     "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
   },
+  "news_filter": {
+    "enabled": true,
+    "currencies": ["USD"],
+    "impact": "High",
+    "before_min": 30,
+    "after_min": 30,
+    "major_before_min": 60,
+    "major_after_min": 45,
+    "close_in_profit": true,
+    "refresh_minutes": 60,
+    "cache_file": "data/news_cache.json"
+  },
   "guards": {
     "daily_guard_frac": 0.035,
     "overall_halt_frac": 0.08,

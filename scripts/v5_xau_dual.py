@@ -39,6 +39,7 @@ _spec.loader.exec_module(demo)
 import src.v5.xau_trend as xt  # noqa: E402
 from src.core.mt5_connector import MT5Connector  # noqa: E402
 from src.core.trade_journal import TradeJournal  # noqa: E402
+from src.v5.news_filter import NewsFilter, apply_to_plan  # noqa: E402
 from src.v5.xau_dual_signals import SIGNALS  # noqa: E402
 
 CONFIG_FILE = ROOT / "configs" / "v5_xau_dual.json"
@@ -216,6 +217,22 @@ def main() -> None:
         actions = build_plan(res, held, held_dir, pendings,
                              conn.get_tick(symbol), conn.symbol_info(symbol),
                              acct, bot_cfg, args, conn, symbol, atr_last)
+
+        nf_cfg = bot_cfg.get("news_filter", {})
+        if nf_cfg.get("enabled"):
+            verdict = NewsFilter(nf_cfg, root=ROOT).check()
+            if verdict["blocked"]:
+                print(f"  NEWS WINDOW: {verdict['event']} @ "
+                      f"{verdict['event_time']} ({verdict['window']}) — "
+                      f"entries paused"
+                      + (" [STALE CALENDAR]" if verdict.get("stale") else ""))
+            actions, n_blocked, profit_close = apply_to_plan(
+                actions, held, verdict, nf_cfg.get("close_in_profit", True))
+            if n_blocked:
+                print(f"  NEWS: {n_blocked} new-entry action(s) blocked")
+            if profit_close:
+                print("  NEWS: closing in-profit position ahead of the event")
+
         if not actions:
             print("  PLAN: in sync — nothing to do")
         for act, a in actions:
