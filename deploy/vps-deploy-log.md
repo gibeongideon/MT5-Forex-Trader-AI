@@ -98,3 +98,13 @@ so a second VPS is a replay of `deploy/vps_provision.sh`. Key: ~/.ssh/vps_basket
   (--live --execute, state basket_challenge_live_state.json) hourly :46.
 - Sizing note: on a ~$77k-equiv acct @7% vol some sleeves round near min-lot;
   bigger USD account (FundingPips $100k) sizes cleaner.
+
+### PROTECTION + REPORTING added (2026-07-15)
+- REAL-TIME guard: executor `--guard-only` mode (check equity vs daily/overall limits,
+  flatten on breach, skip reconcile). Timer `xau-basket-guard.timer` every 60s.
+  -> max unmonitored exposure 60s (was 60min). Uses EQUITY incl floating (firm basis).
+- Cadence stack: guard 1-min · reconcile hourly :46 · daily report 20:55 UTC.
+- DAILY EMAIL: `scripts/vps_daily_report.py` -> kipngenol@gmail.com. Reports balance/
+  equity, today gain, total P&L, phase progress %, and RULE ADHERENCE % (daily-loss +
+  max-loss budget used/headroom, worst intraday DD from guard log, violations flag).
+  SMTP creds in ~/MT5/.env.mail (600) — Gmail app password TO FILL. Timer xau-basket-report.
