@@ -1,0 +1,4 @@
+time_utc,account,balance,equity,action,phase,progress_pct,day_dd_pct,total_dd_pct,n_symbols,n_mapped,plan,sent
+2026-07-15 13:33:59,54939391,6378.5,6315.77,trade,1,-0.983,-0.983,-0.983,12,0,in_sync,0
+2026-07-15 13:36:04,54939391,6378.5,6316.44,trade,1,-0.973,-0.973,-0.973,12,0,in_sync,0
+2026-07-15 13:46:44,54939391,6378.5,6317.72,trade,1,-0.953,-0.953,-0.953,12,0,in_sync,0

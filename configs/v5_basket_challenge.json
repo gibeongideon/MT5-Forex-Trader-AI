@@ -1,0 +1,39 @@
+{
+  "created_on": "2026-07-15",
+  "purpose": "FundingPips DIVERSIFIED BASKET challenge executor (see CHALLENGEBOT.MD).",
+  "model": "standard",
+  "_model_note": "2-Step Standard @ 7% vol: ~92% pass, 0% daily-loss breaches, ~14mo median (fp_sim). Never raise vol mid-challenge.",
+  "magic": 360560,
+  "run_id": "v5-basket-challenge",
+  "engine": "scripts/v5_basket_challenge.py::target_leverage",
+  "reconcile_buffer": 0.15,
+  "_buffer_note": "no-trade band: skip a symbol whose target vs held leverage differs by < buffer x its own target (cuts churn).",
+  "symbols": {
+    "_note": "engine symbol -> broker mapping. fp_symbol filled in AFTER buying the FundingPips account (names vary: US30 vs US30.cash etc). contract_size/point read live from symbol_info at execute time; values here are only dry-run placeholders.",
+    "XAUCHAMP": {"fp_symbol": null, "class": "xau",    "tf": "H4"},
+    "SILVER":   {"fp_symbol": null, "class": "metal",  "tf": "D1"},
+    "SPX":      {"fp_symbol": null, "class": "eq_us",  "tf": "D1"},
+    "NDX":      {"fp_symbol": null, "class": "eq_us",  "tf": "D1"},
+    "DJI":      {"fp_symbol": null, "class": "eq_us",  "tf": "D1"},
+    "DAX":      {"fp_symbol": null, "class": "eq_eu",  "tf": "D1"},
+    "FTSE":     {"fp_symbol": null, "class": "eq_eu",  "tf": "D1"},
+    "STOXX":    {"fp_symbol": null, "class": "eq_eu",  "tf": "D1"},
+    "NIKKEI":   {"fp_symbol": null, "class": "eq_ap",  "tf": "D1"},
+    "ASX":      {"fp_symbol": null, "class": "eq_ap",  "tf": "D1"},
+    "BTC":      {"fp_symbol": null, "class": "crypto", "tf": "D1"},
+    "ETH":      {"fp_symbol": null, "class": "crypto", "tf": "D1"}
+  },
+  "guards": {
+    "daily_guard_frac": 0.035,
+    "overall_halt_frac": 0.08,
+    "phase_targets": {"1": 0.08, "2": 0.05},
+    "_note": "Standard: daily limit 5% -> flatten at 3.5%; max loss 10% -> halt at 8%; targets 8%/5%."
+  },
+  "news_filter": {
+    "enabled": true, "currencies": ["USD"], "impact": "High",
+    "before_min": 30, "after_min": 30,
+    "major_before_min": 60, "major_after_min": 45,
+    "close_in_profit": true, "refresh_minutes": 60,
+    "cache_file": "data/news_cache.json"
+  }
+}
