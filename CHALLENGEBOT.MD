@@ -159,3 +159,7 @@ intraday guards. Expected: ~85-88% pass, median ~13 months, p75 ~21 months
   `c2_fx_silver.py`; sim + stress: `c3_book_fpsim.py`; engine/simulator:
   `challenge_lab.py`. All runs appended to `results.csv`.
 - Champion stream is byte-identical to the deployed 360542 signal module.
+
+
+RULES for MASTER ACCOUNT ONCE FUNDED.NEED TO ADJUST BOT TO ADHERE TO THIS
+https://help.fundingpips.com/hc/en-us/articles/34504137479441-News-Trading-Weekend-Holding
