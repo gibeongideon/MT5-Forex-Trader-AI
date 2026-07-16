@@ -124,3 +124,9 @@ so a second VPS is a replay of `deploy/vps_provision.sh`. Key: ~/.ssh/vps_basket
 - NOTE: desktop mt5-terminal still logged into cent (harmless, dry-only timers). If broker
   session tug-of-war appears, log the desktop terminal out of cent. RAM on 4GB: two MT5
   instances — monitor (idle ~800MB-1.5GB; launch peaks strain, 2GB swap covers).
+
+### Vol-targeting added to basket (2026-07-16)
+- Engine `v5_basket_challenge.py`: VOL_TARGET on. `risk_scalar()` = causal (trailing EWMA hl20,
+  shifted) vol-target x drawdown-scaler on the book's own returns; `target_leverage()` scales
+  all per-symbol leverages by the latest scalar. Backtest: eval SR 1.27->1.43, FP pass 92%->94%
+  @7%, faster. Synced to VPS; live reconcile adjusted to vol-targeted leverages (retcode 10009).

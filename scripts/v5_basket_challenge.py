@@ -67,6 +67,31 @@ MODELS = {
 DEFAULT_MODEL = "standard"
 K_DIAL = MODELS[DEFAULT_MODEL]["vol"] / TARGET_VOL   # dial so book ~= model vol
 
+# Portfolio vol-targeting + drawdown-scaler (backtest: eval SR 1.26 -> 1.43, pass
+# 92% -> 94% @7%, faster; robust walk-forward). Scales the whole book toward constant
+# trailing vol and de-risks in drawdown. Causal (trailing EWMA on the book's own
+# returns). See data/v5_runs/basket-ls-experiment/REPORT.md.
+VOL_TARGET = True
+VT_HALFLIFE = 20      # days
+VT_MAXSCALE = 3.0     # cap the up-scale
+DD_FLOOR = 0.5        # min scale when deep in drawdown
+
+
+def risk_scalar(book, target_vol):
+    """Latest causal vol-target x drawdown scaler on the book's own daily returns.
+    1.0 = neutral; <1 de-risks (high vol / drawdown), >1 presses (calm)."""
+    if not VOL_TARGET:
+        return 1.0
+    b = book.dropna()
+    if len(b) < 40:
+        return 1.0
+    rv = b.ewm(halflife=VT_HALFLIFE, min_periods=20).std() * np.sqrt(252)
+    vol_s = (target_vol / rv).clip(0.0, VT_MAXSCALE)
+    eq = (1.0 + b).cumprod()
+    dd_s = (1.0 + (eq / eq.cummax() - 1.0) * 3.0).clip(lower=DD_FLOOR)
+    s = (vol_s * dd_s).dropna()
+    return float(s.iloc[-1]) if len(s) else 1.0
+
 
 def _norm(s):
     return s * (1.0 / s.abs().expanding(min_periods=120).mean().shift(1))
@@ -160,14 +185,16 @@ def build(start="2016-01-01", dial=K_DIAL):
 
 def target_leverage(model=DEFAULT_MODEL):
     """Public API for the executor: {symbol: target account-leverage} at the
-    latest bar, sized for the given model's vol dial. Long-only (>=0)."""
+    latest bar, sized for the given model's vol dial. Long-only (>=0).
+    Applies the causal portfolio vol-target x drawdown scalar (VOL_TARGET)."""
     dial = MODELS[model]["vol"] / TARGET_VOL
-    W, _, live = build(dial=dial)
+    W, book, live = build(dial=dial)
+    scalar = risk_scalar(book, MODELS[model]["vol"])
     out = {}
     for sym in W:
         s = live[sym].dropna()
         p = float(s.iloc[-1]) if len(s) else 0.0
-        out[sym] = max(0.0, W[sym] * p)     # champion recipe is long-only
+        out[sym] = max(0.0, W[sym] * p * scalar)   # long-only, vol-targeted
     return out
 
 
@@ -177,10 +204,20 @@ def cmd_backtest(model=DEFAULT_MODEL):
     W, book, _ = build(dial=dial)
     sh = lambda d, s="2017-01-01": float(d.loc[s:].mean() / d.loc[s:].std() * np.sqrt(252))
     eq = (1 + book.loc["2017-01-01":]).cumprod()
-    print(f"=== BASKET book (this engine)  model={model.upper()} vol~{m['vol']*100:.0f}% ===")
-    print(f"  eval SR {sh(book):+.3f}   full {sh(book,'2016-06-01'):+.3f}   "
-          f"2021+ {sh(book,'2021-01-01'):+.3f}   vol {book.std()*np.sqrt(252)*100:.1f}%   "
+    print(f"=== BASKET book (this engine)  model={model.upper()} vol~{m['vol']*100:.0f}% "
+          f"{'[VOL-TARGET ON]' if VOL_TARGET else ''} ===")
+    print(f"  raw        eval SR {sh(book):+.3f}   2021+ {sh(book,'2021-01-01'):+.3f}   "
           f"maxDD {float((eq/eq.cummax()-1).min()*100):.1f}%")
+    # apply the causal vol-target x dd scaler as a time series (matches live target_leverage)
+    if VOL_TARGET:
+        rv = book.ewm(halflife=VT_HALFLIFE, min_periods=20).std() * np.sqrt(252)
+        vol_s = (m["vol"] / rv).clip(0.0, VT_MAXSCALE)
+        eqb = (1 + book).cumprod()
+        dd_s = (1 + (eqb / eqb.cummax() - 1) * 3.0).clip(lower=DD_FLOOR)
+        book = (book * (vol_s * dd_s).shift(1)).dropna()
+        eq = (1 + book.loc["2017-01-01":]).cumprod()
+        print(f"  vol-target eval SR {sh(book):+.3f}   2021+ {sh(book,'2021-01-01'):+.3f}   "
+              f"maxDD {float((eq/eq.cummax()-1).min()*100):.1f}%   <-- live book")
     print("  per-symbol weight W_i (live leverage multiplier):")
     for sym, w in sorted(W.items(), key=lambda x: -x[1]):
         print(f"    {sym:9s} {w:+.3f}")
