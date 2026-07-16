@@ -108,3 +108,19 @@ so a second VPS is a replay of `deploy/vps_provision.sh`. Key: ~/.ssh/vps_basket
   equity, today gain, total P&L, phase progress %, and RULE ADHERENCE % (daily-loss +
   max-loss budget used/headroom, worst intraday DD from guard log, violations flag).
   SMTP creds in ~/MT5/.env.mail (600) — Gmail app password TO FILL. Timer xau-basket-report.
+
+### 2nd INSTANCE — live CENT account migrated to VPS (2026-07-15)
+- Two independent MT5 instances on one VPS:
+  * inst1: prefix ~/.mt5,  Xvfb :99,  bridge 18812 -> DEMO 57482374 (basket challenge)
+  * inst2: prefix ~/.mt5b, Xvfb :100, bridge 18813 -> LIVE CENT 54939391 (dual ls+champ)
+- Enabler: MT5Connector honors MT5_BRIDGE_PORT env (attach mode, no path). ~/.mt5b =
+  rsync copy of ~/.mt5 with Config/accounts.dat + mt5_login.ini removed (so it doesn't
+  grab the demo session). servers.dat kept -> knows HFMarketsKE-Live2.
+- Separate display :100 for cent so the one-time VNC login can't hit the demo terminal.
+- Services: mt5-terminal-cent.service (persistent, :100/18813), xau-dual-cent.timer
+  (Mon-Fri hourly :16) -> scripts/vps_xau_dual_cent_cron.sh (MT5_BRIDGE_PORT=18813,
+  --live --execute ls+champ). Verified: recognizes existing 360541 short, PLAN in sync.
+- CUTOVER: desktop `xau-dual.timer` DISABLED (was trading cent); VPS now sole live trader.
+- NOTE: desktop mt5-terminal still logged into cent (harmless, dry-only timers). If broker
+  session tug-of-war appears, log the desktop terminal out of cent. RAM on 4GB: two MT5
+  instances — monitor (idle ~800MB-1.5GB; launch peaks strain, 2GB swap covers).
