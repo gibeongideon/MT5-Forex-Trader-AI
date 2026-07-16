@@ -33,3 +33,23 @@ daily signals. Selected signals with positive 2017-2020 Sharpe, tested 2021+ OOS
 Treat the fast ensemble as a DIVERSIFIER alongside the trend book (combined 1.44), NOT a
 standalone replacement. Verify overnight fills on a demo before sizing the overnight sleeve;
 the reversal sleeve can be deployed cleanly now. Scripts: data/v5_runs/fast-strategies/.
+
+## VERIFICATION on HFM real instruments (2026-07-16) — everything died
+Tools: `scripts/v5_overnight_verify.py`, `scripts/v5_fast_verify_all.py` (read-only vs demo 57482374).
+Tested every fast signal on HFM's ACTUAL tradeable symbols (US500.F, US100.F, US30.F,
+GER40, JPN225, AUS200, XAUUSD, XAGUSD), net of REAL spread:
+
+| Signal | Ensemble SR (real) | Verdict |
+|---|---|---|
+| Overnight | −4.65 | DEAD — cash-index window ≠ HFM futures-CFD bar boundary |
+| Intraday | +1.22 (0.97 corr to buy-hold) | JUST DRIFT, not distinct |
+| Reversal R1/R2/R5 | +0.13 / +0.02 / −0.35 | NO EDGE (backtest 0.57 didn't hold) |
+
+**CONCLUSION: no fast/non-trend strategy is deployable.** The backtest edges died on
+(1) bar-boundary shifts (broker open/close ≠ cash times), (2) wider real spreads,
+(3) drift-in-disguise. The durable, verified edge remains the TREND/DRIFT book.
+
+**RULE for the future:** any fast (daily/intraday) backtest edge MUST be re-verified on
+the broker's own tradeable symbols before building. Downloaded/cash data misrepresents
+overnight windows and understates spreads. Slow trend/drift is robust precisely because
+frictions are rounding errors over multi-week holds; fast strategies are the opposite.
