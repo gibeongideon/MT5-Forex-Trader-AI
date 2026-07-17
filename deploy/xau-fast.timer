@@ -1,0 +1,15 @@
+# Fires the FAST intraday trend bot every 30 min (M30 cadence), Mon-Fri,
+# plus a post-boot catch-up. NOT ENABLED — install per xau-fast.service header,
+# and only after a raw/ECN gold account is configured.
+
+[Unit]
+Description=Timer for FAST intraday XAUUSD trend bot (M30)
+
+[Timer]
+OnCalendar=Mon-Fri *:00/30:00
+OnBootSec=90sec
+Persistent=true
+Unit=xau-fast.service
+
+[Install]
+WantedBy=timers.target

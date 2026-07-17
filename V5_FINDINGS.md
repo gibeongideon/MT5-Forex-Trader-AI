@@ -62,6 +62,41 @@ Wide sweep for faster, consistent, non-trend edges, all net of spread, OOS=2021+
 - **THE FINDING — diversified FAST ENSEMBLE (overnight + short-term reversal, ~26 daily signals, avg corr 0.02):** select on 2017-2020, deploy 2021+ OOS → **OOS Sharpe 1.30** (IS 1.32, held), consistent (2022 only −0.4). Decompose OOS: **overnight-only 1.19** (the driver, but needs LIVE fill check — close→open gap may not be tradeable on 24h CFDs), **reversal-only 0.57** (cleanly tradeable close→close, ~0 corr to trend). **TREND+FAST 50/50 = 1.44** vs trend alone 1.17 → real diversifying lift. No get-rich-quick fast scheme; the ensemble is a genuine COMPLEMENT to trend, not a replacement.
 - **VERIFIED DEAD on HFM's real tradeable instruments (2026-07-16, `scripts/v5_overnight_verify.py` + `v5_fast_verify_all.py` vs demo 57482374):** overnight ensemble −4.65 (backtest used CASH-index close 16:00→open 09:30 window; HFM's futures-CFDs break at a different time → no premium, slightly negative); intraday +1.22 but 0.97 corr to buy-hold = JUST DRIFT; reversal R1/R2/R5 = +0.13/+0.02/−0.35 = no edge (backtest 0.57 doesn't hold on real closes/spreads). **NOTHING in the fast family is deployable.** The backtest edges died on: bar-boundary shifts, wider real spreads, and drift-in-disguise. **RULE: always verify a fast edge on the BROKER's own symbols before building — cash/downloaded data lies about overnight windows and spreads.** Durable edge stays the TREND/DRIFT book. Report: `data/v5_runs/fast-strategies/REPORT.md`.
 
+### 3c. Fast / intraday TREND runner (2026-07-17, `data/v5_runs/fast-trend/`)
+Hunt for a *short-term trend* bot to complement the slow H4 champion (more
+trades/day). Distinct from the dead fade/reversal work — this is trend, not
+mean-reversion. Engines: `scripts/v5_xau_fast_trend_lab.py` (vectorized
+vol-target sweep, buffered, combined-book vs champion) + `v5_xau_fast_trend_discrete.py`
+(real lot/stop engine, monkeypatched fast champion signal).
+- **Long-only beats LS at every speed** (kill-the-shorts again). Trend edge is
+  gross-positive at ALL speeds (breakout gross SR ≤1.3) but **net Sharpe falls
+  with turnover — spread is the tax.** No intraday-specific alpha: **session-ORB
+  and intraday-momentum are gross-positive, net-DEAD** (same failure as fade).
+- **Carver no-trade buffer cuts turnover 3–4× at ~no net-Sharpe loss** — key
+  lever for spread-bound fast books; but slowing it down raises corr-to-champion
+  to 0.73–0.80.
+- **A fast sleeve does NOT improve the combined book:** champ-alone 1.28 →
+  best 50/50 combo 1.23. On one asset a faster book is a correlated weaker clone.
+- **Discrete reality kills the vectorized illusion:** net SR ~1.0 (continuous)
+  → **0.4–0.5** (real 3×ATR stops whipsaw at 38% win, $0.34 spread, quantized
+  lots); **negative 2017/2018/2021, edge only in the 2024–26 bull** = leveraged
+  bull-beta, not robust.
+- **The killer is the cent spread — account-type-fixable.** M30 fast champion,
+  ~19 trades/mo: **$0.34 → 0.50 (dead); $0.12 raw/ECN → 0.85 (deployable);
+  $0.02 → 1.07.** Halving spread ~doubles net Sharpe. M30 fast = best config.
+- **LIVE VPS-VERIFIED (2026-07-17, read-only bridge probe):** live cent XAUUSDc
+  spread measured **$0.36** (not $0.34 — slightly worse) → discrete net SR 0.49,
+  DEAD confirmed. Raw-tier gold IS real at HFM (**XAUUSDb $0.10 FULL-tradable on
+  demo**, discrete 0.89; XAUUSDr $0.16 disabled) but **NOT visible on the live
+  cent account group** → no tight-spread path on the current live account. Gold
+  swap −$0.72/oz/night long (unmodeled). Probes: `scripts/vps_spread_probe.py`,
+  `vps_symbol_tradability.py`.
+- **Verdict:** NOT deployable on the cent account (verified $0.36). Viable as an
+  *activity* play only on a raw-tier HFM gold account (~$0.10–0.16, e.g. XAUUSDb),
+  which the live cent group can't reach; and even there it doesn't lift a
+  champion+fast portfolio (correlated). Real lever for more trades = cross-ASSET
+  trend (BTC/NDX), not cross-speed on XAU. Report: `data/v5_runs/fast-trend/REPORT.md`.
+
 ### 4. Earlier disproven overlays (see memory for detail)
 - **Per-trade probability sizing / meta-labeling** — fails twice; vol-targeting only cuts drawdown, adds no return.
 - **Gold-silver spread** — corr 0.79 but z-spread edge is pre-2015-only, dead OOS 2017+.

@@ -1,0 +1,9 @@
+{
+  "equity0": 3000.0,
+  "risk_frac": 0.01,
+  "slippage_usd": 0.05,
+  "speed": "vfast",
+  "spread_usd": 0.34,
+  "strategy": "fastchamp_discrete",
+  "tf": "H1"
+}

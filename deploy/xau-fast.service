@@ -1,0 +1,27 @@
+# FAST intraday XAUUSD trend bot (magic 360543, M30 cadence) — NOT ENABLED.
+#
+# DEPLOY ONLY on a raw/ECN gold account (spread <= $0.24/oz). On the current
+# $0.36 cent account the strategy is net-negative-to-marginal; the executor's
+# spread_guard will ABORT there, so enabling this against the cent account is
+# safe-but-useless. See data/v5_runs/fast-trend/REPORT.md.
+#
+# USER unit (no sudo), same pattern as xau-dual:
+#   cp deploy/xau-fast.service deploy/xau-fast.timer ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now xau-fast.timer     # only after a raw acct is set
+#
+# PRECONDITIONS: AutoTrading on; .env points at the RAW gold account; set
+# bots.fast.symbol_override in configs/v5_xau_fast.json to the raw symbol.
+
+[Unit]
+Description=FAST intraday XAUUSD trend bot (v5_xau_fast, M30)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/xau_fast_cron.sh
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xau-fast

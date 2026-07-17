@@ -1,0 +1,9 @@
+{
+  "equity0": 3000.0,
+  "risk_frac": 0.005,
+  "slippage_usd": 0.0,
+  "speed": "fast",
+  "spread_usd": 0.24,
+  "strategy": "fastchamp_discrete",
+  "tf": "M30"
+}

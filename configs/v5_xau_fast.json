@@ -1,0 +1,33 @@
+{
+  "built_on": "2026-07-17",
+  "validated_by": "data/v5_runs/fast-trend/ (sweep + discrete + spread frontier)",
+  "research_report": "data/v5_runs/fast-trend/REPORT.md",
+  "symbol": "XAUUSD",
+  "symbol_note": "resolve_symbol picks the tradable XAUUSD* symbol; on a raw account set bots.fast.symbol_override to e.g. 'XAUUSDb'",
+  "timeframe": "M30",
+  "exit_mode": "trail",
+  "flip_mode": "confidence",
+  "REQUIRED_ACCOUNT": "raw/ECN gold spread <= $0.24/oz (24 pts) to match the champion; <= $0.14 to beat it. DEAD on the $0.36 cent account. The executor's spread_guard ABORTS above max_spread_usd.",
+  "bots": {
+    "fast": {
+      "run_id": "v5-xau-fast",
+      "magic": 360543,
+      "signal": "fast_champion_signal",
+      "symbol_override": "XAUUSDb",
+      "max_spread_usd": 0.24,
+      "spread_model_usd": 0.12,
+      "expected_sharpe_by_spread": {"0.10": 1.07, "0.14": 1.04, "0.24": 0.91, "0.36": 0.75},
+      "expected_maxdd_pct_at_risk0.5": -18.0,
+      "params": {
+        "enter_thresh": 1.5,
+        "flip_thresh": 1.8,
+        "atr_period": 14,
+        "sl_atr": 3.0,
+        "trail_atr": 3.0,
+        "risk_frac": 0.005,
+        "conf_risk_scale": {"low": 0.5, "med": 1.0, "high": 1.5}
+      }
+    }
+  },
+  "note": "FAST intraday LONG-ONLY trend runner on M30 (magic 360543), ~13-19 trades/mo. High-conviction selection (enter_thresh 1.5) — the only lever that lifts net Sharpe against the spread; uniform lot sizing is Sharpe-neutral. risk_frac 0.5% targets ~-18% DD (raise toward 1% for ~-34% DD / higher CAGR). Deploy ONLY on a raw/ECN gold account; the spread_guard refuses wider spreads."
+}
