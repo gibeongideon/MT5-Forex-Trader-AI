@@ -1,0 +1,56 @@
+{
+  "created_on": "2026-07-18",
+  "purpose": "FTMO 2-Step challenge executor. FOCUSED BOOK: XAU champion + BTC + NDX, equal 1/3 (long-only champion recipe, portfolio vol-target). Same generic executor as the FundingPips basket (scripts/v5_basket_challenge_exec.py --config this).",
+  "firm": "FTMO",
+  "model": "ftmo",
+  "_model_note": "FTMO 2-Step (ftmo.com/en/trading-objectives, verified 2026-07-18): P1 +10% / P2 +5% target; 5% max daily loss (equity incl. floating, resets 00:00 CE(S)T); 10% max overall loss STATIC on initial; min 4 trading days; NO time limit; no 2-Step consistency rule; 1:100 leverage. Focused book @ 7% vol sim: eval SR 1.71, ~98.8% pass, 0% daily breaches, fail-DD 1.2%, median 13.3mo. Never raise vol mid-challenge.",
+  "magic": 360561,
+  "run_id": "v5-ftmo-challenge",
+  "engine": "scripts/v5_basket_challenge.py::target_leverage (model=ftmo)",
+  "reset_tz": "Europe/Prague",
+  "reconcile_buffer": 0.25,
+  "_buffer_note": "no-trade band: skip a symbol whose target vs held leverage differs by < buffer x its own target (cuts churn).",
+  "symbols": {
+    "_note": "engine symbol -> FTMO broker name (verified live on FTMO-Demo 2026-07-18). contract_size/price read live at execute time.",
+    "XAUCHAMP": {
+      "fp_symbol": "XAUUSD",
+      "class": "xau",
+      "tf": "H4",
+      "_broker": "FTMO FULL, contract 100oz, vmin 0.01"
+    },
+    "BTC": {
+      "fp_symbol": "BTCUSD",
+      "class": "crypto",
+      "tf": "D1",
+      "_broker": "FTMO FULL, contract 1.0 BTC/lot, vmin 0.01, spread ~$1 (1.5bp)"
+    },
+    "NDX": {
+      "fp_symbol": "US100.cash",
+      "class": "eq_us",
+      "tf": "D1",
+      "_broker": "FTMO FULL, contract 1.0, vmin 0.01, spread ~1.5pt (0.5bp)"
+    }
+  },
+  "guards": {
+    "daily_guard_frac": 0.035,
+    "overall_halt_frac": 0.08,
+    "phase_targets": {
+      "1": 0.10,
+      "2": 0.05
+    },
+    "_note": "FTMO: daily limit 5% -> flatten at 3.5% from 00:00-CET anchor; max loss 10% -> halt at 8% from initial; targets +10% (P1) / +5% (P2). 1.5% buffer before each firm line."
+  },
+  "min_trading_days": 4,
+  "news_filter": {
+    "enabled": true,
+    "currencies": ["USD"],
+    "impact": "High",
+    "before_min": 30,
+    "after_min": 30,
+    "major_before_min": 60,
+    "major_after_min": 45,
+    "close_in_profit": true,
+    "refresh_minutes": 60,
+    "cache_file": "data/news_cache.json"
+  }
+}

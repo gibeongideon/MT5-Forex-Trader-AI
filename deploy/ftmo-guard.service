@@ -1,0 +1,12 @@
+# FTMO real-time protector — guards + flatten on breach (no reconcile).
+[Unit]
+Description=FTMO challenge real-time guard (flatten on daily/max breach)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/ftmo_guard_cron.sh
+TimeoutStartSec=90
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ftmo-guard

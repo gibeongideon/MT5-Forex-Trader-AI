@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FTMO daily report (21:05 CET ~ after US close)
+[Timer]
+OnCalendar=*-*-* 19:05:00
+OnBootSec=300sec
+Persistent=true
+Unit=ftmo-report.service
+[Install]
+WantedBy=timers.target

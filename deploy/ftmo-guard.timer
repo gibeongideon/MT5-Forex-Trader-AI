@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FTMO real-time guard (every 2 min)
+[Timer]
+OnCalendar=*-*-* *:00/2:00
+OnBootSec=150sec
+Persistent=false
+Unit=ftmo-guard.service
+[Install]
+WantedBy=timers.target

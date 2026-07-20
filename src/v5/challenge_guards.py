@@ -20,6 +20,32 @@ from datetime import datetime, timedelta, timezone
 
 UTC3 = timezone(timedelta(hours=3))
 
+# Reset timezone for the daily anchor. FundingPips = UTC+3; FTMO = 00:00
+# CE(S)T (Europe/Prague, DST-aware). Executor sets RESET_TZ from config.
+RESET_TZ = UTC3
+
+
+def set_reset_tz(name: str | None) -> None:
+    """Set the daily-reset timezone by name: 'UTC+3'/'FP' (FundingPips) or
+    'CET'/'CEST'/'Europe/Prague'/'FTMO' (FTMO, DST-aware if zoneinfo present)."""
+    global RESET_TZ
+    if not name:
+        return
+    key = name.strip().lower()
+    if key in ("utc+3", "fp", "fundingpips"):
+        RESET_TZ = UTC3
+        return
+    if key in ("cet", "cest", "ftmo", "europe/prague"):
+        try:
+            from zoneinfo import ZoneInfo
+            RESET_TZ = ZoneInfo("Europe/Prague")
+        except Exception:
+            RESET_TZ = timezone(timedelta(hours=2))  # CEST fixed fallback
+        return
+    # explicit "UTC+N"
+    if key.startswith("utc") and (key[3:] or "").lstrip("+-").isdigit():
+        RESET_TZ = timezone(timedelta(hours=int(key[3:])))
+
 DAILY_GUARD_FRAC = 0.035   # flatten at -3.5% from day anchor (firm: -5%)
 OVERALL_HALT_FRAC = 0.08   # permanent halt at -8% from initial (firm: -10%)
 PHASE_TARGETS = {1: 0.08, 2: 0.05}
@@ -27,7 +53,7 @@ PHASE_TARGETS = {1: 0.08, 2: 0.05}
 
 def platform_date(now_utc: datetime | None = None) -> str:
     now = now_utc or datetime.now(timezone.utc)
-    return now.astimezone(UTC3).strftime("%Y-%m-%d")
+    return now.astimezone(RESET_TZ).strftime("%Y-%m-%d")
 
 
 def init_state(balance: float, equity: float,

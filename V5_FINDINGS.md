@@ -28,6 +28,19 @@ Single-XAU passes the FP 2-Step only ~61% once the daily-loss rule is measured o
 - **Sharpe-weighting sleeves = lookahead illusion:** 1.46/96% in-sample, but walk-forward (past-data weights) = 1.25/88.7% ≈ equal-class. Equal-class weighting is already near-optimal; keep it.
 - **GENUINE robust win: portfolio-level VOLATILITY TARGETING** (scale book to constant trailing vol, causal). Eval SR **1.26→1.39**, +dd-scaler **→1.43**; pass 91.9%→94.3% @7% (96.8% @6%), and FASTER. Recommended upgrade — scale per-symbol target leverages by a trailing-vol scalar on the book's own returns. Report: `basket-ls-experiment/REPORT.md`.
 
+### FundingPips — FOCUSED book beats the 12-instrument basket (2026-07-18, `scripts/v5_xau_focus_challenge.py`)
+Prompted by a live basket drawdown scare (a −1% wobble at 3 days = pure noise at 7% vol). Tested XAU-focused subsets vs the deployed 6-class basket on the exact FP 2-Step sim (realistic day_safety=1.5, vol-target ON, eval 2017+):
+
+| Book | #a | SR17 | SR21 | pass% | fail-DD | median |
+|---|---|---|---|---|---|---|
+| 6-class basket (was deployed) | 12 | 1.43 | 1.22 | 94.3 | 5.7 | 12.3mo |
+| XAU only | 1 | 1.12 | 1.20 | 94.2 | 5.8 | 17.0mo |
+| **XAU+BTC+NDX equal ⅓** | **3** | **1.71** | **1.28** | **98.7** | **1.4** | **11.4mo** |
+| XAU-tilt 50%+BTC/NDX 25% | 3 | 1.69 | 1.33 | 98.8 | 1.2 | 11.6mo |
+| +SILVER (eq ¼) | 4 | 1.56 | 1.19 | 98.2 | 1.8 | 12.2mo |
+
+**XAU+BTC+NDX (equal ⅓) dominates the basket on every FP metric with ¼ the symbols.** Correlations 2017+: XAU/BTC 0.08, XAU/NDX 0.04, BTC/NDX 0.12 (truly independent); the old basket diluted into correlated index clones (SPX≈NDX≈DJI 0.86) and gold-correlated SILVER (0.58). **DEPLOYED: engine `CLASSES` + `configs/v5_basket_challenge.json` switched to the 3-asset focused book (old 6-class kept as `BASKET_FULL` for revert).** Verified: `--backtest` SR 1.706 / pass 98.7%; `--targets` emits XAU/BTC/NDX only.
+
 ---
 
 ## DISPROVEN / DEAD (do not re-run)

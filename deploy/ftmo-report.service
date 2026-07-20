@@ -1,0 +1,12 @@
+# FTMO daily challenge report -> email (progress + compliance %).
+[Unit]
+Description=FTMO challenge daily report
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/ftmo_report_cron.sh
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ftmo-report

@@ -53,6 +53,7 @@ def apply_model_to_guards(cfg) -> None:
     cg.DAILY_GUARD_FRAC = float(g["daily_guard_frac"])
     cg.OVERALL_HALT_FRAC = float(g["overall_halt_frac"])
     cg.PHASE_TARGETS = {int(k): float(v) for k, v in g["phase_targets"].items()}
+    cg.set_reset_tz(cfg.get("reset_tz"))   # FundingPips UTC+3 / FTMO CE(S)T
 
 
 def log_row(path, row) -> None:
@@ -112,9 +113,14 @@ def main() -> None:
     ap.add_argument("--state", default=str(STATE_DEFAULT))
     ap.add_argument("--paper-csv", default=None)
     ap.add_argument("--advance-phase", action="store_true")
+    ap.add_argument("--config", default=str(CONFIG_FILE),
+                    help="challenge config JSON (default: FundingPips basket)")
+    ap.add_argument("--guard-only", action="store_true",
+                    help="fast real-time protector: evaluate guards + flatten on "
+                         "breach, but DO NOT reconcile/open (for a 1-2min timer)")
     args = ap.parse_args()
 
-    cfg = json.loads(CONFIG_FILE.read_text())
+    cfg = json.loads(Path(args.config).read_text())
     apply_model_to_guards(cfg)
     model, magic, run_id = cfg["model"], cfg["magic"], cfg["run_id"]
     buf = float(cfg.get("reconcile_buffer", 0.15))
@@ -176,6 +182,14 @@ def main() -> None:
             elif not flats:
                 print(f"  GUARD[{action}]: already flat")
             row["plan"] = f"{action}:flatten({len(flats)})"
+            if args.paper_csv:
+                log_row(args.paper_csv, row)
+            return
+
+        # ---- guard-only mode: no reconcile, just confirm we're safe ----
+        if args.guard_only:
+            print("  guard-only: safe (action=trade) — no reconcile")
+            row["plan"] = "guard_only:safe"
             if args.paper_csv:
                 log_row(args.paper_csv, row)
             return

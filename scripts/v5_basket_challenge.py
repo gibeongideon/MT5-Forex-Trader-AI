@@ -39,12 +39,25 @@ from xau_lab import ewmac_fc, breakout_fc, load_h4, ANN_H4, SLIP_USD  # noqa
 from challenge_lab import fp_sim  # noqa
 
 # tradeable classes -> members (FundingPips: indices + crypto + metals; NO rates/energy)
+#
+# FOCUSED BOOK (2026-07-18): XAU champion + BTC + NDX, equal 1/3. This beats the
+# full 12-instrument basket on EVERY FP metric (SR17 1.71 vs 1.43, pass 98.7% vs
+# 94.3%, fail-DD 1.4% vs 5.7%, median 11.4 vs 12.3mo) with 1/4 the symbols, because
+# the three sleeves are genuinely uncorrelated (XAU/BTC 0.08, XAU/NDX 0.04, BTC/NDX
+# 0.12) whereas the old basket diluted into correlated index clones (SPX~NDX~DJI
+# 0.86+) and gold-correlated SILVER (0.58). See scripts/v5_xau_focus_challenge.py
+# and data/v5_runs/fast-trend/.. / V5_FINDINGS.md. Revert to BASKET_FULL to restore.
 CLASSES = {
+    "xau": ["XAUCHAMP"],       # H4 champion (special-cased loader)
+    "crypto": ["BTC"],
+    "eq_us": ["NDX"],
+}
+BASKET_FULL = {               # prior 6-class book (kept for easy revert)
     "eq_us": ["SPX", "NDX", "DJI"],
     "eq_eu": ["DAX", "FTSE", "STOXX"],
     "eq_ap": ["NIKKEI", "ASX"],
     "crypto": ["BTC", "ETH"],
-    "xau": ["XAUCHAMP"],       # H4 champion (special-cased loader)
+    "xau": ["XAUCHAMP"],
     "metal": ["SILVER"],
 }
 TARGET_VOL = 0.10
@@ -63,6 +76,12 @@ MODELS = {
                      guard_frac=0.022, halt_frac=0.05),
     "onestep":  dict(vol=0.07, p1=0.10, p2=0.00, daily=0.05, maxloss=0.06,
                      guard_frac=0.035, halt_frac=0.05),
+    # FTMO 2-Step (ftmo.com/en/trading-objectives, verified 2026-07-18): P1 10%
+    # / P2 5% target; 5% max daily loss (of INITIAL, equity-incl-floating, resets
+    # 00:00 CET); 10% max overall loss STATIC; min 4 trading days; no time limit;
+    # no consistency rule for 2-Step. Guards buffer to 3.5% daily / 8% overall.
+    "ftmo":     dict(vol=0.07, p1=0.10, p2=0.05, daily=0.05, maxloss=0.10,
+                     guard_frac=0.035, halt_frac=0.08),
 }
 DEFAULT_MODEL = "standard"
 K_DIAL = MODELS[DEFAULT_MODEL]["vol"] / TARGET_VOL   # dial so book ~= model vol

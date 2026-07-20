@@ -1,0 +1,17 @@
+# FTMO 2-Step challenge reconcile pass (focused XAU+BTC+NDX book, magic 360561).
+# USER unit. Install:
+#   cp deploy/ftmo-*.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload && systemctl --user enable --now ftmo-challenge.timer ftmo-guard.timer ftmo-report.timer
+# PRECONDITIONS: FTMO terminal logged in with the MASTER (not investor) password;
+#   Algo Trading enabled; local bridge on 18812.
+[Unit]
+Description=FTMO 2-Step challenge reconcile (v5_basket_challenge_exec, ftmo config)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/rock/Desktop/2026_Projects/Trader36/MT5
+Environment=DISPLAY=:0
+ExecStart=/home/rock/Desktop/2026_Projects/Trader36/MT5/scripts/ftmo_challenge_cron.sh
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ftmo-challenge

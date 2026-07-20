@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FTMO challenge reconcile (hourly)
+[Timer]
+OnCalendar=*-*-* 00/1:07:00
+OnBootSec=120sec
+Persistent=true
+Unit=ftmo-challenge.service
+[Install]
+WantedBy=timers.target

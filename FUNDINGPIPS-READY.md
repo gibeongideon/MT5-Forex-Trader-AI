@@ -8,7 +8,7 @@ fill the real symbol names, reset state. No new infrastructure needed.
 Related: CHALLENGEBOT.MD (research), V5_FINDINGS.md (what was tried),
 deploy/vps-deploy-log.md (build log), deploy/vps_provision.sh (replica script).
 
-_Last updated 2026-07-16._
+_Last updated 2026-07-18 — switched to the FOCUSED XAU+BTC+NDX book (see §1)._
 
 ---
 
@@ -18,18 +18,18 @@ _Last updated 2026-07-16._
 |---|---|---|
 | Model | **2-Step Standard** | 5% daily / 10% max is the most forgiving for a low-vol book; 4%-daily Flex/3%-daily Pro are riskier. |
 | Vol dial | **7%** (6% = safer/slower) | 7% → best pass/speed balance; 6% if you want max safety. |
-| Book | Equal-class LONG-ONLY champion across 6 classes | eq_us, eq_eu, eq_ap, crypto, xau, metal |
+| Book | **FOCUSED: XAU champion + BTC + NDX, equal ⅓** | 3 uncorrelated sleeves (corr 0.04–0.12). Beats the old 12-instrument basket on every FP metric — see §4. Old 6-class kept as `BASKET_FULL` for revert. |
 | **Vol-targeting** | **ON** (`VOL_TARGET=True`) | causal trailing-vol × drawdown scaler; +0.17 Sharpe, +2–3 pass pts |
-| Weighting | **equal-class** | Sharpe-weighting was a lookahead illusion — do NOT use |
+| Weighting | **equal-class (⅓ each)** | Sharpe-weighting was a lookahead illusion — do NOT use |
 | Direction | **long-only** | shorts DISPROVEN (drift assets bleed when shorted) |
 | Guards | daily flatten −3.5%, halt −8%, targets +8%/+5% | buffers before the firm's 5%/10% |
 | Reconcile buffer | 0.15 (raise to **0.25** on a hedging acct to cut churn) | |
 
-**Expected performance (with crypto, $100K, 7% vol):**
-- Eval Sharpe **1.43** · FundingPips pass **~94%** · median **~12 months** (p75 ~19mo)
-- Avg **+0.79%/mo ≈ $786** · typical month ±$2.3K · ~1 in 3 months down · CAGR ~9%/yr
-- At 6% vol: **~97% pass**, ~15mo median.
-- Daily risk: typical day ±0.42%; worst day in 10yr was −2.09%; **never** hit the −3.5% guard or −5% limit.
+**Expected performance (XAU+BTC+NDX, $100K, 7% vol):**
+- Eval Sharpe **1.71** (2021+ 1.28) · FundingPips pass **~98.7%** · median **~11.4 months** (p75 ~17mo)
+- fail-daily **0.0%** · fail-DD **1.4%** (vs old basket 5.7%) · maxDD −12.3%
+- Live weights ≈ NDX 0.41 / BTC 0.30 / XAU 0.28 (equal risk; leverage differs by asset vol).
+- Beats the old 12-instrument basket (SR 1.43 / 94.3% / 12.3mo) with **¼ the symbols**.
 
 ---
 
@@ -45,9 +45,9 @@ _Last updated 2026-07-16._
    # laptop: ssh -L 5901:localhost:5900 trader@68.183.91.240 ; vncviewer localhost:5901
    # File→Login: <FP login>/<FP server>, SAVE ACCOUNT, enable Algo Trading; then pkill x11vnc
    ```
-3. **Map the real symbols** in `configs/v5_basket_challenge.json` → set each `fp_symbol` to the
-   FundingPips Market-Watch name (incl. **BTCUSD/ETHUSD** — crypto IS available there, worth +0.20 Sharpe).
-   Discover names: run the symbol sweep in deploy/vps-deploy-log.md (§symbols).
+3. **Map the 3 real symbols** in `configs/v5_basket_challenge.json` → set each `fp_symbol` to the
+   FundingPips Market-Watch name: **XAUCHAMP→XAUUSD/GOLD**, **BTC→BTCUSD**, **NDX→US100/NAS100/USTEC**.
+   Discover exact names: run the symbol sweep in deploy/vps-deploy-log.md (§symbols).
 4. **Reset state** (fresh anchor on the real balance):
    `rm -f data/v5_runs/basket_challenge_live_state.json`
 5. **Confirm attach + account**:
