@@ -60,9 +60,12 @@ def worst_day_dd_today(anchor):
 def trading_days(m):
     """FTMO trading day = a day with >=1 position opened. Count distinct CE(S)T
     dates among our entry deals this challenge (from MT5 deal history)."""
+    # NOTE: MT5 history uses SERVER time (this broker is GMT+3), so a UTC "now"
+    # end-bound silently drops today's deals. Pad the window generously.
     try:
+        from datetime import timedelta
         deals = m.history_deals_get(datetime(2020, 1, 1, tzinfo=timezone.utc),
-                                    datetime.now(timezone.utc))
+                                    datetime.now(timezone.utc) + timedelta(days=3))
     except Exception:
         return None
     if not deals:

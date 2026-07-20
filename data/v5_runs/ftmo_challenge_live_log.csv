@@ -1,0 +1,4 @@
+time_utc,account,balance,equity,action,phase,progress_pct,day_dd_pct,total_dd_pct,n_symbols,n_mapped,plan,sent
+2026-07-20 07:13:50,1514025597,100000.0,100000.0,trade,1,0.0,0.0,0.0,3,3,BTCUSD:0.00->0.04; US100.cash:0.00->0.52; XAUUSD:0.00->0.01,1
+2026-07-20 07:16:49,1514025597,100000.0,100000.0,trade,1,0.0,0.0,0.0,3,3,BTCUSD:0.00->0.04; US100.cash:0.00->0.52; XAUUSD:0.00->0.01,1
+2026-07-20 07:18:28,1514025597,99999.14,99989.09,trade,1,-0.011,-0.011,-0.011,3,3,in_sync,1

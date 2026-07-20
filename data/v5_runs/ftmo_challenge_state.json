@@ -1,0 +1,11 @@
+{
+ "initial_balance": 100000.0,
+ "phase": 1,
+ "phase_start": 100000.0,
+ "phase_target_frac": 0.1,
+ "day_anchor": 100000.0,
+ "day_anchor_date": "2026-07-20",
+ "day_locked": false,
+ "halted": false,
+ "phase_complete": false
+}
