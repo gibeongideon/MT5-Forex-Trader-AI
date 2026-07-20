@@ -110,6 +110,19 @@ vol-target sweep, buffered, combined-book vs champion) + `v5_xau_fast_trend_disc
   champion+fast portfolio (correlated). Real lever for more trades = cross-ASSET
   trend (BTC/NDX), not cross-speed on XAU. Report: `data/v5_runs/fast-trend/REPORT.md`.
 
+### 3d. Holding-constraint stress: weekend / overnight bans (2026-07-20, `scripts/v5_holding_constraints.py`)
+Funded (Master) accounts restrict holding — FundingPips banned weekend holds on 2-Step Flex Masters (29-Jan-2026). Measured the damage on GOLD+ETH+DJI (D1 proxies), Flex rules, eval 2017+:
+
+| Scenario | Sharpe | CAGR | maxDD | pass% |
+|---|---|---|---|---|
+| hold through (Evaluation) | **+1.14** | 7.7% | −9.4% | **98.0** |
+| NO weekend holding | +0.71 | 4.5% | −11.1% | 68.2 |
+| NO overnight holding | **−1.03** | −4.1% | −33.6% | **0.4** |
+
+- **Overnight ban is FATAL — strategy goes NEGATIVE.** For indices/gold essentially all long-run drift happens overnight (close→open); being flat every night hands away the edge while paying ~500 crossings/yr vs ~12. No dial fixes it, and an intraday replacement is already ruled out (§3c). **Do not run this book anywhere overnight holding is banned.**
+- **Weekend ban is survivable AND adaptable: DROP THE CRYPTO SLEEVE.** GOLD+ETH+DJI 0.71/68.2% → **GOLD+DJI 1.08/79.1%** (GOLD+DJI+SPX 1.05/77.9%; NDX as third is worse on pass, 67%, too volatile for the daily line). Reason: crypto trades **24/7**, so a forced Friday-flat misses real moves, whereas gold/indices are closed anyway and only lose the Monday gap.
+- **Action deferred to funding:** full runbook in `FUNDED-STAGE-PLAN.md` (config `classes` swap + a weekend auto-flat feature the executor does not yet have + ±5min news window). Nothing to change during Evaluation — weekend AND overnight holding are explicitly allowed there.
+
 ### 4. Earlier disproven overlays (see memory for detail)
 - **Per-trade probability sizing / meta-labeling** — fails twice; vol-targeting only cuts drawdown, adds no return.
 - **Gold-silver spread** — corr 0.79 but z-spread edge is pre-2015-only, dead OOS 2017+.
