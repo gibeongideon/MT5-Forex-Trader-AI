@@ -1,0 +1,65 @@
+{
+  "created_on": "2026-07-20",
+  "purpose": "FundingPips 2-Step FLEX $10,000 REAL challenge (account 20414926 @ FundingPips-SIM1). 10K-viable book: XAU(micro) + ETH + DJI30. The 100K book (XAU+BTC+NDX, configs/v5_ftmo_challenge.json) cannot be sized here — on FundingPips specs BTC ($642) and NDX100 ($5,746) min-lots round target lots to ZERO.",
+  "firm": "FundingPips",
+  "model": "flex",
+  "_model_note": "FundingPips 2-Step Flex (verified 2026-07-20): P1 +10% / P2 +6%; max DAILY loss 4%; max overall loss 12% STATIC; NO time limit; NO consistency rule; inactivity 30 days; min trading days per reward split (85% = none, 95% = 3 profitable days >=0.5%). Weekend AND overnight holding ALLOWED during Evaluation. Purposely trading news is PROHIBITED in Evaluation (holding through news is fine). Master/funded: weekend holding NOT allowed since 29-Jan-2026 (auto-closed Friday) -> re-plan before funded stage.",
+  "_book_note": "XAU(micro) + ETH + DJI30, equal 1/3, long-only champion recipe + portfolio vol-target. Flex sim @7% vol: eval SR 1.41 (2021+ 0.95), pass 98.8%, fail-daily 0.0%, fail-DD 1.2%, median 16.6mo, maxDD -9.7%. Three uncorrelated factors (XAU/ETH 0.09, XAU/DJI 0.07, ETH/DJI 0.16). Rejected: +BTC (84.4%, 14.6% daily fails - too volatile), STX50/FTSE100 instead of DJI30 (94.3%/93.7%, weaker sleeves SR 0.30/0.06), XAU+ETH only (96.4% but slower 22.7mo).",
+  "_sizing_note": "VERIFIED at $10,000 on real FundingPips specs: XAUUSDmicro tgt $341 -> 0.01 lot ($402, 1.18x), ETHUSD tgt $247 -> 0.13 lot ($242, 0.98x), DJI30 tgt $2,949 -> 0.01 lot ($2,614, 0.89x). Gross 0.92x target => realized vol ~6.4% vs 7% (conservative, safer vs the 4% daily line). Min-lot notionals: ETHUSD $18.63, XAUUSDmicro $402, DJI30 $2,614. DO NOT substitute XAUUSD (min-lot $4,020) or NDX100 ($5,746) - they round to zero/oversize at 10K.",
+  "magic": 360562,
+  "run_id": "v5-fp-flex-10k",
+  "engine": "scripts/v5_basket_challenge.py::target_leverage (model=flex, classes below)",
+  "reset_tz": "UTC+3",
+  "_reset_tz_note": "FundingPips daily reset = 00:00 platform time (UTC+3).",
+  "reconcile_buffer": 0.25,
+  "classes": {
+    "xau": ["XAUCHAMP"],
+    "crypto": ["ETH"],
+    "eq_us": ["DJI"]
+  },
+  "symbols": {
+    "_note": "engine symbol -> FundingPips broker name. VERIFIED live on account 20414926 (FundingPips-SIM1) 2026-07-20: all trade_mode=4 FULL.",
+    "XAUCHAMP": {
+      "fp_symbol": "XAUUSDmicro",
+      "class": "xau",
+      "tf": "H4",
+      "_specs": "contract 10.0, vmin 0.01, min-lot $402, spread $0.12 (0.3bp)"
+    },
+    "ETH": {
+      "fp_symbol": "ETHUSD",
+      "class": "crypto",
+      "tf": "D1",
+      "_specs": "contract 1.0, vmin 0.01, min-lot $18.63, spread $0.51 (2.7bp)"
+    },
+    "DJI": {
+      "fp_symbol": "DJI30",
+      "class": "eq_us",
+      "tf": "D1",
+      "_specs": "contract 5.0, vmin 0.01, min-lot $2,614, spread $1.00 (0.2bp)"
+    }
+  },
+  "guards": {
+    "daily_guard_frac": 0.030,
+    "overall_halt_frac": 0.10,
+    "phase_targets": {
+      "1": 0.10,
+      "2": 0.06
+    },
+    "_note": "FLEX is TIGHTER than Standard: daily limit 4% -> flatten at 3.0% (1.0% margin); max loss 12% -> halt at 10% (2% margin); targets +10% (P1) / +6% (P2)."
+  },
+  "min_trading_days": 3,
+  "_min_days_note": "85% reward split = no minimum; 95% split = 3 profitable days each >=0.5%. Set to 3 to be safe; report tracks it.",
+  "news_filter": {
+    "enabled": true,
+    "currencies": ["USD"],
+    "impact": "High",
+    "before_min": 30,
+    "after_min": 30,
+    "major_before_min": 60,
+    "major_after_min": 45,
+    "close_in_profit": false,
+    "refresh_minutes": 60,
+    "cache_file": "data/news_cache.json",
+    "_note": "Evaluation prohibits PURPOSELY trading news. Bot never opens inside a red-folder window. close_in_profit=false: holding through news is explicitly allowed, so don't churn out of good positions."
+  }
+}

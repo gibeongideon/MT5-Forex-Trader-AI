@@ -202,10 +202,18 @@ def build(start="2016-01-01", dial=K_DIAL):
     return W, book, live
 
 
-def target_leverage(model=DEFAULT_MODEL):
+def target_leverage(model=DEFAULT_MODEL, classes=None):
     """Public API for the executor: {symbol: target account-leverage} at the
     latest bar, sized for the given model's vol dial. Long-only (>=0).
-    Applies the causal portfolio vol-target x drawdown scalar (VOL_TARGET)."""
+    Applies the causal portfolio vol-target x drawdown scalar (VOL_TARGET).
+
+    `classes` overrides the module-level CLASSES so ONE engine can serve several
+    books (e.g. the 100K XAU+BTC+NDX book and the 10K SPX+ASX+ETH book), each
+    declared in its own config.
+    """
+    global CLASSES
+    if classes:
+        CLASSES = {k: list(v) for k, v in classes.items()}
     dial = MODELS[model]["vol"] / TARGET_VOL
     W, book, live = build(dial=dial)
     scalar = risk_scalar(book, MODELS[model]["vol"])

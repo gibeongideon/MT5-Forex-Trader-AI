@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FundingPips Flex 10K guard (every 2 min)
+[Timer]
+OnCalendar=*-*-* *:00/2:00
+OnBootSec=200sec
+Persistent=false
+Unit=fp10k-guard.service
+[Install]
+WantedBy=timers.target

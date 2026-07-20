@@ -1,0 +1,10 @@
+[Unit]
+Description=FundingPips Flex 10K reconcile (XAUmicro+ETH+DJI30, magic 360562)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/trader/MT5
+ExecStart=/home/trader/MT5/deploy/fp10k_challenge_cron.sh
+TimeoutStartSec=420
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fp10k-challenge

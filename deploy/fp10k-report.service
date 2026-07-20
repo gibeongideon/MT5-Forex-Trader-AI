@@ -1,0 +1,10 @@
+[Unit]
+Description=FundingPips Flex 10K daily report (progress + compliance)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/trader/MT5
+ExecStart=/home/trader/MT5/deploy/fp10k_report_cron.sh
+TimeoutStartSec=120
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fp10k-report

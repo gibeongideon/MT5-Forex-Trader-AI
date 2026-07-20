@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FundingPips Flex 10K reconcile (hourly :07, staggered vs cent :16)
+[Timer]
+OnCalendar=*-*-* *:07:00
+OnBootSec=180sec
+Persistent=true
+Unit=fp10k-challenge.service
+[Install]
+WantedBy=timers.target

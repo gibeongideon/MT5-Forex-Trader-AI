@@ -90,6 +90,43 @@ def held_lots(conn, symbol, magic) -> float:
     return net
 
 
+def close_volume(conn, symbol, magic, lots, run_id) -> list:
+    """Reduce our exposure on `symbol` by `lots` by CLOSING our own tickets
+    (fully, then partially for the remainder), oldest first.
+
+    Required on HEDGING accounts (FTMO is margin_mode=2): sending an opposing
+    market order there does NOT net the position down — it opens a second,
+    opposite position, doubling margin and cost. Closing by ticket is correct
+    on both hedging and netting accounts.
+    """
+    mt5 = conn._mt5
+    remaining = round(float(lots), 2)
+    done = []
+    ps = [p for p in (conn.get_positions(magic=magic) or []) if p.symbol == symbol]
+    ps.sort(key=lambda p: getattr(p, "time", 0))          # FIFO
+    for p in ps:
+        if remaining <= 1e-9:
+            break
+        vol = round(min(float(p.volume), remaining), 2)
+        if vol <= 0:
+            continue
+        tick = conn.get_tick(symbol)
+        is_long = (p.type == 0)
+        req = dict(action=mt5.TRADE_ACTION_DEAL, symbol=symbol, volume=vol,
+                   type=mt5.ORDER_TYPE_SELL if is_long else mt5.ORDER_TYPE_BUY,
+                   position=p.ticket,
+                   price=(tick.bid if is_long else tick.ask),
+                   deviation=50, magic=magic, comment=run_id,
+                   type_time=mt5.ORDER_TIME_GTC,
+                   type_filling=conn._fill_type(symbol))
+        r = mt5.order_send(req)
+        rc = getattr(r, "retcode", None)
+        done.append((p.ticket, vol, rc))
+        if rc == mt5.TRADE_RETCODE_DONE:
+            remaining = round(remaining - vol, 2)
+    return done
+
+
 def target_lots(conn, symbol, lev, equity) -> float | None:
     """lots = lev * equity / (contract_size * price). None if symbol unavailable."""
     info = conn.symbol_info(symbol)
@@ -195,7 +232,8 @@ def main() -> None:
             return
 
         # ---- normal reconcile: move each symbol toward its target ----
-        targets = target_leverage(model)          # {engine_sym: account-leverage}
+        # cfg["classes"] lets one engine serve several books (100K vs 10K).
+        targets = target_leverage(model, cfg.get("classes"))
         plans, n_mapped = [], 0
         print(f"  {'symbol':9s} {'tgt lev':>8s} {'held lot':>9s} {'tgt lot':>9s}  action")
         for esym, lev in sorted(targets.items()):
@@ -217,13 +255,19 @@ def main() -> None:
                 plans.append((bsym, hl, tl))
             print(f"  {esym:9s} {lev:8.3f} {hl:9.2f} {tl:9.2f}  {act}")
             if send and act != "hold":
-                delta = tl - hl
-                side = "buy" if delta > 0 else "sell"
+                delta = round(tl - hl, 2)
                 try:
-                    r = conn.open_position(bsym, side, abs(round(delta, 2)),
-                                           magic=magic, comment=run_id)
-                    print(f"    EXECUTED {side} {abs(delta):.2f}: "
-                          f"{r.get('retcode', r) if isinstance(r, dict) else r}")
+                    if delta > 0:                      # increase -> open/add
+                        r = conn.open_position(bsym, "buy", abs(delta),
+                                               magic=magic, comment=run_id)
+                        print(f"    EXECUTED buy {abs(delta):.2f}: "
+                              f"{r.get('retcode', r) if isinstance(r, dict) else r}")
+                    else:                              # decrease -> CLOSE tickets
+                        res = close_volume(conn, bsym, magic, abs(delta), run_id)
+                        for tk, vol, rc in res:
+                            print(f"    CLOSED {vol:.2f} of #{tk}: retcode={rc}")
+                        if not res:
+                            print("    ! nothing to close (no tickets found)")
                 except Exception as exc:  # noqa: BLE001
                     print(f"    ORDER REJECTED: {exc}")
 

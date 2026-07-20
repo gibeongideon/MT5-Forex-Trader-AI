@@ -1,0 +1,10 @@
+[Unit]
+Description=FundingPips Flex 10K real-time guard (flatten on 3%% daily / 10%% total)
+[Service]
+Type=oneshot
+WorkingDirectory=/home/trader/MT5
+ExecStart=/home/trader/MT5/deploy/fp10k_guard_cron.sh
+TimeoutStartSec=90
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=fp10k-guard

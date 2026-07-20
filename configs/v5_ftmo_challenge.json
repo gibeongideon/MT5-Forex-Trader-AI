@@ -9,6 +9,12 @@
   "engine": "scripts/v5_basket_challenge.py::target_leverage (model=ftmo)",
   "reset_tz": "Europe/Prague",
   "reconcile_buffer": 0.25,
+  "classes": {
+    "xau": ["XAUCHAMP"],
+    "crypto": ["BTC"],
+    "eq_us": ["NDX"]
+  },
+  "_classes_note": "The 100K-capable book. NOT sizeable below ~$100K (gold min-lot $4,020, BTC $640). For a $10K account use configs/v5_fp_flex_10k.json (SPX+ASX+ETH).",
   "_buffer_note": "no-trade band: skip a symbol whose target vs held leverage differs by < buffer x its own target (cuts churn).",
   "symbols": {
     "_note": "engine symbol -> FTMO broker name (verified live on FTMO-Demo 2026-07-18). contract_size/price read live at execute time.",

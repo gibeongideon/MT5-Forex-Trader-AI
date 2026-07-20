@@ -1,0 +1,9 @@
+[Unit]
+Description=Timer for FundingPips Flex 10K daily report (20:55 UTC)
+[Timer]
+OnCalendar=*-*-* 20:55:00
+OnBootSec=300sec
+Persistent=true
+Unit=fp10k-report.service
+[Install]
+WantedBy=timers.target
