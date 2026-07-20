@@ -100,6 +100,10 @@ def close_volume(conn, symbol, magic, lots, run_id) -> list:
     on both hedging and netting accounts.
     """
     mt5 = conn._mt5
+    try:
+        conn.symbol_select(symbol, True)   # tick/info are None if not in Market Watch
+    except Exception:  # noqa: BLE001
+        pass
     remaining = round(float(lots), 2)
     done = []
     ps = [p for p in (conn.get_positions(magic=magic) or []) if p.symbol == symbol]
@@ -128,7 +132,17 @@ def close_volume(conn, symbol, magic, lots, run_id) -> list:
 
 
 def target_lots(conn, symbol, lev, equity) -> float | None:
-    """lots = lev * equity / (contract_size * price). None if symbol unavailable."""
+    """lots = lev * equity / (contract_size * price). None if symbol unavailable.
+
+    MUST symbol_select() first: a symbol that is not in Market Watch returns
+    symbol_info()=None. After any terminal restart nothing is selected, so
+    without this the bot reports "in sync — nothing to do" and SILENTLY NEVER
+    TRADES while looking healthy in the logs.
+    """
+    try:
+        conn.symbol_select(symbol, True)
+    except Exception:  # noqa: BLE001
+        pass
     info = conn.symbol_info(symbol)
     tick = conn.get_tick(symbol)
     if info is None or tick is None:
