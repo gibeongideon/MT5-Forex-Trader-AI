@@ -123,6 +123,67 @@ Funded (Master) accounts restrict holding — FundingPips banned weekend holds o
 - **Weekend ban is survivable AND adaptable: DROP THE CRYPTO SLEEVE.** GOLD+ETH+DJI 0.71/68.2% → **GOLD+DJI 1.08/79.1%** (GOLD+DJI+SPX 1.05/77.9%; NDX as third is worse on pass, 67%, too volatile for the daily line). Reason: crypto trades **24/7**, so a forced Friday-flat misses real moves, whereas gold/indices are closed anyway and only lose the Monday gap.
 - **Action deferred to funding:** full runbook in `FUNDED-STAGE-PLAN.md` (config `classes` swap + a weekend auto-flat feature the executor does not yet have + ±5min news window). Nothing to change during Evaluation — weekend AND overnight holding are explicitly allowed there.
 
+### 3e. Profit-take + dip re-entry overlay — DISPROVEN (2026-07-20, `scripts/v5_profit_take_overlay.py`)
+Tested "bank the gains and buy back lower": when the book is up >= X% since entry, close everything; re-enter after price dips Y% from the exit level (or a max-wait timeout). Rationale was that floating profit counts against the firm's daily line, so realising it should protect the account. FTMO book (XAU+BTC+NDX), eval 2017+:
+
+| Variant | Sharpe | CAGR | maxDD | pass% | median | %in-mkt |
+|---|---|---|---|---|---|---|
+| **baseline hold-through** | **+1.71** | **12.1** | −12.3 | **98.6** | **13.4** | 100 |
+| take1.5/dip0.5/10d | 1.55 | 9.5 | −12.3 | 97.0 | 14.6 | 90.9 |
+| take1.5/dip1.0/10d | 1.64 | 9.7 | −12.3 | 97.4 | 13.9 | 87.1 |
+| take1.0/dip0.5/10d | 1.35 | 8.0 | −12.3 | 94.8 | 16.3 | 88.3 |
+| take1.5/dip2.0/20d | 1.27 | 6.7 | −10.4 | 95.1 | 17.2 | 76.8 |
+
+- **Every variant loses**, and performance tracks **%in-market** almost linearly — time out of the market is pure cost. maxDD does NOT improve (−12.3% throughout) except in the variant that gives up 45% of the CAGR.
+- **The protective rationale is void at the live dial**: fail-daily is already **0.0%** at 7% vol, so there is no floating-profit risk to insure against — you truncate the right tail for nothing.
+- **It does not rescue high-vol sprinting either** (FLEX rules, where 43–71% of failures ARE daily breaches): 10% dial 56.1% → 50.6/50.9/57.6; 14% 41.0 → 33.7/37.0/43.1; 18% 26.8 → 24.7/25.4/24.8. Tighter takes make **fail-daily WORSE** (43.0→47.9%) because a slower equity curve means more days exposed, i.e. more chances to catch a bad one. Only very loose settings (take 3%, 15d wait) are within noise of baseline — and those barely leave the market.
+- **Verdict: do not add profit-taking or dip re-entry.** Trend books earn from a few large sustained winners; capping them removes the tail that funds all the small losses. Caveat: modelled at daily resolution, so a real intraday +1.5% trigger is approximated by exiting at that day's close — but the effect is large and monotone, so the conclusion holds.
+
+### 3f. Multi-timeframe sweep M30/H1/H4 x speed, at REAL tight spreads (2026-07-20, `scripts/v5_multi_tf_trend.py`)
+Re-opened the fast-trend question now that tight-spread gold is reachable (**FundingPips XAUUSDmicro $0.12** measured — the tier where §3c said fast trend *becomes* viable; FTMO XAUUSD $0.45; cent $0.36). Discrete engine, long-only champion recipe, eval 2017+.
+
+Net Sharpe @ $0.12 (best case for fast configs):
+
+| TF | ultra | vfast | fast | med | slow | trades/mo | maxDD |
+|---|---|---|---|---|---|---|---|
+| M30 | 0.68 | 0.88 | 0.93 | 0.87 | 0.87 | ~20 | −27 to −45% |
+| H1 | 0.59 | 0.65 | 0.82 | 0.94 | 0.98 | ~11 | −21 to −33% |
+| **H4** | 0.59 | 1.03 | 1.09 | **1.27** | 1.05 | ~3.3 | **−9 to −15%** |
+
+- **"Sensitive to trend changes" is WORSE, universally.** `ultra` is the worst config at EVERY timeframe and EVERY spread (0.59–0.68). Faster reaction buys noise, not earlier trend detection.
+- **H4 beats M30/H1 even at $0.12** (1.27 vs 0.93/0.98) with 1/3 the drawdown. So intraday is not merely cost-limited — the signal itself is worse. Tight spreads do NOT rescue intraday trend; §3c's "deployable at $0.12" was about a *single* fast config, and H4 still dominates it.
+- **Spread sensitivity tracks turnover**: M30 (20 tr/mo) 0.93→0.47 as spread goes $0.12→$0.45; H4 (3.3 tr/mo) 1.09→1.01 (near-immune, consistent with the champion's known spread-invariance).
+- **APPARENT WIN THAT FAILED VALIDATION — do not adopt.** `H4/med` scored 1.27 vs champion `H4/slow` 1.05, with better DD (−9.5%) and worst-year (−0.46). But (a) **split-sample: med 0.89 vs slow 0.96 in 2017-2020** — the entire edge is 2021+ (1.53 vs 1.13), i.e. regime-specific; (b) **sharp parameter peak**: trail 2.0/2.5/**3.0**/3.5/4.0 → 0.82/1.02/**1.27**/1.14/1.02, a robust edge has a flat surface; (c) selected from 45 swept configs (multiple testing). **Verdict: keep the champion speed set. The H4 slow champion remains the right choice.**
+
+### 3g. FTMO vol-dial + 4th-sleeve instrument search (2026-07-20, `scripts/v5_instrument_search.py`, `v5_book_speed_sweep.py`)
+**Book-level SPEED is exhausted — the curve is FLAT.** Running the whole 3-asset book 3x faster changes the median finish by 0.2mo (FTMO 13.2 vs 13.4mo, pass 98.2 vs 98.6). Flat (not peaked) = the live speed choice is robust, and no speed tuning will make the challenge finish sooner.
+
+**FTMO VOL DIAL — 9% is the efficient point, NOT 10%** (FTMO rules, XAU+BTC+NDX):
+
+| dial | pass% | fail-daily | median | note |
+|---|---|---|---|---|
+| 7% | 98.8 | 0.0 | 13.5mo | LIVE |
+| 8% | 97.9 | 0.0 | 11.6mo | |
+| **9%** | **96.4** | **0.0** | **10.3mo** | **−3.2mo for −2.4pp — best trade** |
+| 10% | 87.4 | **8.1** | 8.6mo | daily limit starts binding — cliff |
+| 12% | 65.6 | 29.9 | 6.2mo | |
+
+The 5%-daily line is never approached until 10%; that is where fail-daily jumps 0→8.1% and pass drops 11pp for only 1.7 more months. **Do not go past 9%.**
+
+**INSTRUMENT SEARCH — no 4th sleeve clears the bar.** Screened all 24 FTMO-tradeable instruments we hold D1 history for (FX excluded, dead post-2016) on standalone SR + correlation, then tested each as an equal-risk 4th sleeve. Screen correctly rejected the redundant ones: SPX (r=0.86 to NDX), ETH (0.64 to BTC), SILVER (0.58 to XAU), DJI (0.60 to NDX). Six candidates passed to stage 2:
+
+| book | Sharpe | maxDD | pass% | median | 17-20 | 21-26 |
+|---|---|---|---|---|---|---|
+| **BASE XAU+BTC+NDX** | **1.71** | −12.3% | **98.6** | **13.4mo** | +2.28 | +1.28 |
+| + BRENT (UKOIL) | 1.68 | **−9.7%** | **99.1** | 13.8mo | +2.14 | +1.34 |
+| + NIKKEI (JP225) | **1.80** | −13.6% | 97.9 | **12.8mo** | +2.27 | +1.45 |
+| + SOL (SOLUSD) | 1.74 | −12.9% | 98.2 | 13.1mo | +2.26 | +1.34 |
+| + PALL / + DAX / + LTC | 1.62/1.52/1.41 | | 98.8/97.1/84.8 | slower | | |
+
+- **Nothing satisfies "raise pass% AND cut median AND hold in both half-samples."** BRENT raises pass (+0.5pp) and cuts drawdown materially (−12.3%→−9.7%, and it is the LEAST correlated asset found: max r=0.05) but is 0.4mo slower. NIKKEI is fastest (−0.6mo) and highest Sharpe but costs 0.7pp pass and deepens DD. All differences are small/within noise.
+- **Verdict: keep the 3-asset book.** It is already near-optimal; a 4th sleeve adds execution surface for no reliable gain. BRENT is the only one worth revisiting *if* the goal shifts from speed to drawdown reduction.
+- **The ONLY reliable speed lever left is the vol dial (7%→9%, −3.2mo).**
+
 ### 4. Earlier disproven overlays (see memory for detail)
 - **Per-trade probability sizing / meta-labeling** — fails twice; vol-targeting only cuts drawdown, adds no return.
 - **Gold-silver spread** — corr 0.79 but z-spread edge is pre-2015-only, dead OOS 2017+.

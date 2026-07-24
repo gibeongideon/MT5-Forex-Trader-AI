@@ -108,4 +108,47 @@ fees multiply, and the time saved flattens out because you keep re-entering.
 Restructuring after funding is already documented in `FUNDED-STAGE-PLAN.md`
 (weekend-holding ban → drop the crypto sleeve).
 
+---
+
+## 6. BUILD CHECKLIST — when we decide to run the sprint (NOT built yet)
+
+Target = **Option B: FundingPips 2-Step STANDARD @ 10% vol**, run in PARALLEL with the
+existing Flex 10K (which stays on the safe 7% dial). Nothing below exists yet.
+
+1. **Buy** a 2-Step Standard account (size to comfort; rules identical across sizes).
+2. **Engine — add a sprint model.** `scripts/v5_basket_challenge.py::MODELS` currently
+   has `standard` at `vol=0.07`. Add:
+   ```python
+   "standard_sprint": dict(vol=0.10, p1=0.08, p2=0.05, daily=0.05, maxloss=0.10,
+                           guard_frac=0.035, halt_frac=0.08),
+   ```
+   (Standard limits, sprint dial. Do NOT raise `vol` on the existing `standard` entry —
+   other configs reference it.)
+3. **Config** `configs/v5_fp_standard_sprint.json`: `model: "standard_sprint"`,
+   **new magic (e.g. 360563)**, own `run_id`, `reset_tz: "UTC+3"`,
+   `guards: {daily_guard_frac 0.035, overall_halt_frac 0.08, phase_targets {1:0.08, 2:0.05}}`,
+   `classes` = the 10K book `{xau:[XAUCHAMP], crypto:[ETH], eq_us:[DJI]}`.
+4. **Re-verify sizing on the REAL account before trading.** Min-lot notionals decide the
+   book (see `configs/v5_fp_flex_10k.json` `_sizing_note`). At 10% vol targets are ~43%
+   larger than at 7%, which *helps* granularity — but confirm on the actual terminal
+   (FundingPips contracts differ from FTMO: SPX500=50, NDX100=20, ETHUSD=1, XAUUSDmicro=10).
+5. **VPS instance 4**: prefix `~/.mt5d`, display `:102`, bridge **18815**. Follow
+   `vps-three-bot-architecture` memory — clone a prefix, **install a full 598KB
+   `servers.dat`** (a pruned one silently prevents login), strip `accounts.dat`, write
+   `mt5_login.ini`, prefix-scoped start script. RAM headroom is fine (~310MB/instance,
+   ~2.4GB free with three running).
+6. **Wrappers/units**: `deploy/sprint_{challenge,guard,report}_cron.sh` +
+   `sprint-{challenge,guard,report}.{service,timer}`. **Stagger the reconcile to `:37`**
+   (taken: fp10k `:07`, cent `:16`, ftmo `:22`; guards on `:00/2` and `:01/2` — use `:03/2`).
+   Include the readiness gate (bridge + real bids) — without it the bot silently no-ops.
+7. **Report**: reuse `scripts/challenge_daily_report.py --config ... --state ... --port 18815`
+   (already config-driven; no new script needed).
+8. **Dry-run first**, then one manual `--live --execute` pass, then enable timers —
+   same sequence used for the Flex 10K.
+
+**Stop rules for the sprint account:** if it fails, re-buy at most **twice** (E[fees]
+assumes ~1.1 attempts at 10% vol; three failures means the edge or the assumptions are
+wrong, not bad luck). **Never raise the dial mid-challenge** and never take the sprint
+above 14% — past that our own −3.5% guard invalidates the model (§4.1).
+
 _Reproduce: `python scripts/v5_sprint_analysis.py`._
